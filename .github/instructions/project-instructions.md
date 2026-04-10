@@ -1,6 +1,6 @@
 # Project Instructions
 
-This file consolidates the most important operational details for developers working on **ClassicBooks Audiobook Hub**.
+This file consolidates the most important operational details for developers working on **Digital Library Hub**.
 
 ## Build & Run
 ```bash
@@ -35,6 +35,17 @@ C++23 is required (`set(CMAKE_CXX_STANDARD 23)`). Use GCC 13+ or Clang 16+.
 - **Never run `cmake ..` from the source root** – the Qt6 modules are only found when building out‑of‑tree.
 - The `docs/` directory is for internal use only and will be removed before release.
 - No automated tests; manual verification is required.
+
+## Git Workflow
+- **`master`** – public-facing branch with stable release (README only).
+- **`develop`** – integration branch for ongoing development.
+- **Feature branches** – create new branches off `develop` for each feature/fix:
+  ```bash
+  git checkout develop
+  git checkout -b feature/<short-description>
+  ```
+  Work on the feature branch, then merge back to `develop` when ready.
+- **Never push directly to `master`** – only merge from `develop` after testing.
 
 ## Agents
 Custom agents live in `.github/agents/`. Invoke them in Copilot Chat with `/agent-name` (e.g., `/expert-cpp-software-engineer`).
