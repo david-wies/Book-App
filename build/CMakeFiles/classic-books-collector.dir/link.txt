@@ -1,0 +1,1 @@
+/usr/bin/c++ -Wl,--dependency-file=CMakeFiles/classic-books-collector.dir/link.d "CMakeFiles/classic-books-collector.dir/src/collector/main.cpp.o" -o classic-books-collector  libshared.a /usr/lib/x86_64-linux-gnu/libQt6Sql.so.6.9.2 /usr/lib/x86_64-linux-gnu/libQt6Core.so.6.9.2

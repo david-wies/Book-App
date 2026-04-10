@@ -1,0 +1,9 @@
+# Code owners for this repository
+# When a PR affects files in these paths, request review from the specified users/teams
+
+# Global owners - all files
+* @your-username-or-team
+
+# Example: specific paths
+# /docs/ @docs-team
+# *.md @markdown-reviewers

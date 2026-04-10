@@ -1,0 +1,117 @@
+{
+  "mvp": {
+    "screens": [
+      "Library",
+      "Search",
+      "Explore",
+      "BookDetails",
+      "DownloadFlow",
+      "AudiobookFlow"
+    ],
+    "features": [
+      "AddToLibrary",
+      "AdvancedSearch",
+      "CategoryExplore",
+      "MultiLanguageSupport",
+      "SourceExtensibility",
+      "FormatSelection",
+      "PresetVoices",
+      "CustomVoiceUpload",
+      "AudiobookPreview"
+    ]
+  },
+  "entities": {
+    "Book": {
+      "id": "string",
+      "title": "string",
+      "authors": ["string"],
+      "summary": "string",
+      "publicationDate": "string",
+      "categories": ["string"],
+      "editions": ["Edition"]
+    },
+    "Edition": {
+      "id": "string",
+      "bookId": "string",
+      "language": "string",
+      "publisher": "string",
+      "publishDate": "string",
+      "formats": ["Format"]
+    },
+    "Source": {
+      "id": "string",
+      "name": "string",
+      "supportedLanguages": ["string"],
+      "type": "string"
+    },
+    "Format": {
+      "id": "string",
+      "editionId": "string",
+      "sourceId": "string",
+      "type": "string",
+      "downloadUrl": "string"
+    },
+    "LibraryItem": {
+      "id": "string",
+      "bookId": "string",
+      "selectedLanguage": "string",
+      "selectedFormat": "string",
+      "status": "string"
+    },
+    "Voice": {
+      "id": "string",
+      "name": "string",
+      "type": "preset | custom",
+      "sampleText": "string",
+      "uploadStatus": "string"
+    }
+  },
+  "flows": {
+    "Library": {
+      "view": "saved books",
+      "actions": ["viewDetails", "download", "convertAudio", "remove"]
+    },
+    "Search": {
+      "filters": [
+        "title",
+        "author",
+        "category",
+        "year",
+        "language",
+        "source",
+        "availability"
+      ],
+      "results": "books with metadata"
+    },
+    "Explore": {
+      "categories": "top-level category cards",
+      "subcategories": "drill-down list",
+      "discoverSections": ["trending", "newArrivals", "curated"]
+    },
+    "DownloadFlow": {
+      "steps": [
+        "selectLanguage",
+        "selectFormat",
+        "selectSource",
+        "confirmDownload"
+      ]
+    },
+    "AudiobookFlow": {
+      "steps": [
+        "selectLanguage",
+        "selectTextFormat",
+        "selectVoice",
+        "previewSample",
+        "generateAudio"
+      ],
+      "voiceOptions": {
+        "presets": [
+          "Classic Storyteller",
+          "Warm Listener",
+          "Crisp Narrator"
+        ],
+        "customUpload": true
+      }
+    }
+  }
+}

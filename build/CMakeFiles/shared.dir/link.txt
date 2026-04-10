@@ -1,0 +1,2 @@
+/usr/bin/ar qc libshared.a CMakeFiles/shared.dir/src/shared/database.cpp.o
+/usr/bin/ranlib libshared.a

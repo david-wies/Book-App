@@ -1,0 +1,5 @@
+/home/david/VS Code Projects/Books/build/CMakeFiles/shared.dir
+/home/david/VS Code Projects/Books/build/CMakeFiles/classic-books-gui.dir
+/home/david/VS Code Projects/Books/build/CMakeFiles/classic-books-collector.dir
+/home/david/VS Code Projects/Books/build/CMakeFiles/edit_cache.dir
+/home/david/VS Code Projects/Books/build/CMakeFiles/rebuild_cache.dir
