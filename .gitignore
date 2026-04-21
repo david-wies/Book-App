@@ -8,6 +8,9 @@ Related Code/
 *.db
 *.db-journal
 
+# Sample data
+example.json
+
 # IDE and editor
 .vscode/
 .idea/
