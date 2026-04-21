@@ -50,6 +50,7 @@ Recommended C++ stack for MVP:
 - Threading/Process: Qt threading (QThread) for running the data collector background tasks alongside the main GUI thread; optional platform-specific subprocess management if needed
 - Packaging: platform-native installers or self-contained app bundles for Windows, macOS, and Linux
 - IPC: Direct SQLite file access with proper locking, or Qt-based messaging if needed
+- **Application Icon**: `book_reader_icon.jpg` embedded in the executable as a Qt resource, displayed in window title bar and application menus
 
 ### 3.3 Why C++ and Qt
 

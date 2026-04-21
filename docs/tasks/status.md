@@ -16,50 +16,54 @@
 - **Status**: Completed
 - **Notes**: Implemented the `BookDiscoveryService` and the `ISourceAdapter` plugin interface. Added the `GutenbergAdapter` that fetches book JSON from `gutendex.com` via `QNetworkAccessManager`. Configured thread-safe SQLite access using a named connection ("collector_connection") to insert books, formats, and sources seamlessly in the background.
 
-## Task 5: Create Library screen GUI
+## Task 5: Integrate application icon
+- **Status**: Completed
+- **Notes**: Created `resources/resources.qrc` to embed `book_reader_icon.jpg` (960×960 JPEG) into the binary via Qt's resource system (`CMAKE_AUTORCC`). Added `resources/resources.qrc` to the `classic-books` target in `CMakeLists.txt`. Updated `src/main.cpp` to load `QIcon(":/book_reader_icon.jpg")` and set it on both `QApplication` (taskbar/launcher) and `QMainWindow` (title bar). Build verified successfully.
+
+## Task 6: Create Library screen GUI
 - **Status**: Not Started
 - **Notes**: 
 
-## Task 6: Implement Search screen
+## Task 7: Implement Search screen
 - **Status**: Not Started
 - **Notes**: 
 
-## Task 7: Create Explore screen
+## Task 8: Create Explore screen
 - **Status**: Not Started
 - **Notes**: 
 
-## Task 8: Build Book details screen
+## Task 9: Build Book details screen
 - **Status**: Not Started
 - **Notes**: 
 
-## Task 9: Implement add/remove from library functionality
+## Task 10: Implement add/remove from library functionality
 - **Status**: Not Started
 - **Notes**: 
 
-## Task 10: Develop download flow
+## Task 11: Develop download flow
 - **Status**: Not Started
 - **Notes**: 
 
-## Task 11: Build audiobook conversion flow
+## Task 12: Build audiobook conversion flow
 - **Status**: Not Started
 - **Notes**: 
 
-## Task 12: Integrate TTS for voice preview and generation
+## Task 13: Integrate TTS for voice preview and generation
 - **Status**: Not Started
 - **Notes**: 
 
-## Task 13: Add custom voice upload feature
+## Task 14: Add custom voice upload feature
 - **Status**: Not Started
 - **Notes**: 
 
-## Task 14: Implement source adapters for extensibility
+## Task 15: Implement source adapters for extensibility
 - **Status**: Not Started
 - **Notes**: 
 
-## Task 15: Add UI polish and error handling
+## Task 16: Add UI polish and error handling
 - **Status**: Not Started
 - **Notes**: 
 
-## Task 16: Package and deploy application
+## Task 17: Package and deploy application
 - **Status**: Not Started
 - **Notes**:

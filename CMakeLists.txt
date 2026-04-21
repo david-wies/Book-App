@@ -26,3 +26,11 @@ add_executable(classic-books
     src/collector/book_discovery_service.cpp
 )
 target_link_libraries(classic-books PRIVATE Qt6::Widgets Qt6::Network shared)
+
+# Copy icon next to the executable after every build (mirrors database co-location pattern)
+add_custom_command(TARGET classic-books POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/book_reader_icon.jpg"
+        "$<TARGET_FILE_DIR:classic-books>/book_reader_icon.jpg"
+    COMMENT "Copying book_reader_icon.jpg next to executable"
+)
