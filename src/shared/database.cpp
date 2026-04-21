@@ -1,10 +1,19 @@
 #include "database.h"
+#include <QCoreApplication>
+#include <QDir>
 #include <QSqlDatabase>
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QDebug>
 
 namespace classic_books::db {
+
+static const QString kDatabaseFileName = QStringLiteral("classic_books.db");
+
+QString databaseFilePath()
+{
+    return QDir(QCoreApplication::applicationDirPath()).filePath(kDatabaseFileName);
+}
 
 bool initializeDatabase(const QString &filePath, const QString &connectionName)
 {

@@ -21,7 +21,7 @@ void CollectorWorker::run() {
 
     // 1. Initialize thread-local database connection
     QString connectionName = "collector_connection";
-    if (!classic_books::db::initializeDatabase("classic_books.db", connectionName)) {
+    if (!classic_books::db::initializeDatabase(classic_books::db::databaseFilePath(), connectionName)) {
         qWarning() << "Collector thread failed to initialize database.";
         return;
     }

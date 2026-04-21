@@ -8,7 +8,7 @@ int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
 
-    if (classic_books::db::initializeDatabase("classic_books.db")) {
+    if (classic_books::db::initializeDatabase(classic_books::db::databaseFilePath())) {
         classic_books::db::createSchema();
         classic_books::db::insertSampleData();
     }
