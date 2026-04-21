@@ -122,19 +122,30 @@ void GutenbergAdapter::onExtractionFinished(int exitCode, QProcess::ExitStatus e
 }
 
 QString GutenbergAdapter::normalizeFormatName(const QString& url, const QString& mimeType) {
-    QString formatName = "UNKNOWN";
-    QString lowerUrl = url.toLower();
-    QString lowerMime = mimeType.toLower();
-
-    if (lowerMime.contains("epub") || lowerUrl.endsWith(".epub")) formatName = "EPUB";
-    else if (lowerMime.contains("pdf") || lowerUrl.endsWith(".pdf")) formatName = "PDF";
-    else if (lowerMime.contains("html") || lowerUrl.endsWith(".html") || lowerUrl.endsWith(".htm")) formatName = "HTML";
-    else if (lowerMime.contains("plain") || lowerUrl.endsWith(".txt")) formatName = "TXT";
-    else if (lowerMime.contains("mobipocket") || lowerUrl.endsWith(".mobi")) formatName = "MOBI";
-    else if (lowerMime.contains("zip") || lowerUrl.endsWith(".zip")) formatName = "ZIP";
-    else if (lowerUrl.endsWith(".jpg") || lowerUrl.endsWith(".jpeg")) formatName = "COVER";
+    Q_UNUSED(url);
+    if (mimeType.isEmpty()) {
+        return QString();
+    }
     
-    return formatName;
+    QString lowerMime = mimeType.toLower();
+    if (lowerMime.contains("image")) {
+        return QString();
+    }
+
+    if (lowerMime == "application/epub+zip") return "epub";
+    if (lowerMime == "text/plain") return "text_plain";
+    if (lowerMime == "text/html") return "html";
+    if (lowerMime == "application/pdf") return "pdf";
+    if (lowerMime == "application/x-mobipocket-ebook") return "mobi";
+    if (lowerMime == "application/octet-stream") return "octet_stream";
+    if (lowerMime == "text/rtf") return "rtf";
+    if (lowerMime == "text/xml") return "xml";
+
+    QStringList parts = lowerMime.split('/');
+    if (!parts.isEmpty()) {
+        return parts.last().replace('+', '_').replace('-', '_');
+    }
+    return lowerMime.replace('+', '_').replace('-', '_');
 }
 
 void GutenbergAdapter::parseExtractedRdfFiles(const QString& extractDir) {
@@ -175,17 +186,19 @@ void GutenbergAdapter::parseSingleRdf(const QString& filePath, QList<DiscoveredB
     if (baseName.startsWith("pg")) baseName = baseName.mid(2);
     book.sourceId = baseName;
 
-    QString currentTag;
-    QString currentParentTag;
+    QStringList path;
     QString currentFormatUrl;
     QString currentFormatMime;
-    bool inCreator = false;
+    QMap<QString, int> formatCounts;
+    QStringList subjects;
+    QStringList types;
     
     while (!xml.atEnd() && !xml.hasError()) {
         QXmlStreamReader::TokenType token = xml.readNext();
         
         if (token == QXmlStreamReader::StartElement) {
             QString name = xml.name().toString();
+            path.append(name);
             
             if (name == "ebook") {
                 QString about = xml.attributes().value("rdf:about").toString();
@@ -194,49 +207,80 @@ void GutenbergAdapter::parseSingleRdf(const QString& filePath, QList<DiscoveredB
                 if (match.hasMatch()) {
                     book.sourceId = match.captured(1);
                 }
-            } else if (name == "creator") {
-                inCreator = true;
-            } else if (name == "title") {
-                book.title = xml.readElementText().trimmed();
-            } else if (name == "name" && inCreator) {
-                book.authors.append(xml.readElementText().trimmed());
-            } else if (name == "value") {
-                if (currentParentTag == "subject") {
-                    book.subjects.append(xml.readElementText().trimmed());
-                } else if (currentParentTag == "language") {
-                    book.languages.append(xml.readElementText().trimmed());
-                } else if (currentParentTag == "format") {
-                    currentFormatMime = xml.readElementText().trimmed();
-                }
             } else if (name == "file") {
                 currentFormatUrl = xml.attributes().value("rdf:about").toString();
                 currentFormatMime.clear();
+            } else if (name == "title") {
+                book.title = xml.readElementText().trimmed();
+                if (!path.isEmpty()) path.removeLast(); // text read moves past EndElement
+            } else if (name == "name" && path.size() >= 3 && path.at(path.size()-2) == "agent" && path.at(path.size()-3) == "creator") {
+                book.authors.append(xml.readElementText().trimmed());
+                if (!path.isEmpty()) path.removeLast();
+            } else if (name == "value") {
+                QString val = xml.readElementText().trimmed();
+                if (!path.isEmpty()) path.removeLast();
+                if (path.contains("subject")) {
+                    subjects.append(val);
+                } else if (path.contains("language")) {
+                    book.languages.append(val);
+                } else if (path.contains("format")) {
+                    currentFormatMime = val;
+                } else if (path.contains("type")) {
+                    types.append(val);
+                }
             }
-            
-            if (name == "subject" || name == "language" || name == "format") {
-                currentParentTag = name;
-            }
-            
         } else if (token == QXmlStreamReader::EndElement) {
             QString name = xml.name().toString();
-            if (name == "creator") {
-                inCreator = false;
-            } else if (name == "subject" || name == "language" || name == "format") {
-                currentParentTag.clear();
-            } else if (name == "file") {
+            if (name == "file") {
                 if (!currentFormatUrl.isEmpty()) {
                     QString formatName = normalizeFormatName(currentFormatUrl, currentFormatMime);
-                    if (formatName != "UNKNOWN" && formatName != "COVER" && formatName != "ZIP") {
-                        book.formats[formatName] = currentFormatUrl;
+                    if (!formatName.isEmpty()) {
+                        formatCounts[formatName]++;
+                        QString linkKey = QString("%1_%2").arg(formatName).arg(formatCounts[formatName]);
+                        book.formats[linkKey] = currentFormatUrl;
                     }
                     currentFormatUrl.clear();
                     currentFormatMime.clear();
                 }
             }
+            if (!path.isEmpty()) {
+                path.removeLast();
+            }
         }
     }
 
     if (!book.title.isEmpty() && !book.sourceId.isEmpty()) {
+        QString genre;
+        QStringList possibleKeywords = {
+            "fiction", "novel", "poetry", "drama", "history",
+            "biography", "science", "philosophy", "juvenile",
+            "children's stories", "adventure", "mystery",
+            "fantasy", "science fiction", "horror", "thriller",
+            "romance", "short stories", "gothic fiction"
+        };
+        
+        if (!subjects.isEmpty()) {
+            for (const QString& subj : subjects) {
+                QString lowerSubj = subj.toLower();
+                for (const QString& keyword : possibleKeywords) {
+                    if (lowerSubj.contains(keyword)) {
+                        genre = keyword; // Use the matched keyword as a clean genre
+                        break;
+                    }
+                }
+                if (!genre.isEmpty()) break;
+            }
+            if (genre.isEmpty()) {
+                genre = subjects.mid(0, 2).join(", ");
+            }
+        } else if (!types.isEmpty()) {
+            genre = types.first();
+        }
+        
+        // Use the simplified genre/subject
+        book.subjects.clear();
+        if (!genre.isEmpty()) book.subjects.append(genre);
+
         batch.append(book);
     }
 }

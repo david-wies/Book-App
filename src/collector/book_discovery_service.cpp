@@ -36,6 +36,8 @@ void BookDiscoveryService::onBooksDiscovered(const QList<classic_books::collecto
     for (const auto& book : books) {
         insertBookIntoDatabase(book, sourceName);
     }
+    
+    qDebug() << "BookDiscoveryService: Finished updating the database for" << books.size() << "books from" << sourceName;
 }
 
 void BookDiscoveryService::onFetchCompleted(bool success, const QString& errorMessage) {
