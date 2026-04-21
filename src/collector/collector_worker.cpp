@@ -3,6 +3,7 @@
 #include "book_discovery_service.h"
 #include "gutenberg_adapter.h"
 #include <QDebug>
+#include <QMetaObject>
 #include <QTimer>
 
 namespace classic_books {
@@ -11,9 +12,28 @@ namespace collector {
 CollectorWorker::CollectorWorker(QObject* parent) : QThread(parent) {}
 
 CollectorWorker::~CollectorWorker() {
-    requestInterruption();
-    quit();
+    requestShutdownAfterCurrentUpdate();
     wait();
+}
+
+void CollectorWorker::requestShutdownAfterCurrentUpdate() {
+    m_shutdownRequested.store(true);
+
+    auto* discoveryService = m_discoveryService.data();
+    if (!discoveryService) {
+        quit();
+        return;
+    }
+
+    QMetaObject::invokeMethod(discoveryService, [this]() {
+        if (m_pollTimer) {
+            m_pollTimer->stop();
+        }
+
+        if (!m_updateInProgress.load()) {
+            QThread::currentThread()->quit();
+        }
+    }, Qt::QueuedConnection);
 }
 
 void CollectorWorker::run() {
@@ -30,12 +50,30 @@ void CollectorWorker::run() {
     BookDiscoveryService discoveryService(connectionName);
     m_discoveryService = &discoveryService;
     m_discoveryService->addAdapter(new GutenbergAdapter(m_discoveryService));
+    connect(m_discoveryService, &BookDiscoveryService::updateStarted, this, [this]() {
+        m_updateInProgress.store(true);
+    }, Qt::DirectConnection);
+    connect(m_discoveryService, &BookDiscoveryService::updateFinished, this, [this]() {
+        m_updateInProgress.store(false);
+
+        if (m_shutdownRequested.load()) {
+            if (m_pollTimer) {
+                m_pollTimer->stop();
+            }
+            QThread::currentThread()->quit();
+        }
+    }, Qt::DirectConnection);
 
     // 3. Start first discovery right away, and set up timer
     m_discoveryService->startDiscovery();
 
     QTimer timer;
+    m_pollTimer = &timer;
     connect(&timer, &QTimer::timeout, this, [this]() {
+        if (m_shutdownRequested.load()) {
+            return;
+        }
+
         qDebug() << "Collector timer tick: starting discovery...";
         m_discoveryService->startDiscovery();
     });
@@ -45,6 +83,8 @@ void CollectorWorker::run() {
     // Enter thread event loop
     exec();
 
+    m_pollTimer = nullptr;
+    m_discoveryService = nullptr;
     qDebug() << "Data collector background thread stopped.";
 }
 

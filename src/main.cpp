@@ -3,6 +3,7 @@
 #include <QLabel>
 #include <QIcon>
 #include <QDir>
+#include <QObject>
 #include "database.h"
 #include "collector/collector_worker.h"
 
@@ -32,13 +33,24 @@ int main(int argc, char *argv[])
     label->setAlignment(Qt::AlignCenter);
     window.setCentralWidget(label);
 
+    app.setQuitOnLastWindowClosed(false);
+    QObject::connect(&app, &QGuiApplication::lastWindowClosed, &collector, [&collector]() {
+        collector.requestShutdownAfterCurrentUpdate();
+    });
+    QObject::connect(&collector, &QThread::finished, &app, [&app, &window]() {
+        if (!window.isVisible()) {
+            app.quit();
+        }
+    });
+
     window.show();
     
     int result = app.exec();
     
-    // Stop background thread cleanly
-    collector.quit();
-    collector.wait();
+    if (collector.isRunning()) {
+        collector.requestShutdownAfterCurrentUpdate();
+        collector.wait();
+    }
     
     return result;
 }

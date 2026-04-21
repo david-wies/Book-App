@@ -15,6 +15,10 @@ public:
     void addAdapter(ISourceAdapter* adapter);
     void startDiscovery();
 
+signals:
+    void updateStarted();
+    void updateFinished();
+
 private slots:
     void onBooksDiscovered(const QList<classic_books::collector::DiscoveredBook>& books);
     void onFetchCompleted(bool success, const QString& errorMessage);
@@ -24,6 +28,7 @@ private:
 
     QString m_dbConnectionName;
     QList<ISourceAdapter*> m_adapters;
+    int m_activeFetches{0};
 };
 
 } // namespace classic_books::collector

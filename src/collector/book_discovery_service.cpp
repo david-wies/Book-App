@@ -21,6 +21,16 @@ void BookDiscoveryService::addAdapter(ISourceAdapter* adapter) {
 
 void BookDiscoveryService::startDiscovery() {
     qDebug() << "BookDiscoveryService: Starting discovery across" << m_adapters.size() << "adapters.";
+    if (m_adapters.isEmpty()) {
+        return;
+    }
+
+    const bool wasIdle = (m_activeFetches == 0);
+    m_activeFetches += m_adapters.size();
+    if (wasIdle) {
+        emit updateStarted();
+    }
+
     for (auto adapter : m_adapters) {
         adapter->fetchBooks();
     }
@@ -48,6 +58,14 @@ void BookDiscoveryService::onFetchCompleted(bool success, const QString& errorMe
         qDebug() << "BookDiscoveryService:" << sourceName << "fetch completed successfully.";
     } else {
         qWarning() << "BookDiscoveryService:" << sourceName << "fetch failed:" << errorMessage;
+    }
+
+    if (m_activeFetches > 0) {
+        --m_activeFetches;
+    }
+
+    if (m_activeFetches == 0) {
+        emit updateFinished();
     }
 }
 
