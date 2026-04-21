@@ -1,6 +1,0 @@
-set(__QT_DEPLOY_TARGET_shared_FILE /home/david/VS Code Projects/Books/build/libshared.a)
-set(__QT_DEPLOY_TARGET_shared_TYPE STATIC_LIBRARY)
-set(__QT_DEPLOY_TARGET_classic-books-gui_FILE /home/david/VS Code Projects/Books/build/classic-books-gui)
-set(__QT_DEPLOY_TARGET_classic-books-gui_TYPE EXECUTABLE)
-set(__QT_DEPLOY_TARGET_classic-books-collector_FILE /home/david/VS Code Projects/Books/build/classic-books-collector)
-set(__QT_DEPLOY_TARGET_classic-books-collector_TYPE EXECUTABLE)
