@@ -1,26 +1,39 @@
-**AGENTS.md – Essential guidance for OpenCode agents**
+# Available Agents
 
-- **Out‑of‑tree CMake builds** – always `mkdir -p build && cd build && cmake .. && make`. Running `cmake ..` from the source root fails because the Qt6 CMake files are only added via a fallback path in `CMakeLists.txt`.
+This document lists all available custom agents in this repository, along with their descriptions and purposes.
 
-- **Qt6 discovery on Ubuntu/Debian** – Qt6 CMake modules live in `/usr/lib/x86_64-linux-gnu/cmake`; the top‑level CMake script appends this path automatically.
+## Agent List
 
-- **Component layout**
-  - `src/shared/` → static `shared` library (SQLite `Database`).
-  - `src/collector/` → console executable, links to `shared`.
-  - `src/gui/` → Qt6 Widgets GUI executable, links to `shared` and `Qt6::Widgets`.
+| Agent Name | Description | File |
+|------------|-------------|------|
+| Thinking Beast Mode | A transcendent coding agent with quantum cognitive architecture, adversarial intelligence, and unrestricted creative freedom. | `Thinking-Beast-Mode.agent.md` |
+| Context Architect | An agent that helps plan and execute multi-file changes by identifying relevant context and dependencies | `context-architect.agent.md` |
+| Critical Thinking | Challenge assumptions and encourage critical thinking to ensure the best possible solution and outcomes. | `critical-thinking.agent.md` |
+| Custom Agent Foundry | Expert at designing and creating VS Code custom agents with optimal configurations | `custom-agent-foundry.agent.md` |
+| Debug | Debug your application to find and fix a bug | `debug.agent.md` |
+| Expert C++ Software Engineer | Provide expert C++ software engineering guidance using modern C++ and industry best practices. | `expert-cpp-software-engineer.agent.md` |
+| Database Specialist | Database specialist with deep experience in table-based and relational database design, schema modeling, query tuning, and migration planning. | `database-specialist.agent.md` |
+| MVP to Project Designer | Use when transforming MVP specifications (markdown, JSON, diagrams, images) into software architecture designs, considering programming language, tools, and operating system. | `mvp-to-project-designer.agent.md` |
+| Simple App Idea Generator | Brainstorm and develop new application ideas through fun, interactive questioning until ready for specification creation. | `simple-app-idea-generator.agent.md` |
+| Specification | Generate or update specification documents for new or existing functionality. | `specification.agent.md` |
 
-- **Run order** – collector must be executed first to create/refresh `books.db`; the GUI reads this DB. Skipping the collector leaves the GUI with no data.
+## How to Use Agents
 
-- **Compiler requirement** – C++23 (`set(CMAKE_CXX_STANDARD 23)`) → need GCC 13+ / Clang 16+.
+To invoke an agent, use the `/` command in GitHub Copilot Chat followed by the agent name, or select from the agent picker.
 
-- **CI workflow** – GitHub Actions runs:
-  1. `apt-get install -y build-essential cmake qtbase5-dev libgtk-3-dev`
-  2. `mkdir build && cd build && cmake ..`
-  3. `cd build && make -j$(nproc)`
-  4. `cd build && ctest --output-on-failure || echo "No tests found"`
+Example: `/specification` to start the specification agent.
 
-- **No test suite** – verification is manual: run collector, then GUI.
+## Adding New Agents
 
-- **Docs folder** – `docs/` is for internal development only and will be removed; it does not affect build or runtime.
+To add a new agent:
+1. Create a new `.agent.md` file in the `.github/agents/` directory
+2. Follow the standard frontmatter format with `name`, `description`, and optional `tools`
+3. Add the agent to this AGENTS.md file
+4. Test the agent configuration
 
-- **Agents catalog** – custom agents are listed under `.github/agents/` (e.g., `expert-cpp-software-engineer.agent.md`). Use `/agent-name` in Copilot Chat to invoke.
+## Agent Guidelines
+
+- Each agent should have a clear, focused purpose
+- Descriptions should be concise but informative
+- Tools should be specified if the agent requires specific capabilities
+- Agents should follow the established patterns and best practices

@@ -1,0 +1,19 @@
+# Build directory
+build/
+
+# Related Code (external scripts)
+Related Code/
+
+# Database files (local data)
+*.db
+*.db-journal
+
+# IDE and editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -11,8 +11,8 @@
           <mxGeometry x="50" y="300" width="80" height="100" as="geometry"/>
         </mxCell>
 
-        <!-- GUI Process -->
-        <mxCell id="gui-process" value="GUI Process&#xa;(Qt Application)" style="swimlane;whiteSpace=wrap;html=1;startSize=30;" vertex="1" parent="1">
+        <!-- GUI Thread -->
+        <mxCell id="gui-process" value="GUI Thread&#xa;(Qt Application)" style="swimlane;whiteSpace=wrap;html=1;startSize=30;" vertex="1" parent="1">
           <mxGeometry x="200" y="50" width="400" height="600" as="geometry"/>
         </mxCell>
 
@@ -62,8 +62,8 @@
           <mxGeometry x="10" y="80" width="100" height="40" as="geometry"/>
         </mxCell>
 
-        <!-- Data Collector Process -->
-        <mxCell id="data-collector-process" value="Data Collector Process&#xa;(Background Service)" style="swimlane;whiteSpace=wrap;html=1;startSize=30;" vertex="1" parent="1">
+        <!-- Data Collector Thread -->
+        <mxCell id="data-collector-process" value="Data Collector Thread&#xa;(Background Service)" style="swimlane;whiteSpace=wrap;html=1;startSize=30;" vertex="1" parent="1">
           <mxGeometry x="650" y="200" width="400" height="300" as="geometry"/>
         </mxCell>
 

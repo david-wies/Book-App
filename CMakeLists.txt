@@ -4,23 +4,25 @@ project(DigitalLibraryHub LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
+set(CMAKE_AUTOUIC ON)
 
 # Ubuntu/Debian Qt6 install path fallback
 list(APPEND CMAKE_PREFIX_PATH "/usr/lib/x86_64-linux-gnu/cmake")
-find_package(Qt6 COMPONENTS Widgets Sql REQUIRED)
+find_package(Qt6 COMPONENTS Widgets Sql Network REQUIRED)
 
 add_library(shared STATIC
     src/shared/database.cpp
 )
 target_include_directories(shared PUBLIC src/shared)
-target_link_libraries(shared PUBLIC Qt6::Sql)
+target_link_libraries(shared PUBLIC Qt6::Sql Qt6::Network)
 
-add_executable(classic-books-gui
-    src/gui/main.cpp
+add_executable(classic-books
+    src/main.cpp
+    src/collector/collector_worker.cpp
+    src/collector/source_adapter.cpp
+    src/collector/gutenberg_adapter.cpp
+    src/collector/book_discovery_service.cpp
 )
-target_link_libraries(classic-books-gui PRIVATE Qt6::Widgets shared)
-
-add_executable(classic-books-collector
-    src/collector/main.cpp
-)
-target_link_libraries(classic-books-collector PRIVATE Qt6::Core shared)
+target_link_libraries(classic-books PRIVATE Qt6::Widgets Qt6::Network shared)

@@ -20,19 +20,19 @@
 
 ### 3.1 Overall approach
 
-Build a native C++ application with **two separate processes**:
+Build a single native C++ application (one program) utilizing **two separate threads/processes**:
 
-1. **GUI Process**: Runs the Qt desktop interface (Library, Search, Explore, BookDetails, Download/Audiobook flows). Reads from the shared SQLite database and handles user interactions.
-2. **Data Collector Process**: Runs in the background and periodically refreshes book metadata from sources (Gutenberg, Ben-Yehuda, etc.). Updates the SQLite database on a configurable schedule.
+1. **GUI Thread/Process**: Runs the Qt desktop interface (Library, Search, Explore, BookDetails, Download/Audiobook flows). Reads from the shared SQLite database and handles user interactions.
+2. **Data Collector Thread/Process**: Runs in the background and periodically refreshes book metadata from sources (Gutenberg, Ben-Yehuda, etc.). Updates the SQLite database on a configurable schedule.
 
-This architecture keeps the GUI responsive, separates concerns, and enables user-configurable update frequency.
+This single-program architecture keeps the GUI responsive, separates concerns, and enables user-configurable update frequency.
 
 Recommended layers:
 
 - **GUI layer**: Qt Quick or Qt Widgets for responsive user interface
 - **GUI services**: LibraryService, AudiobookService, VoiceService (read-only access to database)
 - **Data collector**: SourceAdapterService, BookDiscoveryService (fetches and normalizes metadata)
-- **Persistence**: SQLite for metadata and user library, shared between both processes
+- **Persistence**: SQLite for metadata and user library, shared between both threads
 - **Source adapters**: pluggable C++ components for Gutenberg, Ben-Yehuda, and future providers
 - **Audio integration**: native or external TTS service for voice preview and generation
 
@@ -47,7 +47,7 @@ Recommended C++ stack for MVP:
 - Persistence: SQLite via Qt SQL or a lightweight ORM wrapper
 - HTTP/network: Qt Network or libcurl for source integration and remote API access
 - Audio: Qt Multimedia for playback and file handling; optional external TTS SDK or local TTS engine for generation
-- Threading/Process: Qt threading (QThread) for background tasks within each process; optional platform-specific process management
+- Threading/Process: Qt threading (QThread) for running the data collector background tasks alongside the main GUI thread; optional platform-specific subprocess management if needed
 - Packaging: platform-native installers or self-contained app bundles for Windows, macOS, and Linux
 - IPC: Direct SQLite file access with proper locking, or Qt-based messaging if needed
 
@@ -77,7 +77,7 @@ Books (nested by ISBN)
   - Excellent Qt integration via Qt SQL module
   - Supports the normalized relational schema naturally (Books → Formats → Sources)
   - Handles array-like data (genres, multiple formats/sources) through normalization
-  - Built-in locking for concurrent access from GUI and data collector processes
+  - Built-in locking for concurrent access from GUI and data collector threads
   - Simple deployment and user data portability
   - Sufficient performance for MVP-scale book metadata (public-domain archives typically have 50k-500k books)
   - Easy to extend later without architectural changes
@@ -108,9 +108,9 @@ This is exactly what relational databases are designed for—efficient storage a
 
 ## 4. Core Components
 
-### 4.1 GUI Process components
+### 4.1 GUI Thread components
 
-**UI Screens** (Qt-based, run in GUI process)
+**UI Screens** (Qt-based, run in GUI thread)
 
 1. `LibraryScreen`
    - Shows saved books with cover, title, author, language badges, source badges, and status.
@@ -145,7 +145,7 @@ This is exactly what relational databases are designed for—efficient storage a
    - Step 4: preview sample.
    - Step 5: generate and save audio.
 
-**GUI Services** (run in GUI process)
+**GUI Services** (run in GUI thread)
 
 1. `LibraryService`
    - Manage saved library items (add, remove, update status).
@@ -166,9 +166,9 @@ This is exactly what relational databases are designed for—efficient storage a
    - Provide preview audio and final generated audio file references.
    - Update audiobook status in the database.
 
-### 4.2 Data Collector Process components
+### 4.2 Data Collector Thread components
 
-**Background Services** (run in data collector process)
+**Background Services** (run in data collector thread)
 
 1. `SourceAdapterService`
    - Connect to each source provider (Gutenberg, Ben-Yehuda, etc.).
@@ -190,7 +190,7 @@ This is exactly what relational databases are designed for—efficient storage a
 
 ### 4.3 Shared Database Schema
 
-The SQLite database is shared between both processes and contains **book metadata and details with links to external content**, not the actual book or audio files. The database stores references, download URLs, and user library state.
+The SQLite database is shared between the GUI and Data Collector threads and contains **book metadata and details with links to external content**, not the actual book or audio files. The database stores references, download URLs, and user library state.
 
 Entities stored in the database:
 
@@ -435,7 +435,7 @@ The architecture has three main layers:
 This separation keeps the UI responsive, the business logic centralized in C++, source extension manageable, and the database lightweight by storing only metadata and links.
 ## 8. Rationale and Recommendations
 
-- **Two-process separation**: GUI and data collector run independently, keeping the UI responsive while metadata is refreshed in the background on a configurable schedule.
+- **Thread separation within a single program**: GUI and data collector run independently as separate threads, keeping the UI responsive while metadata is refreshed in the background on a configurable schedule.
 - **Metadata-only database**: The SQLite database stores only book details, links, and user library state—not actual content. This keeps the database lightweight and allows flexibility in future content storage decisions.
 - **Local content storage**: Downloaded books and generated audio are stored on the user's local filesystem, not in the database, reducing database size and simplifying backups.
 - **Clear separation between discovery/search and audiobook generation**: Supports future extension and allows each flow to evolve independently.
@@ -448,8 +448,8 @@ This separation keeps the UI responsive, the business logic centralized in C++, 
 
 1. Define SQLite database schema for Book, Edition, Source, Format, LibraryItem, and Voice entities.
 2. Implement the first source adapter (e.g., Gutenberg) to fetch and normalize book metadata.
-3. Build the data collector process with configurable update schedule.
-4. Build the GUI process with Qt and implement Library and BookDetails screens first.
+3. Build the data collector background thread with configurable update schedule.
+4. Build the GUI components with Qt and implement Library and BookDetails screens first.
 5. Implement Search and Explore screens once the core metadata queries are stable.
 6. Add Download flow and Audiobook flow after the core discovery experience is working.
 7. Implement voice preview and generation as the final MVP phase.
