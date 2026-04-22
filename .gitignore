@@ -32,3 +32,5 @@ CLAUDE.md
 .github/instructions/
 .github/skills/
 .github/AGENTS.md
+.venv/
+venv/
