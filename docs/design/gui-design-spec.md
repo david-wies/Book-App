@@ -1,4 +1,4 @@
-# Classic Books + Audiobook Hub — GUI Design Specification
+# BookHub — GUI Design Specification
 
 **Version:** 1.0  
 **Date:** 2026-04-22  
@@ -26,7 +26,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  [icon]  Classic Books + Audiobook Hub          [_] [□] [X]         │
+│  [icon]  BookHub          [_] [□] [X]         │
 ├─────────────────────────────────────────────────────────────────────┤
 │  ┌─────────────────────────────────────────────────────────────┐    │
 │  │  [Library]        [Search]        [Explore]                 │    │
@@ -177,19 +177,21 @@ graph TD
 
 **Book Card (delegate rendered row):**
 
-Each row is 96 px tall (list mode) or a 200 × 260 px card (grid mode). Contains:
+Each row is 96 px tall (list mode) or a 200 × 260 px card (grid mode). The two modes differ in available actions — see table below.
 
-| Sub-widget | Type | Binding |
-|------------|------|---------|
-| Cover thumbnail | `QPixmap` scaled to 64 × 88 px | `books.book_id` → placeholder if no cover |
-| Title | `QLabel`, bold, 14 pt | `books.title` |
-| Author | `QLabel`, regular, 12 pt, muted | `books.author` |
-| Language badges | Inline colour pills | `editions.language` (distinct per book, joined via `book_id`) |
-| Source badges | Inline colour pills | `sources.source_name` (distinct per book) |
-| Status label | `QLabel` with icon prefix | `library_items.status` |
-| Details button | `QToolButton` | Opens BookDetailsPanel |
-| Download / Audiobook button | `QToolButton` | Opens DownloadFlowDialog or AudiobookFlowDialog |
-| Remove button | `QToolButton` (icon only, trash) | Calls LibraryService::removeItem; confirms with inline prompt |
+| Sub-widget | List mode | Grid mode |
+|------------|-----------|-----------|
+| Cover thumbnail | `QPixmap` scaled to 64 × 88 px; grey rounded-rect placeholder when no cover available | Fills upper portion of card (~140 px); same placeholder |
+| Title | Bold, 14 pt | Bold, 13 pt, 2-line clamp |
+| Author | 12 pt muted | 12 pt muted, 1-line clamp |
+| Language badges | Inline colour pills | Hidden (too narrow) |
+| Source badges | Inline colour pills | Hidden (too narrow) |
+| Status label | Icon prefix + text | Text only below author |
+| Details button | `QToolButton` | **Not shown** — double-click the card instead |
+| Download / Audiobook button | `QToolButton` | **Not shown** |
+| Remove button | `QToolButton` (trash icon) | **Not shown** |
+
+**Grid mode interaction note:** Action buttons are omitted in grid mode because 200 px cards do not have enough horizontal space for usable button targets. The user double-clicks a grid card to open BookDetailsPanel, where all actions are available.
 
 **Library Item Status Values & Display:**
 
@@ -216,11 +218,11 @@ Each row is 96 px tall (list mode) or a 200 × 260 px card (grid mode). Contains
 - **Loading:** `QProgressBar` (indeterminate) while initial DB query runs
 
 **Interactions:**
-- Double-click a card row → opens BookDetailsPanel
-- "Details" button → opens BookDetailsPanel
-- "Download" button → opens DownloadFlowDialog
-- "Audiobook" button → opens AudiobookFlowDialog
-- "Remove" button → inline confirmation ("Remove this book from your library?") via a small popup anchored to the button; confirmed removal calls LibraryService and refreshes the list model
+- Double-click a card (list or grid) → opens BookDetailsPanel
+- "Details" button (list mode) → opens BookDetailsPanel
+- "Download" button (list mode) → opens DownloadFlowDialog
+- "Audiobook" button (list mode) → opens AudiobookFlowDialog
+- "Remove" button (list mode) → `QMessageBox` confirmation dialog ("Remove this book from your library?"); confirmed removal calls `LibraryService::removeBook` and refreshes the list model
 
 **Accessibility:**
 - Each book card announces "Title by Author. Status: downloaded. Language: English." via `QAccessibleWidget`
@@ -888,7 +890,7 @@ graph TD
   - Format: check by file extension.
   - Quality: placeholder for Phase 4 (shown as greyed-out row in MVP).
 - "Validate & Upload" is enabled only when all checks pass.
-- On upload: stores voice metadata in a local `voices` table (to be added to schema); adds to custom voice list.
+- On upload: stores voice metadata in the `voices` table (see Appendix B, Q3 for schema); adds to custom voice list.
 
 **Preview Page:**
 - Displays first ~200 characters of the selected text format as the sample text.
@@ -1081,27 +1083,31 @@ src/
 
 ## Appendix B: Open Questions
 
-1. **Cover images:** Gutenberg does not always provide cover art. Should the app fetch cover images from a third-party API (e.g. Open Library Covers API), or always show a generated placeholder? Decision needed before implementing `BookCardDelegate`.
+1. **Cover images:** ~~Decision needed before implementing `BookCardDelegate`.~~ **Resolved (Task 6):** `BookCardDelegate` renders a grey rounded-rect placeholder for all books. Third-party cover art (e.g. Open Library Covers API) is deferred — when implemented, the delegate will load a `QPixmap` asynchronously and call `update()` on the view; the placeholder remains until the image is ready.
 
-2. **TTS engine:** Is TTS provided by a local engine (e.g. eSpeak, Coqui) bundled with the app, or by a remote API? This affects AudiobookFlowDialog's progress model significantly (local = progress from bytes generated; remote = polling).
+2. **TTS engine:** ~~Decision needed before implementing AudiobookFlowDialog.~~ **Resolved:** Two local engines, selected automatically based on language and user intent:
+   - **[Sherpa-ONNX](https://github.com/k2-fsa/sherpa-onnx)** (default, Apache 2.0) — used for all preset voices. Runs Piper-format `.onnx` + `.json` voice models natively; 40+ languages; actively maintained (v1.12.39, April 2026). C++ API with CMake support; ONNX Runtime is its core dependency.
+   - **[PocketTTS.cpp](https://github.com/VolgaGerm/PocketTTS.cpp)** — used only when (a) the book's language is supported (EN, FR, DE, IT, PT, ES) **and** (b) the user selects a custom voice. Zero-shot voice cloning from a short audio sample; 9.2× realtime on CPU; five shared ONNX model files ([models](https://huggingface.co/KevinAHM/pocket-tts-onnx)).
 
-3. **"Voices" database table:** The current schema (Tasks 1–5) does not include a `voices` table. This must be added before implementing Task 12/13. Proposed schema:
+   The engine switch is transparent to the user — `AudiobookService` selects the backend; `AudiobookFlowDialog` shows the "Custom voice" option only when the active language is PocketTTS-supported. Progress reporting for both engines is chunk-based (local inference), so the `QProgressBar` model is identical.
+
+3. **"Voices" database table:** ~~Decision needed before implementing Task 12/13.~~ **Resolved:** The `voices` table must accommodate both engines. Piper voices are model files; PocketTTS voices are reference audio samples (the five ONNX model files are shared infrastructure stored in `QSettings`, not per-voice rows).
    ```sql
    CREATE TABLE voices (
-     id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-     name                 TEXT NOT NULL,
-     type                 TEXT NOT NULL CHECK(type IN ('preset', 'custom')),
-     sample_text          TEXT,
-     upload_status        TEXT,
-     voice_model_reference TEXT,
-     created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+     name                  TEXT NOT NULL,
+     type                  TEXT NOT NULL CHECK(type IN ('preset', 'custom')),
+     engine                TEXT NOT NULL CHECK(engine IN ('sherpa_onnx', 'pocket_tts')),
+     model_path            TEXT,   -- Sherpa-ONNX: path to .onnx file; PocketTTS: NULL
+     config_path           TEXT,   -- Sherpa-ONNX: path to .json config; PocketTTS: NULL
+     reference_audio_path  TEXT,   -- PocketTTS: path to conditioning .wav/.mp3; Sherpa-ONNX: NULL
+     created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
    );
    ```
-   Note: this table does not reference `books` directly; audiobook generation state is tracked via
-   `library_items.status` using the `book_id` foreign key.
+   Audiobook generation state continues to be tracked via `library_items.status` using the `book_id` foreign key — the `voices` table does not reference `books`.
 
-4. **Download directory:** Should the app let the user configure the download directory on first run (a settings screen), or always use `~/Books/` with a per-session override? A minimal settings screen is not in the task list but may be needed for usability.
+4. **Download directory:** ~~Decision needed before implementing DownloadFlowDialog.~~ **Resolved:** The default download directory is `QDir::homePath()`. On each download the app opens a `QFileDialog` pre-seeded with the last-used directory (or home on first use); the chosen path is stored in `QSettings` and becomes the pre-seed for the next download. There is no separate settings screen — the dialog itself is the only place the directory is chosen.
 
-5. **BookDetailsPanel placement:** Right-side split pane vs. a full-screen push (replacing the list)? The split pane is specified here because it preserves context, but at narrow window widths (<900 px) it may need to go full-screen.
+5. **BookDetailsPanel placement:** ~~Decision needed before implementing Task 9.~~ **Resolved:** `BookDetailsPanel` always uses a right-side `QSplitter` split pane (50/50). The enforced minimum window width of 900 px ensures both panes remain usable at all times. No full-screen push mode is required.
 
-6. **"Trending" definition:** Until real usage data exists, "Trending" can be defined as the 20 most recently added books to `library_items` across the local DB. Should this be marked clearly as "Recently Added" rather than "Trending" to avoid misleading users?
+6. **"Trending" definition:** ~~Decision needed before implementing ExploreScreen.~~ **Resolved:** "Trending" is defined as the 20 most recently discovered books (`SELECT * FROM books ORDER BY rowid DESC LIMIT 20`). Querying `books` rather than `library_items` guarantees content is always shown on first launch before the user has saved anything. The section label remains "TRENDING".

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <mxfile host="Electron" modified="2026-04-06T12:00:00.000Z" version="26.0.0">
-  <diagram id="classic-books-architecture" name="Classic Books + Audiobook Hub Architecture">
+  <diagram id="classic-books-architecture" name="BookHub Architecture">
     <mxGraphModel dx="1422" dy="794" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
       <root>
         <mxCell id="0"/>

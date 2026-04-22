@@ -1,8 +1,8 @@
-# Classic Books + Audiobook Hub — Design Document
+# BookHub — Design Document
 
 ## 1. Project Summary
 
-**Product:** Classic Books + Audiobook Hub
+**Product:** BookHub
 
 **Goal:** Deliver a minimal, user-friendly experience for discovering public-domain books, saving them to a personal library, downloading ebook formats, and converting text editions into audiobooks using preset and custom voices.
 
@@ -401,7 +401,7 @@ For a C++ native MVP, deploy as a desktop application rather than a web-hosted S
 
 ## 7. Architecture Diagram
 
-See [classic-books-architecture.drawio](classic-books-architecture.drawio) for the complete visual architecture diagram.
+See [classic-books-architecture.drawio](classic-books-architecture.drawio) for the complete visual architecture diagram for BookHub.
 
 The architecture has three main layers:
 

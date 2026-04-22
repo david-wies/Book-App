@@ -2,7 +2,7 @@
 
 ## Overview
 
-Classic Books + Audiobook Hub aggregates public-domain books from multiple sources (Project Gutenberg,
+BookHub aggregates public-domain books from multiple sources (Project Gutenberg,
 Internet Archive, Ben-Yehuda, and future providers). Most of these books predate the ISBN standard
 (introduced in 1970) and carry no ISBN at all. The original schema used `isbn TEXT PRIMARY KEY` and
 papered over missing ISBNs with synthesised pseudo-keys like `"gutenberg_1342"`. This conflated two
@@ -91,7 +91,7 @@ stopping at the first identifier found:
 |----------|----------|--------|---------|
 | 1 | `lccn` | Library of Congress Control Number | `lccn:n78095332` |
 | 2 | `oclc` | OCLC / WorldCat number | `oclc:42707429` |
-| 3 | `isbn` | ISBN-13 or ISBN-10 (normalised to digits only) | `isbn:9780140449266` |
+| 3 | `isbn` | ISBN-13 only (normalised to digits only) | `isbn:9780140449266` |
 | 4 | `gutenberg` | Gutenberg numeric ID | `gutenberg:1342` |
 | 5 | `archive` | Internet Archive item identifier | `archive:moby-dick` |
 | 6 | `benyehuda` | Ben-Yehuda work number | `benyehuda:4218` |
@@ -128,11 +128,14 @@ The `GutenbergAdapter::parseSingleRdf()` method must be extended to collect thes
 The parser should collect all `<dcterms:identifier>` text values into a list while walking the XML.
 After parsing is complete, resolve them in priority order:
 
-1. Search the identifier list for any value starting with `"lccn:"` or matching the pattern
-   `http://id.loc.gov/authorities/names/n\d+`. Normalise to `lccn:<value>`.
-2. Search for any value starting with `"oclc:"`. Normalise to `oclc:<value>`.
-3. Search for a bare ISBN-10 or ISBN-13 digit string (10 or 13 digits). Normalise to
-   `isbn:<13-digits>`.
+1. Search the identifier list for any value starting with `"lccn:"`, any bare LCCN string, or any
+   LC authority URI such as `http://id.loc.gov/authorities/names/n78095332`. Normalise to the
+   canonical storage form `lccn:<normalised-string>` using Library of Congress formatting rules
+   (lowercase prefix, normalised value, zero-padded where required by LC rules).
+2. Search for any value starting with `"oclc:"`. Only use OCLC numbers that are present in the
+   source metadata; sources that do not expose OCLC are not enriched via external lookup in the MVP.
+3. Search for a bare ISBN-10 or ISBN-13 digit string (10 or 13 digits). Convert ISBN-10 to ISBN-13
+   during ingestion and normalise to `isbn:<13-digits>`.
 4. Fall back to `gutenberg:<numeric-id>` extracted from the `rdf:about` attribute.
 
 All collected raw identifier strings are stored in `identifiers` regardless of which one becomes the
@@ -157,7 +160,8 @@ In this case `resolvedId` becomes `"lccn:2007012345"` and `identifiers` contains
 Many older Gutenberg records contain only the Gutenberg URL in `dcterms:identifier`. In that case
 the fallback `gutenberg:<id>` is used as the `resolvedId`. This is not a correctness problem — it
 simply means that book cannot be deduplicated against records from other sources until a standard
-identifier is later found and the row is merged.
+identifier is later found. When that happens, the row is promoted to the stronger canonical ID and
+the old fallback identifier remains preserved in `book_identifiers`.
 
 ---
 
@@ -172,7 +176,7 @@ appear as entries in `sources` referencing the same chain of `editions → forma
 
 ### Strategy: look up by any known identifier before inserting
 
-`BookDiscoveryService::insertBookIntoDatabase()` performs a two-phase write:
+`BookDiscoveryService::insertBookIntoDatabase()` performs a four-phase write:
 
 **Phase 1 — Resolve existing row**
 
@@ -191,7 +195,15 @@ If a match is found, the existing `book_id` is used for all subsequent inserts. 
 metadata (title, author, summary) is not overwritten — the first writer wins. Only new `editions`,
 `formats`, `sources`, and `book_identifiers` rows are added.
 
-**Phase 2 — Insert if new**
+**Phase 2 — Promote primary key if a stronger identifier arrives**
+
+If Phase 1 finds an existing row keyed by a lower-priority fallback identifier (for example
+`gutenberg:1342`) and the incoming record resolves to a stronger canonical identifier (for example
+`lccn:2007012345`), the existing row is promoted to the stronger key. This update runs in a
+transaction and cascades through all foreign-key tables. The old identifier remains in
+`book_identifiers`, so lookups by either identifier continue to resolve to the same work.
+
+**Phase 3 — Insert if new**
 
 If no match is found, use the `resolvedId` from the incoming record as the new primary key:
 
@@ -199,13 +211,13 @@ If no match is found, use the `resolvedId` from the incoming record as the new p
 INSERT OR IGNORE INTO books (book_id, title, author, publish_year, summary) VALUES (?, ?, ?, ?, ?);
 ```
 
-`INSERT OR IGNORE` handles the edge case where two adapters race and both reach Phase 2 with the same
+`INSERT OR IGNORE` handles the edge case where two adapters race and both reach Phase 3 with the same
 `resolvedId` simultaneously — only one insert succeeds and the other is silently discarded.
 
-**Phase 3 — Write identifiers**
+**Phase 4 — Write identifiers**
 
 Insert all identifiers from the incoming record, using the resolved `book_id` (from Phase 1 or
-Phase 2):
+Phase 1, 2, or 3):
 
 ```sql
 INSERT OR IGNORE INTO book_identifiers (book_id, type, value) VALUES (?, ?, ?);
@@ -218,13 +230,13 @@ identifier is seen again on a subsequent collector run.
 
 - **Same standard ID, different source:** fully deduplicated — one `books` row, multiple `sources` rows.
 - **Source-specific IDs only, no standard ID overlap:** not deduplicated. Two rows will exist until a
-  standard identifier becomes available via a future collector run or a manual merge.
+  stronger shared identifier becomes available on a later collector run.
 - **Conflicting metadata (different title strings for the same LCCN):** first writer wins. A future
   "metadata quality" pass can compare and promote higher-quality values, but that is out of scope for
   the MVP.
 - **ISBN collision across editions:** ISBNs are edition-specific, so two printings may have different
-  ISBNs but the same LCCN. The LCCN takes priority (higher in the resolution order), preventing false
-  merges between printings.
+  ISBN-13 values but the same LCCN. The LCCN takes priority (higher in the resolution order),
+  preventing false merges between printings.
 
 ---
 
@@ -251,7 +263,7 @@ CREATE TABLE IF NOT EXISTS book_identifiers (
     type     TEXT NOT NULL,   -- 'lccn', 'oclc', 'isbn', 'gutenberg', 'archive', 'benyehuda'
     value    TEXT NOT NULL,
     PRIMARY KEY (type, value),
-    FOREIGN KEY (book_id) REFERENCES books(book_id) ON DELETE CASCADE
+    FOREIGN KEY (book_id) REFERENCES books(book_id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- Editions: one row per language variant of a work
@@ -262,7 +274,7 @@ CREATE TABLE IF NOT EXISTS editions (
     publisher    TEXT,
     publish_date TEXT,
     UNIQUE (book_id, language),
-    FOREIGN KEY (book_id) REFERENCES books(book_id) ON DELETE CASCADE
+    FOREIGN KEY (book_id) REFERENCES books(book_id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- Genres: many-to-many (genre belongs to the work, not a language edition)
@@ -275,7 +287,7 @@ CREATE TABLE IF NOT EXISTS book_genres (
     book_id  TEXT NOT NULL,
     genre_id INTEGER NOT NULL,
     PRIMARY KEY (book_id, genre_id),
-    FOREIGN KEY (book_id)  REFERENCES books(book_id) ON DELETE CASCADE,
+    FOREIGN KEY (book_id)  REFERENCES books(book_id) ON DELETE CASCADE ON UPDATE CASCADE,
     FOREIGN KEY (genre_id) REFERENCES genres(id)     ON DELETE CASCADE
 );
 
@@ -303,7 +315,7 @@ CREATE TABLE IF NOT EXISTS library_items (
     edition_id  INTEGER,
     added_date  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     status      TEXT,   -- 'saved', 'downloading', 'downloaded', 'converting', 'audiobook_ready', 'error'
-    FOREIGN KEY (book_id)    REFERENCES books(book_id) ON DELETE CASCADE,
+    FOREIGN KEY (book_id)    REFERENCES books(book_id) ON DELETE CASCADE ON UPDATE CASCADE,
     FOREIGN KEY (edition_id) REFERENCES editions(id)
 );
 ```
@@ -371,7 +383,7 @@ ignorant of any source-specific ID format.
 Because the app is pre-release (Tasks 6–17 not started, no user installations), a full schema drop and
 recreate is acceptable. The migration path is:
 
-1. Drop the existing database file (`classic_books.db`) alongside the executable.
+1. Drop the existing database file (`bookhub.db`) alongside the executable.
 2. On next launch, `createSchema()` creates the new schema from scratch.
 3. The Gutenberg adapter's next collector run repopulates `books` and `book_identifiers` using the new
    logic.
@@ -391,13 +403,16 @@ flowchart TD
     D --> E[DiscoveredBook: resolvedId + identifiers list]
     E --> F[booksDiscovered signal → BookDiscoveryService]
     F --> G{Query book_identifiers for any matching ID}
-    G -->|Match found| H[Use existing book_id]
-    G -->|No match| I[Use resolvedId as new book_id]
-    H --> J[INSERT OR IGNORE books]
-    I --> J
-    J --> K[INSERT OR IGNORE book_identifiers for all IDs]
-    K --> L[INSERT OR IGNORE editions]
-    L --> M[INSERT INTO formats + sources]
+    G -->|Match found| H{Incoming ID higher priority than existing book_id?}
+    H -->|Yes| I[UPDATE books.book_id and cascade FK updates]
+    H -->|No| J[Use existing book_id]
+    G -->|No match| K[Use resolvedId as new book_id]
+    I --> L[INSERT OR IGNORE books]
+    J --> L
+    K --> L
+    L --> M[INSERT OR IGNORE book_identifiers for all IDs]
+    M --> N[INSERT OR IGNORE editions]
+    N --> O[INSERT INTO formats + sources]
 ```
 
 ---
@@ -409,31 +424,28 @@ flowchart TD
 | `dcterms:identifier` field absent | Check for empty identifier list after XML parse | Fall back to `gutenberg:<id>` from `rdf:about`; always available |
 | `resolvedId` collision with wrong book | Cannot be detected at insert time | Prevented by LCCN priority: LCCN is work-level, not edition-level, so collisions are correct merges |
 | DB insert fails (disk full, lock) | `QSqlQuery::exec()` returns false | Log warning with `query.lastError()`; skip record; continue batch |
+| Stronger identifier discovered for an existing fallback row | Compare identifier priority after Phase 1 lookup | Run a transactional `UPDATE books SET book_id = ? WHERE book_id = ?` and rely on `ON UPDATE CASCADE` to keep FK rows aligned |
 | Two adapters race on same `resolvedId` | `INSERT OR IGNORE` on `books` | Second insert is silently dropped; identifiers and formats from both are still written |
 
 ---
 
-## Open Questions
+## Resolved Decisions
 
-1. **LCCN normalisation format:** LCCN strings from Gutenberg RDF may appear as bare numbers
-   (`"2007012345"`), prefixed strings (`"lccn:2007012345"`), or LC authority URIs
-   (`"http://id.loc.gov/authorities/names/n78095332"`). A normalisation function must handle all three
-   forms. The canonical storage format should be decided before implementation (recommendation:
-   `lccn:<normalised-string>` with the prefix always in lowercase and the numeric part zero-padded per
-   LC rules).
+1. **LCCN normalisation format:** Use Library of Congress formatting rules. The canonical storage form
+   is `lccn:<normalised-string>` with a lowercase prefix and LC-style normalisation, including
+   zero-padding where required by LC rules.
 
-2. **OCLC availability in Gutenberg RDF:** Gutenberg RDF files do not consistently include OCLC
-   numbers. Determine whether OCLC lookup should be deferred to a future enrichment adapter that calls
-   the WorldCat Search API, or simply skipped in the Gutenberg adapter.
+2. **OCLC availability in source metadata:** Only ingest OCLC numbers when the source already exposes
+   them. If a source does not provide OCLC (for example Gutenberg), skip OCLC for that source in the
+   MVP rather than performing external enrichment.
 
-3. **Metadata promotion policy:** When a book discovered via a source-specific fallback ID is later
-   re-discovered with a standard LCCN, should the `books.book_id` primary key be updated (cascading
-   through all FK tables), or should the LCCN simply be added to `book_identifiers` and the fallback
-   key retained? Updating the PK is cleaner conceptually but requires a cascade update across five
-   tables. Retaining the fallback key is simpler but leaves the primary key semantically inconsistent.
+3. **Primary-key promotion policy:** If a book is first stored under a fallback identifier and later
+   rediscovered with a stronger identifier such as LCCN, update `books.book_id` to the stronger key.
+   Preserve both identifiers in `book_identifiers` so legacy lookups and source-specific joins still
+   work.
 
-4. **ISBN normalisation:** ISBN-10 and ISBN-13 are related (ISBN-10 can be converted to ISBN-13 with
-   the `978` prefix). Should the system store both, or normalise all ISBNs to ISBN-13 on ingestion?
+4. **ISBN normalisation:** Canonicalise all ISBNs to ISBN-13 at ingestion time. ISBN-10 values are
+   converted to ISBN-13 before storage; the canonical `isbn:` identifier always contains 13 digits.
 
 ---
 
