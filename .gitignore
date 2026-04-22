@@ -34,3 +34,4 @@ CLAUDE.md
 .github/AGENTS.md
 .venv/
 venv/
+__pycache__/
