@@ -11,6 +11,9 @@ Related Code/
 # Sample data
 example.json
 
+# Task files (migrated to GitHub Issues)
+docs/tasks/
+
 # IDE and editor
 .vscode/
 .idea/
