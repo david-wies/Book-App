@@ -1,59 +1,60 @@
 #include <QApplication>
-#include <QMainWindow>
-#include <QLabel>
 #include <QIcon>
 #include <QDir>
-#include <QObject>
-#include "database.h"
+#include "shared/database.h"
 #include "collector/collector_worker.h"
+#include "gui/main_window.h"
 
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
 
-    if (classic_books::db::initializeDatabase(classic_books::db::databaseFilePath())) {
-        if (!classic_books::db::verifySchemaVersion()) {
+    if (bookhub::db::initializeDatabase(bookhub::db::databaseFilePath())) {
+        if (!bookhub::db::verifySchemaVersion()) {
             return 1;
         }
-        classic_books::db::createSchema();
-        classic_books::db::insertSampleData();
+        bookhub::db::createSchema();
+        bookhub::db::insertSampleData();
     }
 
     // Start background collector thread
-    classic_books::collector::CollectorWorker collector;
+    bookhub::collector::CollectorWorker collector;
     collector.start();
 
-    const QString iconPath = QDir(QCoreApplication::applicationDirPath()).filePath("book_reader_icon.jpg");
-    QIcon appIcon(iconPath);
+    const QString iconPath =
+        QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("book_reader_icon.jpg"));
+    const QIcon appIcon(iconPath);
     app.setWindowIcon(appIcon);
 
-    QMainWindow window;
-    window.setWindowTitle("Classic Books Audiobook Hub");
+    bookhub::gui::MainWindow window;
     window.setWindowIcon(appIcon);
-    window.resize(1024, 768);
 
-    auto *label = new QLabel("Welcome to Classic Books Audiobook Hub", &window);
-    label->setAlignment(Qt::AlignCenter);
-    window.setCentralWidget(label);
+    // NOTE: CollectorWorker does not yet emit status signals. When those are
+    // added (future task), connect them here with Qt::QueuedConnection so the
+    // GUI thread is never called directly from the collector thread:
+    //   QObject::connect(&collector, &CollectorWorker::statusChanged,
+    //                    &window, &MainWindow::onCollectorStatusChanged,
+    //                    Qt::QueuedConnection);
 
     app.setQuitOnLastWindowClosed(false);
-    QObject::connect(&app, &QGuiApplication::lastWindowClosed, &collector, [&collector]() {
+    QObject::connect(&app, &QGuiApplication::lastWindowClosed,
+                     &collector, [&collector]() {
         collector.requestShutdownAfterCurrentUpdate();
     });
-    QObject::connect(&collector, &QThread::finished, &app, [&app, &window]() {
-        if (!window.isVisible()) {
+    QObject::connect(&collector, &QThread::finished,
+                     &app, [&app, &window]() {
+        if (!window.isVisible())
             app.quit();
-        }
     });
 
     window.show();
-    
-    int result = app.exec();
-    
+
+    const int result = app.exec();
+
     if (collector.isRunning()) {
         collector.requestShutdownAfterCurrentUpdate();
         collector.wait();
     }
-    
+
     return result;
 }

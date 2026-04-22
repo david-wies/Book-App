@@ -4,7 +4,7 @@
 
 #include <QSqlDatabase>
 
-namespace classic_books::db {
+namespace bookhub::db {
 
 inline constexpr int kSchemaVersion = 1;
 
@@ -16,4 +16,4 @@ bool createSchema(const QString &connectionName = QSqlDatabase::defaultConnectio
 bool verifySchemaVersion(const QString &connectionName = QSqlDatabase::defaultConnection);
 bool insertSampleData(const QString &connectionName = QSqlDatabase::defaultConnection);
 
-} // namespace classic_books::db
+} // namespace bookhub::db

@@ -6,7 +6,7 @@
 #include <QMetaObject>
 #include <QTimer>
 
-namespace classic_books {
+namespace bookhub {
 namespace collector {
 
 CollectorWorker::CollectorWorker(QObject* parent) : QThread(parent) {}
@@ -41,7 +41,7 @@ void CollectorWorker::run() {
 
     // 1. Initialize thread-local database connection
     QString connectionName = "collector_connection";
-    if (!classic_books::db::initializeDatabase(classic_books::db::databaseFilePath(), connectionName)) {
+    if (!bookhub::db::initializeDatabase(bookhub::db::databaseFilePath(), connectionName)) {
         qWarning() << "Collector thread failed to initialize database.";
         return;
     }
@@ -89,4 +89,4 @@ void CollectorWorker::run() {
 }
 
 } // namespace collector
-} // namespace classic_books
+} // namespace bookhub

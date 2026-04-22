@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-migrate_db.py — Migrate classic_books.db from schema version 0 to version 1.
+migrate_db.py — Migrate bookhub.db from schema version 0 to version 1.
 
 Schema v0: ISBN-keyed books table.
 Schema v1: book_id-keyed books table with book_identifiers for cross-source deduplication.
@@ -341,15 +341,15 @@ def migrate(db_path: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Migrate classic_books.db from schema version 0 (ISBN-keyed) "
+            "Migrate bookhub.db from schema version 0 (ISBN-keyed) "
             "to version 1 (book_id-keyed)."
         )
     )
     parser.add_argument(
         "db_path",
         nargs="?",
-        default=os.path.join("build", "classic_books.db"),
-        help="Path to the SQLite database file (default: build/classic_books.db)",
+        default=os.path.join("build", "bookhub.db"),
+        help="Path to the SQLite database file (default: build/bookhub.db)",
     )
     args = parser.parse_args()
 

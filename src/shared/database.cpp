@@ -6,9 +6,9 @@
 #include <QSqlQuery>
 #include <QDebug>
 
-namespace classic_books::db {
+namespace bookhub::db {
 
-static const QString kDatabaseFileName = QStringLiteral("classic_books.db");
+static const QString kDatabaseFileName = QStringLiteral("bookhub.db");
 
 QString databaseFilePath()
 {
@@ -208,4 +208,4 @@ bool insertSampleData(const QString &connectionName)
     return true;
 }
 
-} // namespace classic_books::db
+} // namespace bookhub::db

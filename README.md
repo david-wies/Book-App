@@ -1,6 +1,6 @@
-# Classic Books + Audiobook Hub
+# BookHub
 
-A native C++/Qt6 desktop application for discovering public-domain literature, managing a personal library, downloading ebooks, and converting classics into audiobooks.
+A native C++/Qt6 desktop application for discovering public-domain literature from multiple sources, managing a personal library, downloading ebooks, and generating audiobooks.
 
 ## 🌟 Features
 
@@ -16,7 +16,7 @@ The application is built as a single native C++ program utilizing a multi-thread
 
 - **GUI Thread**: Runs the Qt6 Widgets interface, providing a responsive experience for browsing and library management.
 - **Data Collector Thread**: Runs in the background to fetch, normalize, and deduplicate book metadata from external sources.
-- **Shared Persistence**: Both threads interact with a local SQLite database (`classic_books.db`) to store metadata and user state.
+- **Shared Persistence**: Both threads interact with a local SQLite database (`bookhub.db`) to store metadata and user state.
 
 ## 🛠️ Prerequisites
 
@@ -42,16 +42,16 @@ make -j$(nproc)
 
 The build process produces the main executable:
 
-- `classic-books`: The primary application.
+- `bookhub`: The primary application.
 - `libshared.a`: A static library containing the database and shared logic.
 
 ### Run
 
 ```bash
-./build/classic-books
+./build/bookhub
 ```
 
-> **Note:** The application will automatically initialize the `classic_books.db` database in the same directory as the executable on its first run.
+> **Note:** The application will automatically initialize the `bookhub.db` database in the same directory as the executable on its first run.
 
 ## 📁 Project Layout
 
@@ -62,15 +62,26 @@ The build process produces the main executable:
 ├── src/
 │   ├── main.cpp              # Application entry point: init DB, start collector, show window
 │   ├── shared/               # Database schema and utilities (built as static library)
-│   └── collector/            # Background metadata discovery
-│       ├── source_adapter    # ISourceAdapter interface + DiscoveredBook struct
-│       ├── gutenberg_adapter # Fetches and parses Project Gutenberg RDF catalog
-│       ├── book_discovery_service  # Orchestrates adapters, writes to DB
-│       └── collector_worker  # QThread wrapper with polling timer
+│   ├── collector/            # Background metadata discovery
+│   │   ├── source_adapter    # ISourceAdapter interface + DiscoveredBook struct
+│   │   ├── gutenberg_adapter # Fetches and parses Project Gutenberg RDF catalog
+│   │   ├── book_discovery_service  # Orchestrates adapters, writes to DB
+│   │   └── collector_worker  # QThread wrapper with polling timer
+│   └── gui/                  # Qt6 Widgets UI
+│       ├── main_window       # Top-level QMainWindow; hosts the screen stack
+│       ├── style_tokens.h    # Design token constants (colours, spacing, typography)
+│       ├── screens/
+│       │   └── library_screen  # Personal library list view
+│       ├── widgets/
+│       │   ├── book_card_delegate  # Custom QStyledItemDelegate for book list rows
+│       │   ├── empty_state_widget  # Placeholder shown when the library is empty
+│       │   └── badge_label         # Inline pill badge (e.g. language, format tags)
+│       └── services/
+│           └── library_service  # Reads library_items from SQLite for the GUI thread
 └── docs/                     # Internal design documents
 ```
 
-> **Note:** The SQLite database (`classic_books.db`) is generated at runtime in the executable's directory and is not tracked in version control.
+> **Note:** The SQLite database (`bookhub.db`) is generated at runtime in the executable's directory and is not tracked in version control.
 
 ## 📄 License
 

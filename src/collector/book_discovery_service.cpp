@@ -4,7 +4,7 @@
 #include <QSqlError>
 #include <QDebug>
 
-namespace classic_books::collector {
+namespace bookhub::collector {
 
 BookDiscoveryService::BookDiscoveryService(const QString& dbConnectionName, QObject* parent)
     : QObject(parent), m_dbConnectionName(dbConnectionName) {}
@@ -35,7 +35,7 @@ void BookDiscoveryService::startDiscovery() {
     }
 }
 
-void BookDiscoveryService::onBooksDiscovered(const QList<classic_books::collector::DiscoveredBook>& books) {
+void BookDiscoveryService::onBooksDiscovered(const QList<bookhub::collector::DiscoveredBook>& books) {
     auto adapter = qobject_cast<ISourceAdapter*>(sender());
     if (!adapter) return;
     
@@ -177,4 +177,4 @@ void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, co
     }
 }
 
-} // namespace classic_books::collector
+} // namespace bookhub::collector

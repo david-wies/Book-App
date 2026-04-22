@@ -4,7 +4,7 @@
 #include <QList>
 #include "source_adapter.h"
 
-namespace classic_books::collector {
+namespace bookhub::collector {
 
 class BookDiscoveryService : public QObject {
     Q_OBJECT
@@ -20,7 +20,7 @@ signals:
     void updateFinished();
 
 private slots:
-    void onBooksDiscovered(const QList<classic_books::collector::DiscoveredBook>& books);
+    void onBooksDiscovered(const QList<bookhub::collector::DiscoveredBook>& books);
     void onFetchCompleted(bool success, const QString& errorMessage);
 
 private:
@@ -31,4 +31,4 @@ private:
     int m_activeFetches{0};
 };
 
-} // namespace classic_books::collector
+} // namespace bookhub::collector

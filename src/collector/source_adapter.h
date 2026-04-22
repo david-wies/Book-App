@@ -5,7 +5,7 @@
 #include <QVariantMap>
 #include <QList>
 
-namespace classic_books::collector {
+namespace bookhub::collector {
 
 struct BookIdentifier {
     QString type;   // "lccn", "oclc", "isbn", "gutenberg", "archive", "benyehuda"
@@ -31,8 +31,8 @@ public:
     virtual QString sourceName() const = 0;
     virtual void fetchBooks() = 0;
 signals:
-    void booksDiscovered(const QList<classic_books::collector::DiscoveredBook>& books);
+    void booksDiscovered(const QList<bookhub::collector::DiscoveredBook>& books);
     void fetchCompleted(bool success, const QString& errorMessage = QString());
 };
 
-} // namespace classic_books::collector
+} // namespace bookhub::collector

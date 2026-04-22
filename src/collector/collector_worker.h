@@ -5,7 +5,7 @@
 #include <QTimer>
 #include <atomic>
 
-namespace classic_books {
+namespace bookhub {
 namespace collector {
 
 class CollectorWorker : public QThread {
@@ -27,4 +27,4 @@ private:
 };
 
 } // namespace collector
-} // namespace classic_books
+} // namespace bookhub

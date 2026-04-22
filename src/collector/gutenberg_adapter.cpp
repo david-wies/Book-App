@@ -1,37 +1,27 @@
 #include "gutenberg_adapter.h"
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QJsonArray>
 #include <QDebug>
+#include <QFileInfo>
 #include <QSettings>
-#include <QTemporaryDir>
-#include <QFile>
-#include <QDir>
-#include <QDirIterator>
 #include <QXmlStreamReader>
 #include <QRegularExpression>
 
-namespace classic_books::collector {
+#include <archive.h>
+#include <archive_entry.h>
 
-GutenbergAdapter::GutenbergAdapter(QObject* parent) 
+namespace bookhub::collector {
+
+GutenbergAdapter::GutenbergAdapter(QObject* parent)
     : ISourceAdapter(parent), m_networkManager(this) {
     connect(&m_networkManager, &QNetworkAccessManager::finished, this, &GutenbergAdapter::onNetworkReply);
 }
 
-GutenbergAdapter::~GutenbergAdapter() {
-    if (m_extractProcess) {
-        m_extractProcess->kill();
-        m_extractProcess->waitForFinished();
-    }
-}
-
 void GutenbergAdapter::fetchBooks() {
     qDebug() << "GutenbergAdapter: Checking for RDF catalog updates...";
-    
+
     QNetworkRequest request(QUrl("https://www.gutenberg.org/cache/epub/feeds/rdf-files.tar.bz2"));
-    
+
     // Check If-Modified-Since to prevent redundant downloads
-    QSettings settings("ClassicBooks", "AudiobookHub");
+    QSettings settings("BookHub", "BookHub");
     QString lastModified = settings.value("gutenberg_last_modified").toString();
     if (!lastModified.isEmpty()) {
         request.setRawHeader("If-Modified-Since", lastModified.toUtf8());
@@ -48,40 +38,16 @@ void GutenbergAdapter::onNetworkReply(QNetworkReply* reply) {
         int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         if (statusCode == 200) {
             qDebug() << "GutenbergAdapter: Downloaded new RDF catalog.";
-            
+
             // Save Last-Modified header
             QByteArray lastModified = reply->rawHeader("Last-Modified");
             if (!lastModified.isEmpty()) {
-                QSettings settings("ClassicBooks", "AudiobookHub");
+                QSettings settings("BookHub", "BookHub");
                 settings.setValue("gutenberg_last_modified", QString::fromUtf8(lastModified));
             }
 
-            // Save to temp file
-            QTemporaryDir tempDir;
-            tempDir.setAutoRemove(false); // We will manage cleanup manually
-            m_tempArchiveDir = tempDir.path();
-            m_archivePath = QDir(m_tempArchiveDir).filePath("rdf-files.tar.bz2");
-            m_extractDir = QDir(m_tempArchiveDir).filePath("extracted_rdf");
-            QDir().mkpath(m_extractDir);
-
-            QFile file(m_archivePath);
-            if (file.open(QIODevice::WriteOnly)) {
-                file.write(reply->readAll());
-                file.close();
-                
-                // Start extraction process
-                qDebug() << "GutenbergAdapter: Extracting archive at" << m_archivePath;
-                m_extractProcess = new QProcess(this);
-                connect(m_extractProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), 
-                        this, &GutenbergAdapter::onExtractionFinished);
-                
-                m_extractProcess->setWorkingDirectory(m_tempArchiveDir);
-                // Extract into the extracted_rdf folder by changing directory first or using tar -C
-                m_extractProcess->start("tar", QStringList() << "-xjf" << "rdf-files.tar.bz2" << "-C" << "extracted_rdf");
-            } else {
-                emit fetchCompleted(false, "Failed to save downloaded archive.");
-                tempDir.remove();
-            }
+            qDebug() << "GutenbergAdapter: Extracting and parsing archive...";
+            extractAndParseArchive(reply->readAll());
         } else if (statusCode == 304) {
             // Not Modified
             qDebug() << "GutenbergAdapter: RDF catalog is up-to-date (304 Not Modified). No changes needed.";
@@ -89,7 +55,8 @@ void GutenbergAdapter::onNetworkReply(QNetworkReply* reply) {
         } else {
             emit fetchCompleted(false, QString("Unexpected HTTP status code: %1").arg(statusCode));
         }
-    } else if (reply->error() == QNetworkReply::ContentAccessDenied && reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 304) {
+    } else if (reply->error() == QNetworkReply::ContentAccessDenied &&
+               reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 304) {
         qDebug() << "GutenbergAdapter: RDF catalog is up-to-date (304 Not Modified). No changes needed.";
         emit fetchCompleted(true);
     } else {
@@ -98,27 +65,79 @@ void GutenbergAdapter::onNetworkReply(QNetworkReply* reply) {
     }
 }
 
-void GutenbergAdapter::onExtractionFinished(int exitCode, QProcess::ExitStatus exitStatus) {
-    m_extractProcess->deleteLater();
-    m_extractProcess = nullptr;
+void GutenbergAdapter::extractAndParseArchive(const QByteArray& archiveData) {
+    struct ArchiveDeleter {
+        void operator()(archive* a) const noexcept { archive_read_free(a); }
+    };
 
-    if (exitStatus == QProcess::NormalExit && exitCode == 0) {
-        qDebug() << "GutenbergAdapter: Extraction successful. Starting RDF parsing...";
-        
-        // Parse the extracted files synchronously in this background thread
-        parseExtractedRdfFiles(m_extractDir);
-        
-        qDebug() << "GutenbergAdapter: Parsing complete.";
-        emit fetchCompleted(true);
-    } else {
-        emit fetchCompleted(false, "Failed to extract tar.bz2 archive.");
+    std::unique_ptr<archive, ArchiveDeleter> a{archive_read_new()};
+    if (!a) {
+        emit fetchCompleted(false, "Failed to allocate archive reader.");
+        return;
     }
-    
-    // Clean up temporary directory
-    if (!m_tempArchiveDir.isEmpty()) {
-        QDir(m_tempArchiveDir).removeRecursively();
-        m_tempArchiveDir.clear();
+
+    archive_read_support_filter_bzip2(a.get());
+    archive_read_support_format_tar(a.get());
+
+    if (archive_read_open_memory(a.get(), archiveData.constData(),
+                                 static_cast<std::size_t>(archiveData.size())) != ARCHIVE_OK) {
+        emit fetchCompleted(false,
+            QString("Failed to open archive: %1").arg(archive_error_string(a.get())));
+        return;
     }
+
+    QList<DiscoveredBook> batch;
+    int totalParsed = 0;
+    archive_entry* entry = nullptr;
+
+    while (archive_read_next_header(a.get(), &entry) == ARCHIVE_OK) {
+        const char* pathname = archive_entry_pathname(entry);
+        if (!pathname) continue;
+
+        const QString entryName = QString::fromUtf8(pathname);
+        if (!entryName.endsWith(".rdf", Qt::CaseInsensitive)) {
+            archive_read_data_skip(a.get());
+            continue;
+        }
+
+        QByteArray rdfData;
+        if (archive_entry_size_is_set(entry)) {
+            const la_int64_t entrySize = archive_entry_size(entry);
+            if (entrySize <= 0) continue;
+            rdfData.resize(static_cast<qsizetype>(entrySize));
+            const la_ssize_t bytesRead = archive_read_data(
+                a.get(), rdfData.data(), static_cast<std::size_t>(entrySize));
+            if (bytesRead != entrySize) continue;
+        } else {
+            // Size not set in header — read in chunks (shouldn't happen for tar, but be safe)
+            constexpr std::size_t kChunk = 65536;
+            char buf[kChunk];
+            la_ssize_t n;
+            while ((n = archive_read_data(a.get(), buf, kChunk)) > 0)
+                rdfData.append(buf, static_cast<qsizetype>(n));
+            if (n < 0) continue;
+        }
+
+        parseSingleRdf(rdfData, entryName, batch);
+
+        if (batch.size() >= 500) {
+            emit booksDiscovered(batch);
+            totalParsed += static_cast<int>(batch.size());
+            qDebug() << "GutenbergAdapter: Emitted batch of" << batch.size()
+                     << "books. Total:" << totalParsed;
+            batch.clear();
+        }
+    }
+
+    if (!batch.isEmpty()) {
+        emit booksDiscovered(batch);
+        totalParsed += static_cast<int>(batch.size());
+        qDebug() << "GutenbergAdapter: Emitted final batch of" << batch.size()
+                 << "books. Total:" << totalParsed;
+    }
+
+    qDebug() << "GutenbergAdapter: Parsing complete. Total books:" << totalParsed;
+    emit fetchCompleted(true);
 }
 
 QString GutenbergAdapter::normalizeFormatName(const QString& url, const QString& mimeType) {
@@ -126,7 +145,7 @@ QString GutenbergAdapter::normalizeFormatName(const QString& url, const QString&
     if (mimeType.isEmpty()) {
         return QString();
     }
-    
+
     QString lowerMime = mimeType.toLower();
     if (lowerMime.contains("image")) {
         return QString();
@@ -148,41 +167,13 @@ QString GutenbergAdapter::normalizeFormatName(const QString& url, const QString&
     return lowerMime.replace('+', '_').replace('-', '_');
 }
 
-void GutenbergAdapter::parseExtractedRdfFiles(const QString& extractDir) {
-    QDirIterator it(extractDir, QStringList() << "*.rdf", QDir::Files, QDirIterator::Subdirectories);
-    
-    QList<DiscoveredBook> batch;
-    int parsedCount = 0;
-    
-    while (it.hasNext()) {
-        QString filePath = it.next();
-        parseSingleRdf(filePath, batch);
-        
-        if (batch.size() >= 500) {
-            emit booksDiscovered(batch);
-            parsedCount += batch.size();
-            qDebug() << "GutenbergAdapter: Emitted batch of" << batch.size() << "books. Total:" << parsedCount;
-            batch.clear();
-        }
-    }
-    
-    if (!batch.isEmpty()) {
-        emit booksDiscovered(batch);
-        parsedCount += batch.size();
-        qDebug() << "GutenbergAdapter: Emitted final batch of" << batch.size() << "books. Total:" << parsedCount;
-    }
-}
-
-void GutenbergAdapter::parseSingleRdf(const QString& filePath, QList<DiscoveredBook>& batch) {
-    QFile file(filePath);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return;
-
-    QXmlStreamReader xml(&file);
+void GutenbergAdapter::parseSingleRdf(const QByteArray& data, const QString& entryName,
+                                      QList<DiscoveredBook>& batch) {
+    QXmlStreamReader xml(data);
     DiscoveredBook book;
-    
-    // Fallback ID from filename if missing in XML
-    QFileInfo fileInfo(filePath);
-    QString baseName = fileInfo.baseName();
+
+    // Fallback ID from archive entry path (e.g. cache/epub/1342/pg1342.rdf → "1342")
+    QString baseName = QFileInfo(entryName).baseName();
     if (baseName.startsWith("pg")) baseName = baseName.mid(2);
     book.sourceId = baseName;
 
@@ -193,14 +184,14 @@ void GutenbergAdapter::parseSingleRdf(const QString& filePath, QList<DiscoveredB
     QStringList subjects;
     QStringList types;
     QStringList rawIdentifiers;
-    
+
     while (!xml.atEnd() && !xml.hasError()) {
         QXmlStreamReader::TokenType token = xml.readNext();
-        
+
         if (token == QXmlStreamReader::StartElement) {
             QString name = xml.name().toString();
             path.append(name);
-            
+
             if (name == "ebook") {
                 QString about = xml.attributes().value("rdf:about").toString();
                 QRegularExpression re("ebooks/(\\d+)");
@@ -217,7 +208,8 @@ void GutenbergAdapter::parseSingleRdf(const QString& filePath, QList<DiscoveredB
             } else if (name == "identifier") {
                 rawIdentifiers.append(xml.readElementText().trimmed());
                 if (!path.isEmpty()) path.removeLast();
-            } else if (name == "name" && path.size() >= 3 && path.at(path.size()-2) == "agent" && path.at(path.size()-3) == "creator") {
+            } else if (name == "name" && path.size() >= 3 &&
+                       path.at(path.size()-2) == "agent" && path.at(path.size()-3) == "creator") {
                 book.authors.append(xml.readElementText().trimmed());
                 if (!path.isEmpty()) path.removeLast();
             } else if (name == "value") {
@@ -305,7 +297,7 @@ void GutenbergAdapter::parseSingleRdf(const QString& filePath, QList<DiscoveredB
             "fantasy", "science fiction", "horror", "thriller",
             "romance", "short stories", "gothic fiction"
         };
-        
+
         if (!subjects.isEmpty()) {
             for (const QString& subj : subjects) {
                 QString lowerSubj = subj.toLower();
@@ -323,7 +315,7 @@ void GutenbergAdapter::parseSingleRdf(const QString& filePath, QList<DiscoveredB
         } else if (!types.isEmpty()) {
             genre = types.first();
         }
-        
+
         // Use the simplified genre/subject
         book.subjects.clear();
         if (!genre.isEmpty()) book.subjects.append(genre);
@@ -408,4 +400,4 @@ QString GutenbergAdapter::resolveBookId(const QStringList& rawIdentifiers, const
     return "gutenberg:" + gutenbergId;
 }
 
-} // namespace classic_books::collector
+} // namespace bookhub::collector
