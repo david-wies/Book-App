@@ -23,4 +23,8 @@ Thumbs.db.codex
 claude/
 .claude/
 CLAUDE.md
-.github/
+# GitHub agent files (local, not for repo)
+.github/agents/
+.github/instructions/
+.github/skills/
+.github/AGENTS.md
