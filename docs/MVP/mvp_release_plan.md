@@ -1,7 +1,7 @@
 # MVP Release Plan
 
 ## Objective
-Build a minimal, usable version of the Classic Books + Audiobook Hub that lets bookworms discover public-domain books, save them to a library, download formats by language/source, and generate audiobooks with preset and custom voices.
+Build a minimal, usable version of the BookHub that lets bookworms discover public-domain books, save them to a library, download formats by language/source, and generate audiobooks with preset and custom voices.
 
 ---
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-**Project name:** Classic Books + Audiobook Hub
+**Project name:** BookHub
 
 **Goal:** Build a GUI app that lets book lovers discover public-domain books from sources like Gutenberg and Ben-Yehuda, save them to a personal library, download available ebook formats, and convert chosen text editions into audiobooks with preset and custom voices.
 
