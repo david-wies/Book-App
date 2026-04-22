@@ -25,6 +25,9 @@ private:
     void parseSingleRdf(const QString& filePath, QList<DiscoveredBook>& batch);
     QString normalizeFormatName(const QString& url, const QString& mimeType);
 
+    static QString resolveBookId(const QStringList& rawIdentifiers, const QString& gutenbergId);
+    static QString normalizeLccn(const QString& raw);
+
     QNetworkAccessManager m_networkManager;
     QProcess* m_extractProcess{nullptr};
     

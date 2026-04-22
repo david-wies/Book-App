@@ -192,6 +192,7 @@ void GutenbergAdapter::parseSingleRdf(const QString& filePath, QList<DiscoveredB
     QMap<QString, int> formatCounts;
     QStringList subjects;
     QStringList types;
+    QStringList rawIdentifiers;
     
     while (!xml.atEnd() && !xml.hasError()) {
         QXmlStreamReader::TokenType token = xml.readNext();
@@ -213,6 +214,9 @@ void GutenbergAdapter::parseSingleRdf(const QString& filePath, QList<DiscoveredB
             } else if (name == "title") {
                 book.title = xml.readElementText().trimmed();
                 if (!path.isEmpty()) path.removeLast(); // text read moves past EndElement
+            } else if (name == "identifier") {
+                rawIdentifiers.append(xml.readElementText().trimmed());
+                if (!path.isEmpty()) path.removeLast();
             } else if (name == "name" && path.size() >= 3 && path.at(path.size()-2) == "agent" && path.at(path.size()-3) == "creator") {
                 book.authors.append(xml.readElementText().trimmed());
                 if (!path.isEmpty()) path.removeLast();
@@ -249,6 +253,49 @@ void GutenbergAdapter::parseSingleRdf(const QString& filePath, QList<DiscoveredB
         }
     }
 
+    book.resolvedId = resolveBookId(rawIdentifiers, book.sourceId);
+
+    for (const QString& raw : rawIdentifiers) {
+        QString lower = raw.toLower();
+        if (lower.startsWith("lccn:") || lower.startsWith("http://id.loc.gov/authorities/names/")) {
+            // Extract the raw LCCN value and normalize it; store only the digits+alpha, no prefix
+            QString lccnNormalized = normalizeLccn(raw);
+            // lccnNormalized is "lccn:XYZ" — store just the part after the colon as value
+            int colon = lccnNormalized.indexOf(':');
+            if (colon >= 0) {
+                book.identifiers.append(BookIdentifier{"lccn", lccnNormalized.mid(colon + 1)});
+            }
+        } else if (lower.startsWith("oclc:")) {
+            book.identifiers.append(BookIdentifier{"oclc", raw.mid(5)});
+        } else {
+            // Check for 10 or 13 consecutive digits (ISBN), stripping hyphens first
+            QString stripped = raw;
+            stripped.remove('-');
+            static const QRegularExpression reDigits("^\\d{10}$|^\\d{13}$");
+            if (reDigits.match(stripped).hasMatch()) {
+                QString isbn13;
+                if (stripped.length() == 10) {
+                    // Convert ISBN-10 to ISBN-13: prepend "978", drop old check digit, compute EAN-13 check
+                    QString base = "978" + stripped.left(9);
+                    int sum = 0;
+                    for (int i = 0; i < 12; ++i) {
+                        int digit = base.at(i).digitValue();
+                        sum += (i % 2 == 0) ? digit : digit * 3;
+                    }
+                    int check = (10 - (sum % 10)) % 10;
+                    isbn13 = base + QString::number(check);
+                } else {
+                    isbn13 = stripped;
+                }
+                book.identifiers.append(BookIdentifier{"isbn", isbn13});
+            }
+            // Unknown format — skip
+        }
+    }
+
+    // Gutenberg ID is always appended as a fallback identifier
+    book.identifiers.append(BookIdentifier{"gutenberg", book.sourceId});
+
     if (!book.title.isEmpty() && !book.sourceId.isEmpty()) {
         QString genre;
         QStringList possibleKeywords = {
@@ -283,6 +330,82 @@ void GutenbergAdapter::parseSingleRdf(const QString& filePath, QList<DiscoveredB
 
         batch.append(book);
     }
+}
+
+QString GutenbergAdapter::normalizeLccn(const QString& raw)
+{
+    QString lccn = raw;
+
+    // Strip URI prefix if present
+    const QString uriPrefix = "http://id.loc.gov/authorities/names/";
+    if (lccn.startsWith(uriPrefix)) {
+        lccn = lccn.mid(uriPrefix.length());
+    } else if (lccn.toLower().startsWith("lccn:")) {
+        lccn = lccn.mid(5);
+    }
+
+    // Separate leading alpha prefix from numeric suffix
+    int splitPos = 0;
+    while (splitPos < lccn.length() && lccn.at(splitPos).isLetter()) {
+        ++splitPos;
+    }
+    QString alpha = lccn.left(splitPos);
+    QString digits = lccn.mid(splitPos);
+
+    // Post-2001 LCCNs have a 10-digit numeric portion — do not zero-pad those
+    if (digits.length() < 8) {
+        digits = digits.rightJustified(8, '0');
+    }
+
+    return "lccn:" + alpha + digits;
+}
+
+QString GutenbergAdapter::resolveBookId(const QStringList& rawIdentifiers, const QString& gutenbergId)
+{
+    QString lccnResult;
+    QString oclcResult;
+    QString isbnResult;
+
+    for (const QString& raw : rawIdentifiers) {
+        QString lower = raw.toLower();
+
+        if (lccnResult.isEmpty()) {
+            if (lower.startsWith("lccn:") || lower.startsWith("http://id.loc.gov/authorities/names/")) {
+                lccnResult = normalizeLccn(raw);
+                continue;
+            }
+        }
+
+        if (oclcResult.isEmpty() && lower.startsWith("oclc:")) {
+            oclcResult = "oclc:" + raw.mid(5);
+            continue;
+        }
+
+        if (isbnResult.isEmpty()) {
+            QString stripped = raw;
+            stripped.remove('-');
+            static const QRegularExpression reIsbn("^\\d{10}$|^\\d{13}$");
+            if (reIsbn.match(stripped).hasMatch()) {
+                if (stripped.length() == 10) {
+                    QString base = "978" + stripped.left(9);
+                    int sum = 0;
+                    for (int i = 0; i < 12; ++i) {
+                        int digit = base.at(i).digitValue();
+                        sum += (i % 2 == 0) ? digit : digit * 3;
+                    }
+                    int check = (10 - (sum % 10)) % 10;
+                    isbnResult = "isbn:" + base + QString::number(check);
+                } else {
+                    isbnResult = "isbn:" + stripped;
+                }
+            }
+        }
+    }
+
+    if (!lccnResult.isEmpty()) return lccnResult;
+    if (!oclcResult.isEmpty()) return oclcResult;
+    if (!isbnResult.isEmpty()) return isbnResult;
+    return "gutenberg:" + gutenbergId;
 }
 
 } // namespace classic_books::collector

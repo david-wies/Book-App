@@ -3,7 +3,6 @@
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QDebug>
-#include <QUuid>
 
 namespace classic_books::collector {
 
@@ -69,47 +68,103 @@ void BookDiscoveryService::onFetchCompleted(bool success, const QString& errorMe
     }
 }
 
+static int idPriority(const QString& bookId)
+{
+    const int colon = bookId.indexOf(':');
+    const QString prefix = (colon >= 0) ? bookId.left(colon) : bookId;
+    if (prefix == "lccn")  return 1;
+    if (prefix == "oclc")  return 2;
+    if (prefix == "isbn")  return 3;
+    return 4;
+}
+
 void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, const QString& sourceName) {
     QSqlDatabase db = QSqlDatabase::database(m_dbConnectionName);
     if (!db.isOpen()) {
         qWarning() << "BookDiscoveryService: Database connection" << m_dbConnectionName << "is not open.";
         return;
     }
-    
-    QSqlQuery query(db);
-    
-    // Gutenberg IDs are typically numbers, use as ISBN for MVP (prefix with source)
-    QString pseudoIsbn = sourceName.toLower() + "_" + book.sourceId;
-    
-    // Authors string
-    QString authorsStr = book.authors.join(", ");
-    QString primaryLang = book.languages.isEmpty() ? "Unknown" : book.languages.first();
 
-    // Insert Book
-    query.prepare("INSERT OR IGNORE INTO books (isbn, title, author, language) VALUES (?, ?, ?, ?)");
-    query.addBindValue(pseudoIsbn);
+    QSqlQuery query(db);
+    QString effectiveId = book.resolvedId;
+
+    // Phase 1 — deduplicate: find an existing book that shares any of the incoming identifiers
+    if (!book.identifiers.isEmpty()) {
+        QStringList clauses;
+        for (const auto& id : book.identifiers)
+            clauses << "(type = ? AND value = ?)";
+        QString sql = "SELECT book_id FROM book_identifiers WHERE " + clauses.join(" OR ") + " LIMIT 1";
+        query.prepare(sql);
+        for (const auto& id : book.identifiers) {
+            query.addBindValue(id.type);
+            query.addBindValue(id.value);
+        }
+        if (query.exec() && query.next()) {
+            effectiveId = query.value(0).toString();
+
+            // Phase 1b — promote to a higher-priority ID if the incoming one outranks the stored one
+            if (idPriority(book.resolvedId) < idPriority(effectiveId)) {
+                query.prepare("UPDATE books SET book_id = ? WHERE book_id = ?");
+                query.addBindValue(book.resolvedId);
+                query.addBindValue(effectiveId);
+                if (!query.exec()) {
+                    qWarning() << "Failed to promote book_id:" << query.lastError().text();
+                    return;
+                }
+                effectiveId = book.resolvedId;
+            }
+        }
+    }
+
+    // Phase 2 — insert the book row (no-op if it already exists)
+    query.prepare("INSERT OR IGNORE INTO books (book_id, title, author, publish_year, summary) VALUES (?, ?, ?, ?, ?)");
+    query.addBindValue(effectiveId);
     query.addBindValue(book.title);
-    query.addBindValue(authorsStr);
-    query.addBindValue(primaryLang);
-    
+    query.addBindValue(book.authors.join(", "));
+    query.addBindValue(QVariant());   // publish_year not available from RDF
+    query.addBindValue(QVariant());   // summary not available from RDF
     if (!query.exec()) {
         qWarning() << "Failed to insert book:" << query.lastError().text();
         return;
     }
-    
-    // Note: To keep things simple for MVP, we just map formats and insert.
-    // In a production app, we would query the book_isbn first to verify we are adding formats.
-    
-    // Insert Formats
+
+    // Phase 3 — register all known identifiers for cross-source deduplication
+    for (const auto& id : book.identifiers) {
+        query.prepare("INSERT OR IGNORE INTO book_identifiers (book_id, type, value) VALUES (?, ?, ?)");
+        query.addBindValue(effectiveId);
+        query.addBindValue(id.type);
+        query.addBindValue(id.value);
+        if (!query.exec()) {
+            qWarning() << "Failed to insert book identifier:" << query.lastError().text();
+        }
+    }
+
+    // Phase 4 — edition, formats, and sources
+    const QString primaryLang = book.languages.isEmpty() ? "Unknown" : book.languages.first();
+
+    query.prepare("INSERT OR IGNORE INTO editions (book_id, language) VALUES (?, ?)");
+    query.addBindValue(effectiveId);
+    query.addBindValue(primaryLang);
+    if (!query.exec()) {
+        qWarning() << "Failed to insert edition:" << query.lastError().text();
+        return;
+    }
+
+    query.prepare("SELECT id FROM editions WHERE book_id = ? AND language = ?");
+    query.addBindValue(effectiveId);
+    query.addBindValue(primaryLang);
+    if (!query.exec() || !query.next()) {
+        qWarning() << "Failed to retrieve edition id:" << query.lastError().text();
+        return;
+    }
+    const int editionId = query.value(0).toInt();
+
     for (auto it = book.formats.constBegin(); it != book.formats.constEnd(); ++it) {
-        query.prepare("INSERT INTO formats (book_isbn, format_type) VALUES (?, ?)");
-        query.addBindValue(pseudoIsbn);
+        query.prepare("INSERT INTO formats (edition_id, format_type) VALUES (?, ?)");
+        query.addBindValue(editionId);
         query.addBindValue(it.key());
-        
         if (query.exec()) {
-            int formatId = query.lastInsertId().toInt();
-            
-            // Insert Source for format
+            const int formatId = query.lastInsertId().toInt();
             QSqlQuery sourceQuery(db);
             sourceQuery.prepare("INSERT INTO sources (format_id, source_name, download_link) VALUES (?, ?, ?)");
             sourceQuery.addBindValue(formatId);
