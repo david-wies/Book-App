@@ -22,7 +22,7 @@ docs/tasks/
 
 # OS files
 .DS_Store
-Thumbs.db.codex
+.codex
 claude/
 .claude/
 CLAUDE.md
