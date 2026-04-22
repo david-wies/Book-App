@@ -21,3 +21,5 @@ example.json
 .DS_Store
 Thumbs.db.codex
 claude/
+.claude/
+CLAUDE.md
