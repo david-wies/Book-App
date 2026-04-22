@@ -12,6 +12,9 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
 
     if (classic_books::db::initializeDatabase(classic_books::db::databaseFilePath())) {
+        if (!classic_books::db::verifySchemaVersion()) {
+            return 1;
+        }
         classic_books::db::createSchema();
         classic_books::db::insertSampleData();
     }
