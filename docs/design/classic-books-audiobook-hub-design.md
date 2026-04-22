@@ -196,8 +196,13 @@ The SQLite database is shared between the GUI and Data Collector threads and con
 Entities stored in the database:
 
 - `Book`
-  - id, title, authors, summary, publicationDate, categories, editions
+  - `book_id` (canonical identifier — LCCN, OCLC, ISBN, or source-specific fallback), title, authors, summary, publicationDate
   - Note: does not store actual book content; stores metadata only
+  - See `docs/design/book-identity-model.md` for the full ID resolution strategy
+
+- `BookIdentifier`
+  - All known identifiers for a work (LCCN, OCLC, ISBN, Gutenberg ID, etc.)
+  - Enables cross-source deduplication: before inserting a new book, query this table for any matching identifier
 
 - `Edition`
   - id, bookId, language, publisher, publishDate, formats
@@ -205,7 +210,7 @@ Entities stored in the database:
 
 - `Source`
   - id, name, supportedLanguages, type, metadata
-  - Information about book sources (Gutenberg, Ben-Yehuda, etc.)
+  - Information about book sources (Gutenberg, Ben-Yehuda, Internet Archive, etc.)
 
 - `Format`
   - id, editionId, sourceId, type (txt, epub, pdf, html, etc.), downloadUrl, availability
@@ -219,123 +224,105 @@ Entities stored in the database:
   - id, name, type, sampleText, uploadStatus, voiceModelReference
   - Metadata for preset voices and custom voice uploads; audio files stored separately on filesystem
 
-### 4.4 Example database structure
-
-The following JSON structure (conceptual, not the actual storage format) illustrates how book metadata and links are organized in the database:
-
-```json
-{
-  "4324361598789": {
-    "title": "Book Title",
-    "author": "Author Name",
-    "language": "English",
-    "publishYear": 1925,
-    "genre": ["Fiction", "Classic"],
-    "formats": {
-      "pdf": [
-        {
-          "source": "Gutenberg",
-          "link": "https://www.gutenberg.org/files/..."
-        }
-      ],
-      "epub": [
-        {
-          "source": "Gutenberg",
-          "link": "https://www.gutenberg.org/cache/epub/..."
-        },
-        {
-          "source": "Ben-Yehuda",
-          "link": "https://benyehuda.org/..."
-        }
-      ]
-    }
-  },
-  "4324361515789": {
-    "title": "Another Book",
-    "author": "Another Author",
-    "language": "English",
-    "publishYear": 1898,
-    "genre": ["Fiction"],
-    "formats": {
-      "epub": [
-        {
-          "source": "Gutenberg",
-          "link": "https://www.gutenberg.org/..."
-        }
-      ]
-    }
-  }
-}
-```
-
-**Notes:**
-- Keys are book ISBNs
-- Authors, links, and genres are example placeholders; real values will be sourced from Gutenberg, Ben-Yehuda, and other public-domain archives
-- Links point to external download locations (not stored within the database)
-- Format availability varies by source—some sources may offer pdf, others epub, etc.
-- The actual database implementation (SQLite, relational schema) will be decided later but will follow this conceptual structure
-
 ### 4.4 Normalized SQLite schema
 
-The JSON structure above maps to the following normalized SQLite tables:
+The following normalized SQLite tables implement the entity model above. The key change from the
+initial design is that `books.isbn TEXT PRIMARY KEY` is replaced by `books.book_id TEXT PRIMARY KEY`,
+which holds whichever standard identifier is most authoritative for a given work. A new
+`book_identifiers` table stores every known identifier, enabling cross-source deduplication.
+
+The `book_id` value is a prefixed string in the format `"<type>:<value>"`, e.g.:
+- `"lccn:n78095332"` — Library of Congress Control Number (highest priority; work-level, stable)
+- `"oclc:42707429"` — OCLC/WorldCat number (second priority; broad coverage)
+- `"isbn:9780141439518"` — ISBN-13 (third priority; edition-specific but unambiguous)
+- `"gutenberg:1342"` — Gutenberg numeric ID (fallback when no standard identifier is present)
+- `"archive:moby-dick"` — Internet Archive item ID (fallback for Archive-sourced records)
+
+For the full ID priority order, resolution algorithm, and adapter responsibilities, see
+`docs/design/book-identity-model.md`.
 
 ```sql
--- Books table (keyed by ISBN)
-CREATE TABLE books (
-  isbn TEXT PRIMARY KEY,
-  title TEXT NOT NULL,
-  author TEXT,
-  language TEXT,
-  publish_year INTEGER,
-  publication_date TEXT
+-- Books table (one row per logical work; language lives in editions)
+-- book_id format: "<type>:<value>" — e.g. "lccn:n78095332", "gutenberg:1342"
+CREATE TABLE IF NOT EXISTS books (
+    book_id          TEXT PRIMARY KEY,
+    title            TEXT NOT NULL,
+    author           TEXT,
+    publish_year     INTEGER,
+    publication_date TEXT,
+    summary          TEXT
 );
 
--- Genres (many-to-many with books)
-CREATE TABLE genres (
-  id INTEGER PRIMARY KEY,
-  genre_name TEXT UNIQUE NOT NULL
+-- All known identifiers for a book (one row per identifier type+value)
+-- Primary deduplication mechanism: query this table before inserting a new book
+CREATE TABLE IF NOT EXISTS book_identifiers (
+    book_id  TEXT NOT NULL,
+    type     TEXT NOT NULL,   -- 'lccn', 'oclc', 'isbn', 'gutenberg', 'archive', 'benyehuda'
+    value    TEXT NOT NULL,
+    PRIMARY KEY (type, value),
+    FOREIGN KEY (book_id) REFERENCES books(book_id) ON DELETE CASCADE
 );
 
-CREATE TABLE book_genres (
-  book_isbn TEXT,
-  genre_id INTEGER,
-  PRIMARY KEY (book_isbn, genre_id),
-  FOREIGN KEY (book_isbn) REFERENCES books(isbn),
-  FOREIGN KEY (genre_id) REFERENCES genres(id)
+-- Editions (one row per language variant of a work)
+CREATE TABLE IF NOT EXISTS editions (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    book_id      TEXT NOT NULL,
+    language     TEXT NOT NULL,
+    publisher    TEXT,
+    publish_date TEXT,
+    UNIQUE (book_id, language),
+    FOREIGN KEY (book_id) REFERENCES books(book_id) ON DELETE CASCADE
 );
 
--- Formats (many per book)
-CREATE TABLE formats (
-  id INTEGER PRIMARY KEY,
-  book_isbn TEXT NOT NULL,
-  format_type TEXT NOT NULL,  -- 'pdf', 'epub', 'html', 'txt'
-  FOREIGN KEY (book_isbn) REFERENCES books(isbn)
+-- Genres (many-to-many with books; genres belong to the work, not a language edition)
+CREATE TABLE IF NOT EXISTS genres (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    genre_name TEXT UNIQUE NOT NULL
 );
 
--- Sources with download links
-CREATE TABLE sources (
-  id INTEGER PRIMARY KEY,
-  format_id INTEGER NOT NULL,
-  source_name TEXT NOT NULL,  -- 'Gutenberg', 'Ben-Yehuda', etc.
-  download_link TEXT NOT NULL,
-  FOREIGN KEY (format_id) REFERENCES formats(id)
+CREATE TABLE IF NOT EXISTS book_genres (
+    book_id  TEXT NOT NULL,
+    genre_id INTEGER NOT NULL,
+    PRIMARY KEY (book_id, genre_id),
+    FOREIGN KEY (book_id)  REFERENCES books(book_id) ON DELETE CASCADE,
+    FOREIGN KEY (genre_id) REFERENCES genres(id)     ON DELETE CASCADE
 );
 
--- User's library
-CREATE TABLE library_items (
-  id INTEGER PRIMARY KEY,
-  book_isbn TEXT NOT NULL,
-  added_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  status TEXT,  -- 'saved', 'downloaded', 'reading', etc.
-  FOREIGN KEY (book_isbn) REFERENCES books(isbn)
+-- Formats (many per edition, not per book)
+CREATE TABLE IF NOT EXISTS formats (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    edition_id  INTEGER NOT NULL,
+    format_type TEXT NOT NULL,   -- 'epub', 'pdf', 'txt', 'html', 'mobi', etc.
+    FOREIGN KEY (edition_id) REFERENCES editions(id) ON DELETE CASCADE
+);
+
+-- Sources with download links (one row per format+source combination)
+CREATE TABLE IF NOT EXISTS sources (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    format_id     INTEGER NOT NULL,
+    source_name   TEXT NOT NULL,    -- 'Gutenberg', 'Ben-Yehuda', 'Archive', etc.
+    download_link TEXT NOT NULL,
+    FOREIGN KEY (format_id) REFERENCES formats(id) ON DELETE CASCADE
+);
+
+-- User's library (tracks which edition the user chose)
+CREATE TABLE IF NOT EXISTS library_items (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    book_id     TEXT NOT NULL,
+    edition_id  INTEGER,
+    added_date  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    status      TEXT,   -- 'saved', 'downloading', 'downloaded', 'converting', 'audiobook_ready', 'error'
+    FOREIGN KEY (book_id)    REFERENCES books(book_id) ON DELETE CASCADE,
+    FOREIGN KEY (edition_id) REFERENCES editions(id)
 );
 ```
 
 **Normalized structure benefits:**
-- Eliminates duplication (each genre, source, format defined once)
-- Supports efficient queries (search by genre, source, language, etc.)
-- Maintains referential integrity
-- Easy to update availability or add new sources without schema changes
+- `book_id` is semantically meaningful and human-readable (no opaque integer PKs)
+- `book_identifiers` enables deduplication across sources without schema changes for new ID types
+- All other relationships (editions, genres, formats, sources, library items) are unchanged in
+  structure; only the foreign key column names change from `book_isbn` to `book_id`
+- Maintains full referential integrity with `ON DELETE CASCADE` throughout
 
 ### 4.5 Extensibility model
 
