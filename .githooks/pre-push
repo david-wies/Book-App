@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# pre-push hook: prevents direct pushes to the master branch.
+#
+# The master branch is the stable/release branch. All changes must arrive
+# via a pull request from develop (or a hotfix branch). Direct pushes are
+# rejected here so the rule is enforced even without a GitHub Pro plan.
+#
+# To install on a fresh clone:
+#   git config core.hooksPath .githooks
+#
+# If you genuinely need to push a release tag or an emergency fix directly
+# (e.g. as the release engineer), temporarily disable with:
+#   SKIP_BRANCH_GUARD=1 git push ...
+
+PROTECTED_BRANCH="master"
+CURRENT_BRANCH="$(git symbolic-ref HEAD 2>/dev/null | sed 's|refs/heads/||')"
+
+if [[ "${SKIP_BRANCH_GUARD}" == "1" ]]; then
+    exit 0
+fi
+
+# Read the list of refs being pushed from stdin (format: <local-ref> <local-sha> <remote-ref> <remote-sha>)
+while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
+    # Extract the branch name from the remote ref (refs/heads/master -> master)
+    remote_branch="${remote_ref#refs/heads/}"
+
+    if [[ "${remote_branch}" == "${PROTECTED_BRANCH}" ]]; then
+        echo "-----------------------------------------------------------"
+        echo "ERROR: Direct pushes to '${PROTECTED_BRANCH}' are not allowed."
+        echo ""
+        echo "  Workflow: open a pull request from your feature branch"
+        echo "  into '${PROTECTED_BRANCH}' and merge it through GitHub."
+        echo ""
+        echo "  If you are the release engineer and need to bypass this"
+        echo "  guard, run:  SKIP_BRANCH_GUARD=1 git push ..."
+        echo "-----------------------------------------------------------"
+        exit 1
+    fi
+done
+
+exit 0
