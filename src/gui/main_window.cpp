@@ -2,6 +2,7 @@
 #include "style_tokens.h"
 #include "screens/library_screen.h"
 #include "screens/search_screen.h"
+#include "screens/explore_screen.h"
 
 #include <QHBoxLayout>
 #include <QVBoxLayout>
@@ -58,15 +59,13 @@ MainWindow::MainWindow(QWidget *parent)
             });
     m_stack->addWidget(m_searchScreen); // index 1
 
-    // Screen 2: Explore (placeholder — Task 8)
-    auto *explorePlaceholder = new QWidget(m_stack);
-    explorePlaceholder->setStyleSheet(
-        QStringLiteral("background-color: %1;").arg(ColorBackground));
-    auto *el = new QLabel(QStringLiteral("Explore screen — coming soon"), explorePlaceholder);
-    el->setAlignment(Qt::AlignCenter);
-    auto *elo = new QVBoxLayout(explorePlaceholder);
-    elo->addWidget(el);
-    m_stack->addWidget(explorePlaceholder); // index 2
+    // Screen 2: Explore (Task 8)
+    m_exploreScreen = new ExploreScreen(m_stack);
+    connect(m_exploreScreen, &ExploreScreen::bookDetailsRequested,
+            this, [](const QString & /*bookId*/) {
+                // TODO: show BookDetailsPanel (Task 9)
+            });
+    m_stack->addWidget(m_exploreScreen); // index 2
 
     m_stack->setCurrentIndex(0);
 

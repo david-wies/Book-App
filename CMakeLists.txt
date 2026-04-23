@@ -36,6 +36,9 @@ add_executable(bookhub
     src/gui/screens/search_screen.cpp
     src/gui/widgets/search_result_delegate.cpp
     src/gui/services/search_service.cpp
+    # GUI — Task 8: Explore Screen
+    src/gui/screens/explore_screen.cpp
+    src/gui/services/explore_service.cpp
 )
 target_include_directories(bookhub PRIVATE src)
 target_link_libraries(bookhub PRIVATE Qt6::Widgets Qt6::Network shared LibArchive::LibArchive)
