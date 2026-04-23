@@ -32,6 +32,10 @@ add_executable(bookhub
     src/gui/widgets/empty_state_widget.cpp
     src/gui/widgets/badge_label.cpp
     src/gui/services/library_service.cpp
+    # GUI — Task 7: Search Screen
+    src/gui/screens/search_screen.cpp
+    src/gui/widgets/search_result_delegate.cpp
+    src/gui/services/search_service.cpp
 )
 target_include_directories(bookhub PRIVATE src)
 target_link_libraries(bookhub PRIVATE Qt6::Widgets Qt6::Network shared LibArchive::LibArchive)

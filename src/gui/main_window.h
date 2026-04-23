@@ -9,13 +9,14 @@ class QLabel;
 namespace bookhub::gui {
 
 class LibraryScreen;
+class SearchScreen;
 
 // ---------------------------------------------------------------------------
 // MainWindow — the top-level QMainWindow for BookHub.
 //
 // Layout (spec Section 1):
 //   - Dark nav bar (48 px): three exclusive QPushButton tabs
-//   - QStackedWidget: LibraryScreen (0), placeholder (1), placeholder (2)
+//   - QStackedWidget: LibraryScreen (0), SearchScreen (1), placeholder (2)
 //   - QStatusBar (24 px): collector status text + coloured dot
 //
 // Receives CollectorWorker status signals via Qt::QueuedConnection so the
@@ -45,6 +46,7 @@ private:
     QStackedWidget *m_stack{};
     QButtonGroup   *m_navGroup{};
     LibraryScreen  *m_libraryScreen{};
+    SearchScreen   *m_searchScreen{};
 
     // Status bar widgets
     QLabel *m_statusLabel{};
