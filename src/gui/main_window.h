@@ -10,6 +10,7 @@ namespace bookhub::gui {
 
 class LibraryScreen;
 class SearchScreen;
+class ExploreScreen;
 
 // ---------------------------------------------------------------------------
 // MainWindow — the top-level QMainWindow for BookHub.
@@ -47,6 +48,7 @@ private:
     QButtonGroup   *m_navGroup{};
     LibraryScreen  *m_libraryScreen{};
     SearchScreen   *m_searchScreen{};
+    ExploreScreen  *m_exploreScreen{};
 
     // Status bar widgets
     QLabel *m_statusLabel{};
