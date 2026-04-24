@@ -4,6 +4,8 @@
 #include <QList>
 #include "source_adapter.h"
 
+class BookDiscoveryServiceTest; // test friend — defined in tests/integration/
+
 namespace bookhub::collector {
 
 class BookDiscoveryService : public QObject {
@@ -24,7 +26,7 @@ private slots:
     void onFetchCompleted(bool success, const QString& errorMessage);
 
 private:
-    friend class BookDiscoveryServiceTest;
+    friend class ::BookDiscoveryServiceTest;
 
     void insertBookIntoDatabase(const DiscoveredBook& book, const QString& sourceName);
 

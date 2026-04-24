@@ -95,9 +95,7 @@ void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, co
 
     // Phase 1 — deduplicate: find an existing book that shares any of the incoming identifiers
     if (!book.identifiers.isEmpty()) {
-        QStringList clauses;
-        for (const auto& id : book.identifiers)
-            clauses << "(type = ? AND value = ?)";
+        QStringList clauses(book.identifiers.size(), QStringLiteral("(type = ? AND value = ?)"));
         QString sql = "SELECT book_id FROM book_identifiers WHERE " + clauses.join(" OR ") + " LIMIT 1";
         query.prepare(sql);
         for (const auto& id : book.identifiers) {
