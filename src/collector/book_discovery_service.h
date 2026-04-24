@@ -4,6 +4,8 @@
 #include <QList>
 #include "source_adapter.h"
 
+class BookDiscoveryServiceTest; // test friend — defined in tests/integration/
+
 namespace bookhub::collector {
 
 class BookDiscoveryService : public QObject {
