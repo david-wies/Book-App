@@ -22,6 +22,7 @@
 #include <QScrollArea>
 #include <QComboBox>
 #include <QFrame>
+#include <QSignalBlocker>
 #include <QToolButton>
 
 namespace bookhub::gui {
@@ -93,6 +94,11 @@ SearchScreen::SearchScreen(QWidget *parent)
             item->setHidden(true);
     }
     m_showMoreGenres->setVisible(genres.size() > kGenreCollapsed);
+    {
+        const int rowH = m_genreList->sizeHintForRow(0);
+        if (rowH > 0)
+            m_genreList->setFixedHeight(kGenreCollapsed * rowH);
+    }
 
     for (const QString &lang : languages) {
         auto *item = new QListWidgetItem(lang, m_langList);
@@ -242,7 +248,6 @@ void SearchScreen::buildFilterPanel(QWidget *panel)
     m_genreList->setStyleSheet(listStyle);
     m_genreList->setSelectionMode(QAbstractItemView::NoSelection);
     m_genreList->setFocusPolicy(Qt::NoFocus);
-    m_genreList->setFixedHeight(kGenreCollapsed * 24);
     connect(m_genreList, &QListWidget::itemChanged,
             this, &SearchScreen::onFiltersChanged);
     layout->addWidget(m_genreList);
@@ -500,8 +505,9 @@ void SearchScreen::buildResultsPane(QWidget *pane)
 SearchParams SearchScreen::collectParams() const
 {
     SearchParams p;
-    p.keyword = m_searchBar->text().trimmed();
-    p.author  = m_authorFilter->text().trimmed();
+    p.keyword    = m_searchBar->text().trimmed();
+    p.author     = m_authorFilter->text().trimmed();
+    p.sortColumn = m_currentSortColumn;
 
     for (int i = 0; i < m_genreList->count(); ++i) {
         const auto *item = m_genreList->item(i);
@@ -531,6 +537,20 @@ SearchParams SearchScreen::collectParams() const
     p.audiobookOnly = m_audiobookCheck->isChecked();
 
     return p;
+}
+
+bool SearchScreen::isQueryActive() const
+{
+    const SearchParams p = collectParams();
+    return !p.keyword.isEmpty()
+        || !p.author.isEmpty()
+        || !p.genres.isEmpty()
+        || p.yearFrom > 0
+        || p.yearTo > 0
+        || !p.languages.isEmpty()
+        || !p.sources.isEmpty()
+        || p.ebookOnly
+        || p.audiobookOnly;
 }
 
 void SearchScreen::populateModel(const QList<SearchResult> &results, bool append)
@@ -603,20 +623,7 @@ void SearchScreen::onFiltersChanged()
 
 void SearchScreen::runSearch()
 {
-    const SearchParams params = collectParams();
-
-    // If nothing is active, show the initial hint state
-    const bool hasQuery = !params.keyword.isEmpty()
-                        || !params.author.isEmpty()
-                        || !params.genres.isEmpty()
-                        || params.yearFrom > 0
-                        || params.yearTo > 0
-                        || !params.languages.isEmpty()
-                        || !params.sources.isEmpty()
-                        || params.ebookOnly
-                        || params.audiobookOnly;
-
-    if (!hasQuery) {
+    if (!isQueryActive()) {
         m_model->clear();
         m_currentOffset = 0;
         m_totalCount    = 0;
@@ -625,6 +632,8 @@ void SearchScreen::runSearch()
         setResultsState(0);
         return;
     }
+
+    const SearchParams params = collectParams();
 
     // Count query runs only when filters change (not on "Load more")
     m_totalCount = m_service->count(params);
@@ -679,13 +688,13 @@ void SearchScreen::onAddToLibrary(const QString &bookId)
 void SearchScreen::onClearFilters()
 {
     // Block signals while resetting to avoid triggering multiple re-searches.
-    m_searchBar->blockSignals(true);
-    m_authorFilter->blockSignals(true);
-    m_genreList->blockSignals(true);
-    m_langList->blockSignals(true);
-    m_srcList->blockSignals(true);
-    m_ebookCheck->blockSignals(true);
-    m_audiobookCheck->blockSignals(true);
+    const QSignalBlocker bSearchBar(m_searchBar);
+    const QSignalBlocker bAuthorFilter(m_authorFilter);
+    const QSignalBlocker bGenreList(m_genreList);
+    const QSignalBlocker bLangList(m_langList);
+    const QSignalBlocker bSrcList(m_srcList);
+    const QSignalBlocker bEbookCheck(m_ebookCheck);
+    const QSignalBlocker bAudiobookCheck(m_audiobookCheck);
 
     m_searchBar->clear();
     m_authorFilter->clear();
@@ -702,14 +711,6 @@ void SearchScreen::onClearFilters()
 
     m_ebookCheck->setChecked(false);
     m_audiobookCheck->setChecked(false);
-
-    m_searchBar->blockSignals(false);
-    m_authorFilter->blockSignals(false);
-    m_genreList->blockSignals(false);
-    m_langList->blockSignals(false);
-    m_srcList->blockSignals(false);
-    m_ebookCheck->blockSignals(false);
-    m_audiobookCheck->blockSignals(false);
 
     m_searchTimer->stop();
     m_authorTimer->stop();
@@ -729,19 +730,7 @@ void SearchScreen::onSortChanged(int index)
         ? QStringLiteral("author")
         : QStringLiteral("title");
 
-    // Re-run if a search is already active
-    const SearchParams params = collectParams();
-    const bool hasQuery = !params.keyword.isEmpty()
-                        || !params.author.isEmpty()
-                        || !params.genres.isEmpty()
-                        || params.yearFrom > 0
-                        || params.yearTo > 0
-                        || !params.languages.isEmpty()
-                        || !params.sources.isEmpty()
-                        || params.ebookOnly
-                        || params.audiobookOnly;
-    if (hasQuery)
-        runSearch();
+    runSearch();
 }
 
 void SearchScreen::onShowMoreGenres()
@@ -752,7 +741,9 @@ void SearchScreen::onShowMoreGenres()
 
     // Resize the list to fit the newly visible items
     const int rows = m_genresExpanded ? m_genreList->count() : kGenreCollapsed;
-    m_genreList->setFixedHeight(rows * 24);
+    const int rowH = m_genreList->sizeHintForRow(0);
+    if (rowH > 0)
+        m_genreList->setFixedHeight(rows * rowH);
 
     m_showMoreGenres->setText(
         m_genresExpanded ? QStringLiteral("show less") : QStringLiteral("show more…"));

@@ -29,7 +29,7 @@
           <mxGeometry x="300" y="50" width="80" height="60" as="geometry"/>
         </mxCell>
 
-        <mxCell id="book-details" value="BookDetailsScreen" style="whiteSpace=wrap;html=1;" vertex="1" parent="gui-process">
+        <mxCell id="book-details" value="BookDetailsPanel" style="whiteSpace=wrap;html=1;" vertex="1" parent="gui-process">
           <mxGeometry x="20" y="130" width="120" height="60" as="geometry"/>
         </mxCell>
 

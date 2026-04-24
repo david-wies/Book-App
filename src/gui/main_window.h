@@ -17,7 +17,7 @@ class ExploreScreen;
 //
 // Layout (spec Section 1):
 //   - Dark nav bar (48 px): three exclusive QPushButton tabs
-//   - QStackedWidget: LibraryScreen (0), SearchScreen (1), placeholder (2)
+//   - QStackedWidget: LibraryScreen (0), SearchScreen (1), ExploreScreen (2)
 //   - QStatusBar (24 px): collector status text + coloured dot
 //
 // Receives CollectorWorker status signals via Qt::QueuedConnection so the

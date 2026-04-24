@@ -20,10 +20,10 @@
 
 ### 3.1 Overall approach
 
-Build a single native C++ application (one program) utilizing **two separate threads/processes**:
+Build a single native C++ application (one program) utilizing **two separate threads**:
 
-1. **GUI Thread/Process**: Runs the Qt desktop interface (Library, Search, Explore, BookDetails, Download/Audiobook flows). Reads from the shared SQLite database and handles user interactions.
-2. **Data Collector Thread/Process**: Runs in the background and periodically refreshes book metadata from sources (Gutenberg, Ben-Yehuda, etc.). Updates the SQLite database on a configurable schedule.
+1. **GUI Thread**: Runs the Qt desktop interface (Library, Search, Explore, BookDetailsPanel, Download/Audiobook flows). Reads from the shared SQLite database and handles user interactions.
+2. **Data Collector Thread**: Runs in the background and periodically refreshes book metadata from sources (Gutenberg, Ben-Yehuda, etc.). Updates the SQLite database on a configurable schedule.
 
 This single-program architecture keeps the GUI responsive, separates concerns, and enables user-configurable update frequency.
 
@@ -127,8 +127,8 @@ This is exactly what relational databases are designed for—efficient storage a
    - Category cards, subcategory drill-down, discovery sections: trending, new arrivals, curated.
    - Reads from cached category and book data in the database.
 
-4. `BookDetailsScreen`
-   - Full metadata view and availability by edition.
+4. `BookDetailsPanel`
+   - Full metadata view and availability by edition, shown as a right-side split pane (50/50 `QSplitter`) within the active screen — not a separate window.
    - Queries the database for Edition and Format records.
    - Controls for add-to-library, download, audiobook conversion.
    - Language selector when multiple editions exist.
@@ -136,8 +136,7 @@ This is exactly what relational databases are designed for—efficient storage a
 5. `DownloadFlow`
    - Step 1: select language edition.
    - Step 2: choose ebook format.
-   - Step 3: choose source.
-   - Step 4: confirm download.
+   - Step 3: choose source and confirm download.
 
 6. `AudiobookFlow`
    - Step 1: select language edition.
@@ -407,7 +406,7 @@ The architecture has three main layers:
 
 1. **UI layer**
    - Qt application (Qt Quick or Qt Widgets)
-   - Screens: Library, Search, Explore, BookDetails, DownloadFlow, AudiobookFlow
+   - Screens: Library, Search, Explore, BookDetailsPanel (split-pane), DownloadFlow, AudiobookFlow
    - Directly interacts with C++ application services
 
 2. **Application layer**
@@ -437,7 +436,7 @@ This separation keeps the UI responsive, the business logic centralized in C++, 
 1. Define SQLite database schema for Book, Edition, Source, Format, LibraryItem, and Voice entities.
 2. Implement the first source adapter (e.g., Gutenberg) to fetch and normalize book metadata.
 3. Build the data collector background thread with configurable update schedule.
-4. Build the GUI components with Qt and implement Library and BookDetails screens first.
+4. Build the GUI components with Qt and implement Library and BookDetailsPanel first.
 5. Implement Search and Explore screens once the core metadata queries are stable.
 6. Add Download flow and Audiobook flow after the core discovery experience is working.
 7. Implement voice preview and generation as the final MVP phase.

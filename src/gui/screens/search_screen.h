@@ -56,6 +56,7 @@ private:
     void buildResultsPane(QWidget *pane);
 
     SearchParams collectParams() const;
+    bool isQueryActive() const;
     void populateModel(const QList<SearchResult> &results, bool append);
     void updateCountLabel(int count);
     void setResultsState(int state); // 0=initial, 1=populated, 2=empty

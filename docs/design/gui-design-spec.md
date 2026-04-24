@@ -59,7 +59,7 @@ graph TD
   ScreenStack --> SearchScreen
   ScreenStack --> ExploreScreen
 
-  LibraryScreen --> BookDetailsPanel["BookDetailsPanel (QDockWidget or right-pane)"]
+  LibraryScreen --> BookDetailsPanel["BookDetailsPanel (QSplitter right pane)"]
   SearchScreen --> BookDetailsPanel
   ExploreScreen --> BookDetailsPanel
 
@@ -227,7 +227,7 @@ Each row is 96 px tall (list mode) or a 200 × 260 px card (grid mode). The two 
 **Accessibility:**
 - Each book card announces "Title by Author. Status: downloaded. Language: English." via `QAccessibleWidget`
 - Tab order: Sort combo → list → (within card: Details → Download/Audiobook → Remove)
-- Remove button has tooltip: "Remove from library"
+- All library card action buttons have descriptive tooltips: "View book details" (Details), "Download this book" (Download), "Convert to audiobook" (Audiobook), "Remove from library" (Remove).
 
 ---
 
@@ -341,6 +341,7 @@ graph TD
 - Search triggers on Enter key press in the search bar or after 500 ms debounce.
 - Active filters are combined with AND logic (all conditions must match).
 - Results are paginated: 50 rows per page; "Load more" appends next page to the list model.
+- **Pagination stability (MVP):** The collector may insert new rows between "Load more" page loads. This can cause occasional duplicate or shifted results. This is an accepted MVP limitation — no cursor-based stabilisation is required.
 - Result count label updates with each query ("247 books", "No results").
 
 **Search Result Card (delegate rendered row):** 72 px tall.
@@ -694,7 +695,7 @@ Each format type (`epub`, `pdf`, `txt`, `html`) renders one row:
 │  [████████████████░░░░░░░░░░░░]  54%       │
 │  1.2 MB / 2.3 MB                           │
 │                                            │
-│  Saving to: ~/Books/                       │
+│  Saving to: ~/Downloads/                   │
 │                                [Cancel]    │
 └────────────────────────────────────────────┘
 ```
@@ -750,7 +751,7 @@ graph TD
 **Download Behaviour:**
 - Initiated by `QNetworkAccessManager::get()` on the GUI thread.
 - Progress signals update `QProgressBar` via lambda.
-- File saved to a user-configurable directory (default: `~/Books/`; stored in `QSettings`).
+- File saved to a directory chosen via `QFileDialog` (pre-seeded with last-used path, defaulting to `QDir::homePath()` on first use; chosen path stored in `QSettings`). There is no separate settings screen — the dialog itself is the only place the directory is chosen.
 - On completion: dialog shows "Download complete" with "Open file" and "Close" buttons.
 - On error: inline error message with "Retry" button.
 

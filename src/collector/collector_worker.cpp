@@ -19,20 +19,14 @@ CollectorWorker::~CollectorWorker() {
 void CollectorWorker::requestShutdownAfterCurrentUpdate() {
     m_shutdownRequested.store(true);
 
-    auto* discoveryService = m_discoveryService.data();
-    if (!discoveryService) {
-        quit();
-        return;
-    }
-
-    QMetaObject::invokeMethod(discoveryService, [this]() {
-        if (m_pollTimer) {
+    // Post into the collector thread's event loop so m_discoveryService and
+    // m_pollTimer are only touched from the thread that owns them.
+    QMetaObject::invokeMethod(this, [this]() {
+        if (m_pollTimer)
             m_pollTimer->stop();
-        }
 
-        if (!m_updateInProgress.load()) {
+        if (!m_updateInProgress.load())
             QThread::currentThread()->quit();
-        }
     }, Qt::QueuedConnection);
 }
 

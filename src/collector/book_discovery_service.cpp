@@ -19,6 +19,11 @@ void BookDiscoveryService::addAdapter(ISourceAdapter* adapter) {
 }
 
 void BookDiscoveryService::startDiscovery() {
+    if (m_activeFetches > 0) {
+        qDebug() << "BookDiscoveryService: Discovery already in progress; skipping overlapping run.";
+        return;
+    }
+
     qDebug() << "BookDiscoveryService: Starting discovery across" << m_adapters.size() << "adapters.";
     if (m_adapters.isEmpty()) {
         return;
@@ -160,19 +165,32 @@ void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, co
     const int editionId = query.value(0).toInt();
 
     for (auto it = book.formats.constBegin(); it != book.formats.constEnd(); ++it) {
-        query.prepare("INSERT INTO formats (edition_id, format_type) VALUES (?, ?)");
+        query.prepare("INSERT OR IGNORE INTO formats (edition_id, format_type) VALUES (?, ?)");
         query.addBindValue(editionId);
         query.addBindValue(it.key());
-        if (query.exec()) {
-            const int formatId = query.lastInsertId().toInt();
-            QSqlQuery sourceQuery(db);
-            sourceQuery.prepare("INSERT INTO sources (format_id, source_name, download_link) VALUES (?, ?, ?)");
-            sourceQuery.addBindValue(formatId);
-            sourceQuery.addBindValue(sourceName);
-            sourceQuery.addBindValue(it.value());
-            if (!sourceQuery.exec()) {
-                qWarning() << "Failed to insert source:" << sourceQuery.lastError().text();
-            }
+        if (!query.exec()) {
+            qWarning() << "Failed to insert format:" << query.lastError().text();
+            continue;
+        }
+
+        // Retrieve the format id whether the row was just inserted or already existed.
+        QSqlQuery fmtQuery(db);
+        fmtQuery.prepare("SELECT id FROM formats WHERE edition_id = ? AND format_type = ?");
+        fmtQuery.addBindValue(editionId);
+        fmtQuery.addBindValue(it.key());
+        if (!fmtQuery.exec() || !fmtQuery.next()) {
+            qWarning() << "Failed to retrieve format id:" << fmtQuery.lastError().text();
+            continue;
+        }
+        const int formatId = fmtQuery.value(0).toInt();
+
+        QSqlQuery sourceQuery(db);
+        sourceQuery.prepare("INSERT OR IGNORE INTO sources (format_id, source_name, download_link) VALUES (?, ?, ?)");
+        sourceQuery.addBindValue(formatId);
+        sourceQuery.addBindValue(sourceName);
+        sourceQuery.addBindValue(it.value());
+        if (!sourceQuery.exec()) {
+            qWarning() << "Failed to insert source:" << sourceQuery.lastError().text();
         }
     }
 }

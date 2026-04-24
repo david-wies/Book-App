@@ -173,7 +173,7 @@ void BookCardDelegate::paintListRow(QPainter *painter,
 
     // Status text after badges
     auto [statusText, statusColor] = statusDisplay(status);
-    painter->setPen(QColor(statusColor.toStdString().c_str()));
+    painter->setPen(QColor(statusColor));
     painter->setFont(badgeFont);
     const QRect statusRect(badgeX + SpacingXS, badgeY, textRight - badgeX - SpacingXS, badgeH);
     painter->drawText(statusRect, Qt::AlignLeft | Qt::AlignVCenter, statusText);

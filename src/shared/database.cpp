@@ -34,6 +34,12 @@ bool initializeDatabase(const QString &filePath, const QString &connectionName)
         qWarning() << "Failed to enable foreign keys:" << query.lastError().text();
     }
 
+    // WAL mode allows the GUI thread to read while the collector holds a write
+    // lock, preventing UI stalls during background discovery runs.
+    if (!query.exec("PRAGMA journal_mode = WAL;")) {
+        qWarning() << "Failed to enable WAL journal mode:" << query.lastError().text();
+    }
+
     qDebug() << "Opened SQLite database at" << filePath << "with connection:" << connectionName;
     return true;
 }
@@ -81,6 +87,7 @@ bool createSchema(const QString &connectionName)
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             edition_id INTEGER NOT NULL,
             format_type TEXT NOT NULL,
+            UNIQUE(edition_id, format_type),
             FOREIGN KEY (edition_id) REFERENCES editions(id) ON DELETE CASCADE
         ))",
         R"(CREATE TABLE IF NOT EXISTS sources (
@@ -88,11 +95,12 @@ bool createSchema(const QString &connectionName)
             format_id INTEGER NOT NULL,
             source_name TEXT NOT NULL,
             download_link TEXT NOT NULL,
+            UNIQUE(format_id, source_name),
             FOREIGN KEY (format_id) REFERENCES formats(id) ON DELETE CASCADE
         ))",
         R"(CREATE TABLE IF NOT EXISTS library_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            book_id TEXT NOT NULL,
+            book_id TEXT NOT NULL UNIQUE,
             edition_id INTEGER,
             added_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             status TEXT,
@@ -108,7 +116,7 @@ bool createSchema(const QString &connectionName)
         }
     }
 
-    if (!query.exec("PRAGMA user_version = 1")) {
+    if (!query.exec(QStringLiteral("PRAGMA user_version = %1").arg(kSchemaVersion))) {
         qWarning() << "Failed to set user_version:" << query.lastError().text();
         return false;
     }
@@ -137,6 +145,65 @@ bool verifySchemaVersion(const QString &connectionName)
         tableCheck.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='books'");
         if (!tableCheck.next())
             return true; // no tables yet — fresh DB
+    }
+
+    // Migration: version 1 → 2
+    // Adds UNIQUE(edition_id, format_type) on formats,
+    // UNIQUE(format_id, source_name) on sources, and UNIQUE(book_id) on
+    // library_items. SQLite does not support ADD CONSTRAINT, so we recreate
+    // each table using the standard rename-insert-drop pattern.
+    if (version == 1) {
+        qDebug() << "Migrating database schema from version 1 to 2...";
+        QStringList migration = {
+            "BEGIN",
+            R"(CREATE TABLE formats_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                edition_id INTEGER NOT NULL,
+                format_type TEXT NOT NULL,
+                UNIQUE(edition_id, format_type),
+                FOREIGN KEY (edition_id) REFERENCES editions(id) ON DELETE CASCADE
+            ))",
+            "INSERT OR IGNORE INTO formats_new SELECT * FROM formats",
+            "DROP TABLE formats",
+            "ALTER TABLE formats_new RENAME TO formats",
+            R"(CREATE TABLE sources_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                format_id INTEGER NOT NULL,
+                source_name TEXT NOT NULL,
+                download_link TEXT NOT NULL,
+                UNIQUE(format_id, source_name),
+                FOREIGN KEY (format_id) REFERENCES formats(id) ON DELETE CASCADE
+            ))",
+            "INSERT OR IGNORE INTO sources_new SELECT * FROM sources",
+            "DROP TABLE sources",
+            "ALTER TABLE sources_new RENAME TO sources",
+            R"(CREATE TABLE library_items_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_id TEXT NOT NULL UNIQUE,
+                edition_id INTEGER,
+                added_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                status TEXT,
+                FOREIGN KEY (book_id) REFERENCES books(book_id) ON DELETE CASCADE ON UPDATE CASCADE,
+                FOREIGN KEY (edition_id) REFERENCES editions(id)
+            ))",
+            "INSERT OR IGNORE INTO library_items_new SELECT * FROM library_items",
+            "DROP TABLE library_items",
+            "ALTER TABLE library_items_new RENAME TO library_items",
+            QStringLiteral("PRAGMA user_version = %1").arg(kSchemaVersion),
+            "COMMIT"
+        };
+
+        QSqlQuery mq(db);
+        for (const QString &sql : migration) {
+            if (!mq.exec(sql)) {
+                qCritical() << "Migration v1→v2 failed at:" << sql
+                            << "\nError:" << mq.lastError().text();
+                mq.exec("ROLLBACK");
+                return false;
+            }
+        }
+        qDebug() << "Migration to schema version 2 complete.";
+        return true;
     }
 
     fprintf(stderr,

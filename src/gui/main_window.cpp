@@ -189,11 +189,11 @@ void MainWindow::onNavTabChanged(int id, bool checked)
 void MainWindow::onLibraryExploreRequested()
 {
     // Switch to the Explore tab (index 2) when the user clicks "Explore Books"
-    // from the empty library state.
+    // from the empty library state. setChecked fires idToggled → onNavTabChanged
+    // which calls setCurrentIndex(2), so no explicit setCurrentIndex is needed.
     if (auto *btn = qobject_cast<QPushButton *>(m_navGroup->button(2))) {
         btn->setChecked(true);
     }
-    m_stack->setCurrentIndex(2);
 }
 
 } // namespace bookhub::gui

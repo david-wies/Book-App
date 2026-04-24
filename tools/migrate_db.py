@@ -5,6 +5,10 @@ migrate_db.py — Migrate bookhub.db from schema version 0 to version 1.
 Schema v0: ISBN-keyed books table.
 Schema v1: book_id-keyed books table with book_identifiers for cross-source deduplication.
 
+This script handles only the v0→v1 migration (a structural rewrite of the schema).
+The v1→v2 migration (adding UNIQUE constraints on formats, sources, and library_items)
+is handled automatically by the application at startup via verifySchemaVersion().
+
 All migration steps run inside a single transaction. PRAGMA user_version is set
 outside the transaction (SQLite requirement). On any failure the transaction is
 rolled back and the database is left untouched.
@@ -74,6 +78,7 @@ CREATE TABLE IF NOT EXISTS formats (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     edition_id INTEGER NOT NULL,
     format_type TEXT NOT NULL,
+    UNIQUE(edition_id, format_type),
     FOREIGN KEY (edition_id) REFERENCES editions(id) ON DELETE CASCADE
 )
 """
@@ -84,6 +89,7 @@ CREATE TABLE IF NOT EXISTS sources (
     format_id INTEGER NOT NULL,
     source_name TEXT NOT NULL,
     download_link TEXT NOT NULL,
+    UNIQUE(format_id, source_name),
     FOREIGN KEY (format_id) REFERENCES formats(id) ON DELETE CASCADE
 )
 """
@@ -91,7 +97,7 @@ CREATE TABLE IF NOT EXISTS sources (
 NEW_LIBRARY_ITEMS_DDL = """
 CREATE TABLE IF NOT EXISTS library_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    book_id TEXT NOT NULL,
+    book_id TEXT NOT NULL UNIQUE,
     edition_id INTEGER,
     added_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     status TEXT,
@@ -151,8 +157,15 @@ def migrate(db_path: str) -> None:
         cur.execute("PRAGMA user_version")
         user_version = cur.fetchone()[0]
 
-        if user_version >= 1:
-            print("already at version 1, nothing to do")
+        if user_version == 1:
+            print(
+                "Database is at v1. Launch the app once to auto-migrate to v2."
+            )
+            con.close()
+            return
+
+        if user_version >= 2:
+            print("Already at version 2 (or newer), nothing to do.")
             con.close()
             return
 
@@ -342,7 +355,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
             "Migrate bookhub.db from schema version 0 (ISBN-keyed) "
-            "to version 1 (book_id-keyed)."
+            "to version 1 (book_id-keyed). "
+            "The v1→v2 migration is handled automatically by the app at startup."
         )
     )
     parser.add_argument(
