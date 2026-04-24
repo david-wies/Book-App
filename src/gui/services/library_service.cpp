@@ -90,10 +90,10 @@ int LibraryService::addBook(const QString &bookId, int editionId)
         return -1;
     }
 
-    const int newId = query.lastInsertId().toInt();
-    if (newId == 0)
+    if (query.numRowsAffected() <= 0)
         return 0;
 
+    const int newId = query.lastInsertId().toInt();
     emit libraryChanged();
     return newId;
 }

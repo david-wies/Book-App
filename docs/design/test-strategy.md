@@ -190,8 +190,8 @@ Representative scenarios:
 
 - Keyword containing `%` or `_` is escaped before being passed to the `LIKE` clause, so it matches
   literal characters rather than SQL wildcards.
-- Empty keyword with no filters returns all books (or zero, whichever the service defines as the
-  intended contract — document this explicitly in the test).
+- Empty keyword with no filters returns all books. `SearchParams{}` is a no-filter query and must
+  return every row in the database; test with `QCOMPARE(results.size(), totalBooks)`.
 - AND semantics hold across all active filters simultaneously.
 
 ### Library/database integration
