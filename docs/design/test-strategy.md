@@ -186,12 +186,75 @@ Representative scenarios:
 4. two editions with same `book_id` but different languages
 5. duplicate identifier insertion on a second collector run
 
+### `SearchService`
+
+- Keyword containing `%` or `_` is escaped before being passed to the `LIKE` clause, so it matches
+  literal characters rather than SQL wildcards.
+- Empty keyword with no filters returns all books (or zero, whichever the service defines as the
+  intended contract — document this explicitly in the test).
+- AND semantics hold across all active filters simultaneously.
+
 ### Library/database integration
 
 - Adding a library item makes it appear in the library query.
 - Removing a book cleans up dependent library rows safely.
 - Audiobook-ready status is queryable for search filters.
 - Distinct languages, formats, and source lists are returned correctly for details/search views.
+
+---
+
+## Test Implementation Quality Rules
+
+These rules apply to every test in this suite. They exist because several fragility patterns appeared
+during early implementation and are easy to repeat.
+
+### Never hardcode database row IDs
+
+Row IDs from `autoincrement` columns depend on insertion order and are not stable across sample data
+changes. Always query for the ID after the row is inserted:
+
+```cpp
+// Wrong
+service.addBook("gutenberg:1184", 4);
+
+// Right
+const int editionId = testDb.scalarInt("SELECT id FROM editions WHERE book_id = 'gutenberg:1184'");
+service.addBook("gutenberg:1184", editionId);
+```
+
+### Never use a whitespace string as a wildcard keyword
+
+Using `keyword = " "` to retrieve all results is fragile: if the service trims whitespace before
+querying, it returns zero results, and an assertion like `QVERIFY(results.size() >= N)` passes
+vacuously. Use `SearchParams{}` with no keyword to express "no filter", or test the empty-keyword
+contract explicitly with `QCOMPARE`.
+
+### Avoid `QTest::qWait` for debounce timing
+
+`QTest::qWait(550)` is slow and flaky on loaded CI runners. Prefer one of:
+
+- Make the debounce delay configurable and set it to 0 in tests.
+- Expose a `triggerSearch()` slot that bypasses the debounce timer entirely.
+- Use `QSignalSpy::wait()` with a generous timeout instead of a fixed sleep.
+
+### Avoid short timers to accept modal dialogs
+
+A `QTimer` with a 10ms interval fires before the dialog renders on a slow machine. Use
+`QTimer::singleShot(0, ...)` plus `QCoreApplication::processEvents()` after the action, or
+spy on the dialog's `finished` signal directly.
+
+### Document non-obvious ordering assertions
+
+If a test asserts a specific item at position 0, add a comment explaining the invariant that
+produces that order. Assertions like `QCOMPARE(trending.first().bookId, "book:25")` with no
+explanation are opaque and break silently when query ordering changes.
+
+### Clarify fresh-database contracts
+
+`verifySchemaVersion` returning `true` for an empty database is only correct if the production
+code defines an empty database as fresh-and-valid. Wherever this contract is tested, name the
+test `freshDatabase_isValid` and `versionMismatch_isInvalid` as separate cases with a comment
+stating the intended invariant.
 
 ---
 

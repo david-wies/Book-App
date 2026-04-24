@@ -48,7 +48,11 @@ void ExploreServiceTest::fetchTrendingAndGenreBooks_returnExpectedWindows()
     const QList<ExploreBook> arrivals = service.fetchNewArrivals();
     QVERIFY(!trending.isEmpty());
     QVERIFY(!arrivals.isEmpty());
+    // fetchTrending() selects ORDER BY rowid DESC LIMIT 20. Books 1..25 were
+    // inserted in ascending order, so book:25 has the highest rowid and is first.
     QCOMPARE(trending.first().bookId, QStringLiteral("book:25"));
+    // fetchNewArrivals() applies OFFSET 20 to the same rowid-DESC order, skipping
+    // books 25..6. book:5 is the first of the remaining window (5, 4, 3, 2, 1).
     QCOMPARE(arrivals.first().bookId, QStringLiteral("book:5"));
 
     const QList<ExploreBook> genreBooks = service.fetchBooksForGenre(QStringLiteral("Genre10"));

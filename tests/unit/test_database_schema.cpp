@@ -11,7 +11,8 @@ class DatabaseSchemaTest : public QObject
 private slots:
     void databaseFilePath_resolvesNextToExecutable();
     void createSchema_createsCoreTablesAndVersion();
-    void verifySchemaVersion_handlesFreshAndMismatch();
+    void verifySchemaVersion_freshDatabaseIsValid();
+    void verifySchemaVersion_mismatchedVersionIsRejected();
     void constraints_andSampleData_behaveAsExpected();
 };
 
@@ -35,12 +36,19 @@ void DatabaseSchemaTest::createSchema_createsCoreTablesAndVersion()
         8);
 }
 
-void DatabaseSchemaTest::verifySchemaVersion_handlesFreshAndMismatch()
+void DatabaseSchemaTest::verifySchemaVersion_freshDatabaseIsValid()
 {
+    // A database that has been opened but never had createSchema() called has
+    // user_version=0 and no tables. verifySchemaVersion treats this as a fresh,
+    // valid database — the caller is expected to call createSchema() immediately
+    // after receiving true from this check.
     bookhub::tests::TestDatabase freshDb;
     QVERIFY(freshDb.open());
     QVERIFY(db::verifySchemaVersion(freshDb.connection()));
+}
 
+void DatabaseSchemaTest::verifySchemaVersion_mismatchedVersionIsRejected()
+{
     bookhub::tests::TestDatabase mismatchDb;
     QVERIFY(mismatchDb.open(QStringLiteral("mismatch")));
     QVERIFY(mismatchDb.createSchema());

@@ -42,7 +42,10 @@ void LibraryServiceTest::writeOperations_emitSignalsAndMutateRows()
     LibraryService service;
     QSignalSpy spy(&service, &LibraryService::libraryChanged);
 
-    const int addedId = service.addBook(QStringLiteral("gutenberg:1184"), 4);
+    const int editionId = testDb.scalarInt(QStringLiteral(
+        "SELECT id FROM editions WHERE book_id = 'gutenberg:1184' AND language = 'English'"));
+    QVERIFY(editionId > 0);
+    const int addedId = service.addBook(QStringLiteral("gutenberg:1184"), editionId);
     QVERIFY(addedId > 0);
     QCOMPARE(spy.count(), 1);
 
