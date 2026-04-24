@@ -19,13 +19,14 @@ CollectorWorker::~CollectorWorker() {
 void CollectorWorker::requestShutdownAfterCurrentUpdate() {
     m_shutdownRequested.store(true);
 
-    if (!isRunning() || !m_threadContext) {
+    QObject* ctx = m_threadContext.load();
+    if (!isRunning() || !ctx) {
         return;
     }
 
     // Post into the collector thread's event loop so m_discoveryService and
     // m_pollTimer are only touched from the thread that owns them.
-    QMetaObject::invokeMethod(m_threadContext, [this]() {
+    QMetaObject::invokeMethod(ctx, [this]() {
         if (m_pollTimer)
             m_pollTimer->stop();
 
@@ -38,13 +39,13 @@ void CollectorWorker::run() {
     qDebug() << "Data collector background thread started.";
 
     QObject threadContext;
-    m_threadContext = &threadContext;
+    m_threadContext.store(&threadContext);
 
     // 1. Initialize thread-local database connection
     QString connectionName = "collector_connection";
     if (!bookhub::db::initializeDatabase(bookhub::db::databaseFilePath(), connectionName)) {
         qWarning() << "Collector thread failed to initialize database.";
-        m_threadContext = nullptr;
+        m_threadContext.store(nullptr);
         return;
     }
 
@@ -86,7 +87,7 @@ void CollectorWorker::run() {
     exec();
 
     m_pollTimer = nullptr;
-    m_threadContext = nullptr;
+    m_threadContext.store(nullptr);
     m_discoveryService = nullptr;
     qDebug() << "Data collector background thread stopped.";
 }

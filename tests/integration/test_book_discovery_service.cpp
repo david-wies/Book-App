@@ -2,10 +2,7 @@
 #include <QString>
 #include <QList>
 
-#define private public
 #include "collector/book_discovery_service.h"
-#undef private
-
 #include "collector/source_adapter.h"
 #include "support/test_database_utils.h"
 

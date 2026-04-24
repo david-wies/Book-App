@@ -23,7 +23,7 @@ private:
     // Owned by the collector thread's run() stack frame; only accessed from
     // the collector thread except through QMetaObject::invokeMethod queued calls.
     class BookDiscoveryService* m_discoveryService{nullptr};
-    QObject* m_threadContext{nullptr};
+    std::atomic<QObject*> m_threadContext{nullptr};
     QTimer* m_pollTimer{nullptr};
     std::atomic_bool m_shutdownRequested{false};
     std::atomic_bool m_updateInProgress{false};

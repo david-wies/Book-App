@@ -24,6 +24,8 @@ private slots:
     void onFetchCompleted(bool success, const QString& errorMessage);
 
 private:
+    friend class BookDiscoveryServiceTest;
+
     void insertBookIntoDatabase(const DiscoveredBook& book, const QString& sourceName);
 
     QString m_dbConnectionName;
