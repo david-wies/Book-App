@@ -17,6 +17,7 @@ struct SearchParams {
     QStringList sources;
     bool        ebookOnly{false};
     bool        audiobookOnly{false};
+    QString     sortColumn{QStringLiteral("title")}; // "title" or "author"
 };
 
 struct SearchResult {

@@ -565,8 +565,6 @@ void ExploreScreen::appendGenreBooks(int offset)
         return;
     }
 
-    // Append cards starting from the next free row
-    const int startRow = offset / kGridColumns;
     for (int i = 0; i < books.size(); ++i) {
         const ExploreBook &b = books[i];
         auto *card = new BookMiniCard(b.bookId, b.title, b.author, m_genreGridContainer);

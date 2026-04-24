@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS formats (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     edition_id INTEGER NOT NULL,
     format_type TEXT NOT NULL,
+    UNIQUE(edition_id, format_type),
     FOREIGN KEY (edition_id) REFERENCES editions(id) ON DELETE CASCADE
 )
 """
@@ -84,6 +85,7 @@ CREATE TABLE IF NOT EXISTS sources (
     format_id INTEGER NOT NULL,
     source_name TEXT NOT NULL,
     download_link TEXT NOT NULL,
+    UNIQUE(format_id, source_name),
     FOREIGN KEY (format_id) REFERENCES formats(id) ON DELETE CASCADE
 )
 """
@@ -91,7 +93,7 @@ CREATE TABLE IF NOT EXISTS sources (
 NEW_LIBRARY_ITEMS_DDL = """
 CREATE TABLE IF NOT EXISTS library_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    book_id TEXT NOT NULL,
+    book_id TEXT NOT NULL UNIQUE,
     edition_id INTEGER,
     added_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     status TEXT,
@@ -151,8 +153,15 @@ def migrate(db_path: str) -> None:
         cur.execute("PRAGMA user_version")
         user_version = cur.fetchone()[0]
 
-        if user_version >= 1:
-            print("already at version 1, nothing to do")
+        if user_version == 1:
+            print(
+                "Database is at v1. Launch the app once to auto-migrate to v2."
+            )
+            con.close()
+            return
+
+        if user_version >= 2:
+            print("Already at version 2 (or newer), nothing to do.")
             con.close()
             return
 
@@ -167,6 +176,17 @@ def migrate(db_path: str) -> None:
             con.close()
             sys.exit(1)
 
+        for sentinel in ("_old_formats", "_old_sources"):
+            if table_exists(cur, sentinel):
+                print(
+                    f"Error: table '{sentinel}' already exists. The database may be "
+                    "in an unknown partial-migration state. Restore from a backup "
+                    "before retrying.",
+                    file=sys.stderr,
+                )
+                con.close()
+                sys.exit(1)
+
         # --- Verify the old 'books' table has the expected 'isbn' column ------
         if table_exists(cur, "books") and not column_exists(cur, "books", "isbn"):
             print(
@@ -178,21 +198,25 @@ def migrate(db_path: str) -> None:
             con.close()
             sys.exit(1)
 
+        # Step 1: Disable FK enforcement — must be outside any active transaction.
+        con.execute("PRAGMA foreign_keys = OFF")
+
         # ======================================================================
         # BEGIN TRANSACTION
         # ======================================================================
         con.execute("BEGIN")
 
-        # Step 1: Disable foreign key enforcement for the duration of migration.
-        # NOTE: PRAGMA foreign_keys must be set outside any transaction to take
-        # effect, but SQLite silently accepts it inside one — it will apply after
-        # the next transaction boundary. We disable it here so that the rename +
-        # re-create sequence doesn't trip FK checks mid-migration.
-        con.execute("PRAGMA foreign_keys = OFF")
-
         # Step 2: Rename old tables to backup names.
+        # formats and sources are renamed alongside editions: SQLite's
+        # ALTER TABLE RENAME rewrites child FK definitions to point at the new
+        # parent name (_old_editions), so leaving formats in place would give it
+        # a broken FK after _old_editions is dropped.
         con.execute("ALTER TABLE books RENAME TO _old_books")
         con.execute("ALTER TABLE editions RENAME TO _old_editions")
+        if table_exists(cur, "formats"):
+            con.execute("ALTER TABLE formats RENAME TO _old_formats")
+        if table_exists(cur, "sources"):
+            con.execute("ALTER TABLE sources RENAME TO _old_sources")
         con.execute("ALTER TABLE book_genres RENAME TO _old_book_genres")
         con.execute("ALTER TABLE library_items RENAME TO _old_library_items")
 
@@ -200,8 +224,6 @@ def migrate(db_path: str) -> None:
         con.execute(NEW_BOOKS_DDL)
         con.execute(NEW_BOOK_IDENTIFIERS_DDL)
         con.execute(NEW_EDITIONS_DDL)
-        # genres, formats, sources schema is unchanged — recreate defensively
-        # using IF NOT EXISTS so existing data is preserved.
         con.execute(NEW_GENRES_DDL)
         con.execute(NEW_BOOK_GENRES_DDL)
         con.execute(NEW_FORMATS_DDL)
@@ -304,20 +326,81 @@ def migrate(db_path: str) -> None:
         )
         print(f"Migrated {len(library_rows)} library_items")
 
-        # Step 10: Drop backup tables.
+        # Step 10: Migrate formats. MIN(id) picks a stable representative row when
+        # the old schema allowed duplicate (edition_id, format_type) pairs that the
+        # restored UNIQUE constraint now forbids.
+        if table_exists(cur, "_old_formats"):
+            cur.execute("""
+                SELECT MIN(id) AS id, edition_id, format_type
+                FROM _old_formats
+                GROUP BY edition_id, format_type
+            """)
+            old_formats = cur.fetchall()
+            format_rows = [
+                (row["id"], row["edition_id"], row["format_type"])
+                for row in old_formats
+            ]
+            con.executemany(
+                "INSERT INTO formats (id, edition_id, format_type) VALUES (?, ?, ?)",
+                format_rows,
+            )
+            print(f"Migrated {len(format_rows)} formats")
+
+        # Step 11: Migrate sources. MIN(id) picks a stable representative row when
+        # the old schema allowed duplicate (format_id, source_name) pairs that the
+        # restored UNIQUE constraint now forbids. download_link from the earliest row
+        # is kept; for true duplicates it will be identical.
+        if table_exists(cur, "_old_sources"):
+            cur.execute("""
+                SELECT MIN(id) AS id, format_id, source_name,
+                       MIN(download_link) AS download_link
+                FROM _old_sources
+                GROUP BY format_id, source_name
+            """)
+            old_sources = cur.fetchall()
+            source_rows = [
+                (row["id"], row["format_id"], row["source_name"], row["download_link"])
+                for row in old_sources
+            ]
+            con.executemany(
+                "INSERT INTO sources (id, format_id, source_name, download_link) "
+                "VALUES (?, ?, ?, ?)",
+                source_rows,
+            )
+            print(f"Migrated {len(source_rows)} sources")
+
+        # Step 12: Drop backup tables.
+        if table_exists(cur, "_old_sources"):
+            con.execute("DROP TABLE _old_sources")
+        if table_exists(cur, "_old_formats"):
+            con.execute("DROP TABLE _old_formats")
         con.execute("DROP TABLE _old_library_items")
         con.execute("DROP TABLE _old_book_genres")
         con.execute("DROP TABLE _old_editions")
         con.execute("DROP TABLE _old_books")
 
-        # Step 11: Re-enable foreign keys.
-        con.execute("PRAGMA foreign_keys = ON")
-
-        # Step 12: Commit transaction.
+        # Step 13: Commit transaction.
         con.execute("COMMIT")
 
-        # Step 13: Set user_version OUTSIDE the transaction (SQLite requirement).
-        con.execute("PRAGMA user_version = 1")
+        # Steps 14-15: Re-enable FK enforcement and stamp the version — both
+        # must be outside an active transaction (SQLite requirement).
+        con.execute("PRAGMA foreign_keys = ON")
+
+        # Stamp the version in a separate try block: if COMMIT succeeded but this
+        # fails, the schema is correct but user_version is still 0, so the migration
+        # would re-run on next launch. Surface a clear recovery instruction rather
+        # than silently leaving the DB in an ambiguous state.
+        try:
+            con.execute("PRAGMA user_version = 1")
+        except Exception as exc:
+            print(
+                f"Error: migration committed but version stamp failed: {exc}\n"
+                "The schema is correct. Run the following to fix the version:\n"
+                "  sqlite3 bookhub.db 'PRAGMA user_version = 1'",
+                file=sys.stderr,
+            )
+            con.close()
+            sys.exit(1)
 
         print("Migration complete. user_version set to 1.")
 
@@ -342,7 +425,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
             "Migrate bookhub.db from schema version 0 (ISBN-keyed) "
-            "to version 1 (book_id-keyed)."
+            "to version 1 (book_id-keyed). "
+            "The v1→v2 migration is handled automatically by the app at startup."
         )
     )
     parser.add_argument(

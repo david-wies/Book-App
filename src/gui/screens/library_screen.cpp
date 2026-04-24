@@ -305,13 +305,14 @@ void LibraryScreen::onRemoveRequested(int libraryItemId, const QString &bookId)
         }
     }
 
-    auto *msg = new QMessageBox(this);
-    msg->setWindowTitle(QStringLiteral("Remove from library"));
-    msg->setText(QStringLiteral("Remove \"%1\" from your library?").arg(title));
-    msg->setStandardButtons(QMessageBox::Yes | QMessageBox::Cancel);
-    msg->setDefaultButton(QMessageBox::Cancel);
+    const auto answer = QMessageBox::question(
+        this,
+        QStringLiteral("Remove from library"),
+        QStringLiteral("Remove \"%1\" from your library?").arg(title),
+        QMessageBox::Yes | QMessageBox::Cancel,
+        QMessageBox::Cancel);
 
-    if (msg->exec() == QMessageBox::Yes)
+    if (answer == QMessageBox::Yes)
         m_service->removeBook(libraryItemId);
 }
 

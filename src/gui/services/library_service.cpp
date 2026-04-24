@@ -76,7 +76,7 @@ int LibraryService::addBook(const QString &bookId, int editionId)
 {
     QSqlQuery query(QSqlDatabase::database());
     query.prepare(QStringLiteral(
-        "INSERT INTO library_items (book_id, edition_id, status) VALUES (?, ?, 'saved')"
+        "INSERT OR IGNORE INTO library_items (book_id, edition_id, status) VALUES (?, ?, 'saved')"
     ));
     query.addBindValue(bookId);
     // Store NULL when no specific edition is chosen — the FK allows NULL.
@@ -89,6 +89,9 @@ int LibraryService::addBook(const QString &bookId, int editionId)
         qWarning() << "LibraryService::addBook failed:" << query.lastError().text();
         return -1;
     }
+
+    if (query.numRowsAffected() <= 0)
+        return 0;
 
     const int newId = query.lastInsertId().toInt();
     emit libraryChanged();
@@ -106,6 +109,9 @@ bool LibraryService::removeBook(int libraryItemId)
         return false;
     }
 
+    if (query.numRowsAffected() == 0)
+        return true;
+
     emit libraryChanged();
     return true;
 }
@@ -121,6 +127,9 @@ bool LibraryService::updateStatus(int libraryItemId, const QString &status)
         qWarning() << "LibraryService::updateStatus failed:" << query.lastError().text();
         return false;
     }
+
+    if (query.numRowsAffected() == 0)
+        return true;
 
     emit libraryChanged();
     return true;

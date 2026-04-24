@@ -14,6 +14,9 @@ example.json
 # Task files (migrated to GitHub Issues)
 docs/tasks/
 
+# Reviews directory
+reviews/
+
 # IDE and editor
 .vscode/
 .idea/

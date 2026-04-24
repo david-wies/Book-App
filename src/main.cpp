@@ -1,6 +1,7 @@
 #include <QApplication>
 #include <QIcon>
 #include <QDir>
+#include <QMessageBox>
 #include "shared/database.h"
 #include "collector/collector_worker.h"
 #include "gui/main_window.h"
@@ -9,13 +10,18 @@ int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
 
-    if (bookhub::db::initializeDatabase(bookhub::db::databaseFilePath())) {
-        if (!bookhub::db::verifySchemaVersion()) {
-            return 1;
-        }
-        bookhub::db::createSchema();
-        bookhub::db::insertSampleData();
+    if (!bookhub::db::initializeDatabase(bookhub::db::databaseFilePath())) {
+        QMessageBox::critical(nullptr,
+            QStringLiteral("Database error"),
+            QStringLiteral("Failed to open the database. The application cannot start."));
+        return 1;
     }
+
+    if (!bookhub::db::verifySchemaVersion()) {
+        return 1;
+    }
+    bookhub::db::createSchema();
+    bookhub::db::insertSampleData();
 
     // Start background collector thread
     bookhub::collector::CollectorWorker collector;

@@ -25,10 +25,10 @@ make -j$(nproc)
 
 **Dependencies:**
 ```bash
-sudo apt-get install build-essential cmake qt6-base-dev libqt6sql6
+sudo apt-get install build-essential cmake qt6-base-dev libqt6sql6 libarchive-dev
 ```
 
-Requires C++23, GCC 13+/Clang 16+, and Qt6 (Widgets, Sql, Network modules). The `tar` binary must be present at runtime (used by the Gutenberg adapter via `QProcess`).
+Requires C++23, GCC 13+/Clang 16+, Qt6 (Widgets, Sql, Network modules), and libarchive (used by the Gutenberg adapter for in-process `.tar.bz2` extraction).
 
 ## Testing & Linting
 
@@ -51,7 +51,7 @@ Both threads share a single SQLite database (`bookhub.db`, placed next to the ex
 
 `ISourceAdapter` (pure abstract `QObject`) defines the interface for all book metadata sources. New sources implement it and register with `BookDiscoveryService::addAdapter()`. Currently only `GutenbergAdapter` is implemented.
 
-`GutenbergAdapter` downloads `rdf-files.tar.bz2` from Gutenberg, extracts it via a `tar` subprocess, and parses the RDF/XML files. It uses `If-Modified-Since` HTTP caching (stored in `QSettings`) to skip re-downloads. Books are emitted in batches of 500 via the `booksDiscovered` signal to bound memory usage.
+`GutenbergAdapter` downloads `rdf-files.tar.bz2` from Gutenberg, extracts it in-process via libarchive, and parses the RDF/XML files. It uses `If-Modified-Since` HTTP caching (stored in `QSettings`) to skip re-downloads. Books are emitted in batches of 500 via the `booksDiscovered` signal to bound memory usage.
 
 `BookDiscoveryService` orchestrates adapters and writes discovered books to the database in those same 500-book batches.
 
@@ -76,11 +76,11 @@ Full ID model: `docs/design/book-identity-model.md`. Schema DDL: `src/shared/dat
 - **Namespaces:** All code lives under `bookhub::`, with sub-namespaces `bookhub::db`, `bookhub::collector`, and `bookhub::gui`.
 - **Shutdown coordination:** Uses `std::atomic_bool` flags (`m_shutdownRequested`, `m_updateInProgress`) and a mix of `Qt::QueuedConnection` / `Qt::DirectConnection` for safe cross-thread teardown.
 - **Comments:** Explain *why*, not *what*. Use tags: `TODO:`, `FIXME:`, `HACK:`, `NOTE:`, `WARNING:`, `PERF:`, `SECURITY:`.
-- **Git workflow:** Every piece of work — feature, bugfix, or chore — gets its own short-lived branch cut from `develop` (e.g. `feature/task-7-search-screen`, `fix/collector-crash`, `chore/update-deps`). Keep branches small and focused: one task per branch. Merge back to `develop` via PR; never commit directly to `develop` or `master`. Both branches are protected and require PRs (0 approvals — bump to 1 in GitHub settings when a second contributor joins).
+- **Git workflow:** Every piece of work — feature, bugfix, or chore — gets its own short-lived branch cut from `develop` (e.g. `feature/task-7-search-screen`, `fix/collector-crash`, `chore/update-deps`). Keep branches small and focused: one task per branch. Merge back to `develop` via PR; never commit directly to `develop` or `master`. Both branches are protected and require PRs (0 approvals — bump to 1 in GitHub settings when a second contributor joins). **Before creating a PR, always run `/review` to perform a code review of the branch changes and address any issues found.**
 - **Build artifacts:** The icon and database are co-located with the executable via a CMake `POST_BUILD` copy. The `build/` directory is git-ignored.
 - **Docs:** When changing a public API, adding a feature, or altering architecture, update the relevant files in `docs/`. The `docs/` directory is for internal use and will be removed before release.
 - **License:** All third-party dependencies must be MIT, BSD, Apache 2.0, or similarly permissive. GPL and LGPL dependencies are forbidden — they would force the application to be GPL-licensed. Always verify a library's license before adding it. TTS uses [Sherpa-ONNX](https://github.com/k2-fsa/sherpa-onnx) (Apache 2.0) for preset voices and [PocketTTS.cpp](https://github.com/VolgaGerm/PocketTTS.cpp) (MIT) for custom voice cloning. Do not introduce the Piper GPL fork (`OHF-Voice/piper1-gpl`).
-- **QProcess:** Minimise use of `QProcess`. It is currently used only for the `tar` subprocess in `GutenbergAdapter` and must not be introduced elsewhere without a compelling reason. Prefer linking against libraries directly, using Qt's networking/IO APIs, or `QThread`/`QThreadPool` for background work.
+- **QProcess:** Do not use `QProcess` anywhere in the codebase. The earlier `tar` subprocess in `GutenbergAdapter` was replaced with a direct libarchive link. Prefer linking against libraries directly, using Qt's networking/IO APIs, or `QThread`/`QThreadPool` for background work.
 
 ## Custom Commands
 
@@ -102,6 +102,6 @@ Project-specific slash commands live in `.claude/commands/`:
 
 ### Current Status
 
-Tasks 1–5 complete: project scaffolding, SQLite schema, single-executable build, background collector with Gutenberg adapter, application icon.
+Tasks 1–8 complete: project scaffolding, SQLite schema, single-executable build, background collector with Gutenberg adapter, application icon, Library screen, Search screen, Explore screen.
 
-Tasks 6–17 not started: all GUI screens (Library, Search, Explore, Book Details), library management, download flow, audiobook/TTS conversion, additional adapters, and packaging.
+Tasks 9–17 not started: Book Details screen, library management, download flow, audiobook/TTS conversion, additional source adapters, UI polish, and packaging.

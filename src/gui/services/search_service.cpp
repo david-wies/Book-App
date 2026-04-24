@@ -16,30 +16,42 @@ SearchService::SearchService(QObject *parent)
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+// Escape SQLite LIKE wildcards so user-supplied text is treated as literal.
+// The backslash escape character is declared in every LIKE clause below.
+static QString escapeLike(const QString &raw)
+{
+    QString out = raw;
+    out.replace(QLatin1Char('\\'), QStringLiteral("\\\\"));
+    out.replace(QLatin1Char('%'),  QStringLiteral("\\%"));
+    out.replace(QLatin1Char('_'),  QStringLiteral("\\_"));
+    return out;
+}
+
 // Builds the WHERE clause and binds values into `query` for all active
 // filters. Returns false if binding fails. The IN-list filters (genres,
 // languages, sources) use one `?` placeholder per value so no user input
 // is ever interpolated into SQL text.
 static bool bindParams(QSqlQuery &query,
                        const SearchParams &p,
-                       const QString &sqlTemplate,
                        int offset,
                        int limit,
                        bool isCount)
 {
     // keyword
-    const QString kw = p.keyword.trimmed().isEmpty()
+    const QString kwTrimmed = p.keyword.trimmed();
+    const QString kw = kwTrimmed.isEmpty()
                      ? QStringLiteral("")
-                     : QStringLiteral("%%1%").arg(p.keyword.trimmed());
-    query.addBindValue(p.keyword.trimmed().isEmpty() ? QStringLiteral("") : QStringLiteral("x")); // sentinel for "? = ''"
+                     : QStringLiteral("%") + escapeLike(kwTrimmed) + QStringLiteral("%");
+    query.addBindValue(kwTrimmed.isEmpty() ? QStringLiteral("") : QStringLiteral("x")); // sentinel for "? = ''"
     query.addBindValue(kw);
     query.addBindValue(kw);
 
     // author filter
-    const QString af = p.author.trimmed().isEmpty()
+    const QString afTrimmed = p.author.trimmed();
+    const QString af = afTrimmed.isEmpty()
                      ? QStringLiteral("")
-                     : QStringLiteral("%%1%").arg(p.author.trimmed());
-    query.addBindValue(p.author.trimmed().isEmpty() ? QStringLiteral("") : QStringLiteral("x"));
+                     : QStringLiteral("%") + escapeLike(afTrimmed) + QStringLiteral("%");
+    query.addBindValue(afTrimmed.isEmpty() ? QStringLiteral("") : QStringLiteral("x"));
     query.addBindValue(af);
 
     // genre IN values
@@ -73,7 +85,6 @@ static bool bindParams(QSqlQuery &query,
         query.addBindValue(offset);
     }
 
-    Q_UNUSED(sqlTemplate)
     return true;
 }
 
@@ -126,6 +137,12 @@ static QString buildSql(const SearchParams &p, bool isCount)
         ? QStringLiteral("JOIN library_items li ON b.book_id = li.book_id")
         : QStringLiteral("LEFT JOIN library_items li ON b.book_id = li.book_id");
 
+    // Whitelist the sort column to prevent SQL injection; only "author" is an
+    // alternative — everything else falls back to the default "title".
+    const QString orderCol = (p.sortColumn == QLatin1String("author"))
+                             ? QStringLiteral("b.author")
+                             : QStringLiteral("b.title");
+
     if (isCount) {
         return QStringLiteral(R"(
             SELECT COUNT(DISTINCT b.book_id)
@@ -135,8 +152,8 @@ static QString buildSql(const SearchParams &p, bool isCount)
             LEFT JOIN formats f ON e.id = f.edition_id
             LEFT JOIN sources s ON f.id = s.format_id
             %2
-            WHERE (? = '' OR b.title LIKE ? OR b.author LIKE ?)
-              AND (? = '' OR b.author LIKE ?)
+            WHERE (? = '' OR b.title LIKE ? ESCAPE '\' OR b.author LIKE ? ESCAPE '\')
+              AND (? = '' OR b.author LIKE ? ESCAPE '\')
               %3
               AND (? = 0 OR b.publish_year >= ?)
               AND (? = 0 OR b.publish_year <= ?)
@@ -148,7 +165,7 @@ static QString buildSql(const SearchParams &p, bool isCount)
     }
 
     return QStringLiteral(R"(
-        SELECT DISTINCT b.book_id, b.title, b.author, b.publish_year,
+        SELECT b.book_id, b.title, b.author, b.publish_year,
                GROUP_CONCAT(DISTINCT e.language)    AS languages,
                GROUP_CONCAT(DISTINCT s.source_name) AS sources,
                GROUP_CONCAT(DISTINCT f.format_type) AS formats,
@@ -159,8 +176,8 @@ static QString buildSql(const SearchParams &p, bool isCount)
         LEFT JOIN formats f ON e.id = f.edition_id
         LEFT JOIN sources s ON f.id = s.format_id
         %2
-        WHERE (? = '' OR b.title LIKE ? OR b.author LIKE ?)
-          AND (? = '' OR b.author LIKE ?)
+        WHERE (? = '' OR b.title LIKE ? ESCAPE '\' OR b.author LIKE ? ESCAPE '\')
+          AND (? = '' OR b.author LIKE ? ESCAPE '\')
           %3
           AND (? = 0 OR b.publish_year >= ?)
           AND (? = 0 OR b.publish_year <= ?)
@@ -169,9 +186,9 @@ static QString buildSql(const SearchParams &p, bool isCount)
           AND (? = 0 OR f.format_type IS NOT NULL)
           AND (? = 0 OR li.status = 'audiobook_ready')
         GROUP BY b.book_id
-        ORDER BY b.title
+        ORDER BY %6
         LIMIT ? OFFSET ?
-    )").arg(genreJoin, liJoin, genreFilter, langFilter, srcFilter);
+    )").arg(genreJoin, liJoin, genreFilter, langFilter, srcFilter, orderCol);
 }
 
 // ---------------------------------------------------------------------------
@@ -183,7 +200,7 @@ QList<SearchResult> SearchService::search(const SearchParams &params,
     const QString sql = buildSql(params, false);
     QSqlQuery query(QSqlDatabase::database());
     query.prepare(sql);
-    bindParams(query, params, sql, offset, limit, false);
+    bindParams(query, params, offset, limit, false);
 
     if (!query.exec()) {
         qWarning() << "SearchService::search failed:" << query.lastError().text();
@@ -221,7 +238,7 @@ int SearchService::count(const SearchParams &params) const
     const QString sql = buildSql(params, true);
     QSqlQuery query(QSqlDatabase::database());
     query.prepare(sql);
-    bindParams(query, params, sql, 0, 0, true);
+    bindParams(query, params, 0, 0, true);
 
     if (!query.exec() || !query.next()) {
         qWarning() << "SearchService::count failed:" << query.lastError().text();
