@@ -22,7 +22,7 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Cache apt packages
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: /var/cache/apt/archives
         key: apt-qt6-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
@@ -39,7 +39,7 @@ jobs:
           libarchive-dev
 
     - name: Cache CMake build directory
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: build
         key: cmake-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'src/**') }}
