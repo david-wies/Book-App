@@ -1,41 +1,80 @@
 #!/usr/bin/env bash
-# pre-push hook: prevents direct pushes to the master branch.
+# pre-push hook: guards the master branch against unauthorized pushes.
 #
-# The master branch is the stable/release branch. All changes must arrive
-# via a pull request from develop (or a hotfix branch). Direct pushes are
-# rejected here so the rule is enforced even without a GitHub Pro plan.
+# Rules enforced locally (mirrors GitHub branch protection):
+#   1. No direct pushes to master from any branch.
+#   2. If the destination is master, the source must be the develop branch.
+#      Any other branch (feature/*, fix/*, hotfix/*, etc.) is rejected.
+#
+# NOTE: GitHub branch protection is the authoritative enforcement layer.
+# This hook is a fast-feedback safety net for developers so they learn
+# about the violation before a network round-trip, not after.
 #
 # To install on a fresh clone:
 #   git config core.hooksPath .githooks
 #
-# If you genuinely need to push a release tag or an emergency fix directly
-# (e.g. as the release engineer), temporarily disable with:
+# Emergency bypass (release engineer only):
 #   SKIP_BRANCH_GUARD=1 git push ...
+# Use this only when GitHub Actions merges are unavailable and you have
+# confirmed with the team. The bypass is logged to stderr.
+
+set -euo pipefail
 
 PROTECTED_BRANCH="master"
-CURRENT_BRANCH="$(git symbolic-ref HEAD 2>/dev/null | sed 's|refs/heads/||')"
+ALLOWED_SOURCE="develop"
 
-if [[ "${SKIP_BRANCH_GUARD}" == "1" ]]; then
+if [[ "${SKIP_BRANCH_GUARD:-0}" == "1" ]]; then
+    echo "WARNING: SKIP_BRANCH_GUARD is set — branch protection bypassed." >&2
     exit 0
 fi
 
-# Read the list of refs being pushed from stdin (format: <local-ref> <local-sha> <remote-ref> <remote-sha>)
-while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
-    # Extract the branch name from the remote ref (refs/heads/master -> master)
+# git passes pushed refs on stdin: <local-ref> <local-sha> <remote-ref> <remote-sha>
+# We iterate every ref being pushed in this single `git push` invocation.
+while IFS=' ' read -r local_ref local_sha remote_ref _remote_sha; do
+    # Strip refs/heads/ to get the bare branch name on the remote side.
     remote_branch="${remote_ref#refs/heads/}"
 
-    if [[ "${remote_branch}" == "${PROTECTED_BRANCH}" ]]; then
-        echo "-----------------------------------------------------------"
-        echo "ERROR: Direct pushes to '${PROTECTED_BRANCH}' are not allowed."
-        echo ""
-        echo "  Workflow: open a pull request from your feature branch"
-        echo "  into '${PROTECTED_BRANCH}' and merge it through GitHub."
-        echo ""
-        echo "  If you are the release engineer and need to bypass this"
-        echo "  guard, run:  SKIP_BRANCH_GUARD=1 git push ..."
-        echo "-----------------------------------------------------------"
-        exit 1
+    if [[ "${remote_branch}" != "${PROTECTED_BRANCH}" ]]; then
+        # Not targeting master — nothing to check for this ref.
+        continue
     fi
+
+    # --- Targeting master: apply source-branch check ---
+
+    # Determine what local branch is being pushed to master.
+    # local_ref is "refs/heads/<branch>" for branch pushes, or a SHA for
+    # detached-HEAD / explicit SHA pushes (e.g. `git push origin abc123:master`).
+    local_branch="${local_ref#refs/heads/}"
+
+    # Block the push regardless of source; tell the developer why.
+    echo "-----------------------------------------------------------" >&2
+    echo "ERROR: Push to '${PROTECTED_BRANCH}' is not allowed." >&2
+    echo "" >&2
+
+    if [[ "${local_branch}" == "${ALLOWED_SOURCE}" ]]; then
+        # The developer is on develop and tried to push directly. Common mistake.
+        echo "  You are pushing '${ALLOWED_SOURCE}' directly to '${PROTECTED_BRANCH}'." >&2
+        echo "  Even from develop, direct pushes are forbidden." >&2
+        echo "" >&2
+        echo "  Workflow:" >&2
+        echo "    1. Open a pull request from '${ALLOWED_SOURCE}' into '${PROTECTED_BRANCH}'" >&2
+        echo "       on GitHub (or via: gh pr create --base ${PROTECTED_BRANCH})." >&2
+        echo "    2. Let CI pass, then merge the PR through GitHub." >&2
+    else
+        # Wrong source branch entirely.
+        echo "  Source branch: '${local_branch}'" >&2
+        echo "  Only the '${ALLOWED_SOURCE}' branch may be merged into '${PROTECTED_BRANCH}'." >&2
+        echo "" >&2
+        echo "  Workflow:" >&2
+        echo "    1. Merge your branch into '${ALLOWED_SOURCE}' first (via PR on GitHub)." >&2
+        echo "    2. Then open a PR from '${ALLOWED_SOURCE}' into '${PROTECTED_BRANCH}'." >&2
+    fi
+
+    echo "" >&2
+    echo "  Emergency bypass (release engineer only):" >&2
+    echo "    SKIP_BRANCH_GUARD=1 git push ..." >&2
+    echo "-----------------------------------------------------------" >&2
+    exit 1
 done
 
 exit 0

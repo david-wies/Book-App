@@ -8,7 +8,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 git config core.hooksPath .githooks
 ```
 
-This activates the pre-push hook that blocks direct pushes to `master`. All changes to `master` must go through a pull request from `develop`.
+This activates the pre-push hook in `.githooks/pre-push`. The hook enforces two rules locally:
+
+1. **No direct push to `master`** — any push that targets `master` as the remote ref is rejected, regardless of who runs it.
+2. **Source must be `develop`** — if the remote destination is `master`, the local branch being pushed must be `develop`. Pushes of `feature/*`, `fix/*`, or any other branch directly to `master` are blocked with a clear error message pointing to the correct workflow.
+
+Emergency bypass (release engineer only): `SKIP_BRANCH_GUARD=1 git push ...`
+
+**GitHub branch protection** on `master` (enforces the same rules server-side, so the hook cannot be bypassed by skipping local hooks or using the GitHub web UI):
+
+| Setting | Value |
+|---------|-------|
+| Require pull request before merging | Yes (0 approvals — bump to 1 when a second contributor joins) |
+| Dismiss stale reviews on new push | Yes |
+| Require branch up to date before merge | Yes (`strict` mode) |
+| Required status checks | `build` (CI must pass) |
+| Require conversation resolution | Yes |
+| Allow force pushes | No |
+| Allow deletions | No |
+| Enforce for admins | Yes |
+| Linear history required | Yes |
+
+**What GitHub cannot enforce natively (free/personal plan limitation):** GitHub's branch protection API does not support filtering merges by the *source branch name*. There is no setting that says "only PRs from `develop` may target `master`". The pre-push hook is the primary enforcement for this rule. The GitHub protection layer blocks all *direct* pushes (including `git push origin develop:master`) and requires CI to pass, but it cannot reject a PR opened from `feature/foo` to `master` — that must be caught by process (code review) and the pre-push hook (which fires before the push that creates such a PR's comparison branch).
 
 ## Build & Run
 
@@ -76,7 +97,7 @@ Full ID model: `docs/design/book-identity-model.md`. Schema DDL: `src/shared/dat
 - **Namespaces:** All code lives under `bookhub::`, with sub-namespaces `bookhub::db`, `bookhub::collector`, and `bookhub::gui`.
 - **Shutdown coordination:** Uses `std::atomic_bool` flags (`m_shutdownRequested`, `m_updateInProgress`) and a mix of `Qt::QueuedConnection` / `Qt::DirectConnection` for safe cross-thread teardown.
 - **Comments:** Explain *why*, not *what*. Use tags: `TODO:`, `FIXME:`, `HACK:`, `NOTE:`, `WARNING:`, `PERF:`, `SECURITY:`.
-- **Git workflow:** Every piece of work — feature, bugfix, or chore — gets its own short-lived branch cut from `develop` (e.g. `feature/task-7-search-screen`, `fix/collector-crash`, `chore/update-deps`). Keep branches small and focused: one task per branch. Merge back to `develop` via PR; never commit directly to `develop` or `master`. Both branches are protected and require PRs (0 approvals — bump to 1 in GitHub settings when a second contributor joins). **Before creating a PR, always run `/review` to perform a code review of the branch changes and address any issues found.**
+- **Git workflow:** Every piece of work — feature, bugfix, or chore — gets its own short-lived branch cut from `develop` (e.g. `feature/task-7-search-screen`, `fix/collector-crash`, `chore/update-deps`). Keep branches small and focused: one task per branch. Merge back to `develop` via PR; never commit directly to `develop` or `master`. Both branches are protected and require PRs (0 approvals — bump to 1 in GitHub settings when a second contributor joins). **Before creating a PR, always run `/review` to perform a code review of the branch changes and address any issues found.** The only permitted path into `master` is a PR from `develop` — this is enforced both by the `.githooks/pre-push` hook (local) and GitHub branch protection (server-side). No other branch may target `master` directly.
 - **Build artifacts:** The icon and database are co-located with the executable via a CMake `POST_BUILD` copy. The `build/` directory is git-ignored.
 - **Docs:** When changing a public API, adding a feature, or altering architecture, update the relevant files in `docs/`. The `docs/` directory is for internal use and will be removed before release.
 - **License:** All third-party dependencies must be MIT, BSD, Apache 2.0, or similarly permissive. GPL and LGPL dependencies are forbidden — they would force the application to be GPL-licensed. Always verify a library's license before adding it. TTS uses [Sherpa-ONNX](https://github.com/k2-fsa/sherpa-onnx) (Apache 2.0) for preset voices and [PocketTTS.cpp](https://github.com/VolgaGerm/PocketTTS.cpp) (MIT) for custom voice cloning. Do not introduce the Piper GPL fork (`OHF-Voice/piper1-gpl`).
