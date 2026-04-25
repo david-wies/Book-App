@@ -1,6 +1,5 @@
 #include <QApplication>
 #include <QIcon>
-#include <QDir>
 #include <QMessageBox>
 #include "shared/database.h"
 #include "collector/collector_worker.h"
@@ -9,6 +8,8 @@
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
+    app.setOrganizationName(QStringLiteral("BookHub"));
+    app.setApplicationName(QStringLiteral("BookHub"));
 
     if (!bookhub::db::initializeDatabase(bookhub::db::databaseFilePath())) {
         QMessageBox::critical(nullptr,
@@ -27,9 +28,7 @@ int main(int argc, char *argv[])
     bookhub::collector::CollectorWorker collector;
     collector.start();
 
-    const QString iconPath =
-        QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("book_reader_icon.jpg"));
-    const QIcon appIcon(iconPath);
+    const QIcon appIcon(QStringLiteral(":/book_reader_icon.jpg"));
     app.setWindowIcon(appIcon);
 
     bookhub::gui::MainWindow window;

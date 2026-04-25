@@ -8,8 +8,6 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-# Ubuntu/Debian Qt6 install path fallback
-list(APPEND CMAKE_PREFIX_PATH "/usr/lib/x86_64-linux-gnu/cmake")
 find_package(Qt6 COMPONENTS Widgets Sql Network Test REQUIRED)
 find_package(LibArchive REQUIRED)
 
@@ -47,19 +45,12 @@ set(GUI_SOURCES
 
 add_executable(bookhub
     src/main.cpp
+    resources.qrc
     ${COLLECTOR_SOURCES}
     ${GUI_SOURCES}
 )
 target_include_directories(bookhub PRIVATE src)
 target_link_libraries(bookhub PRIVATE Qt6::Widgets Qt6::Network shared LibArchive::LibArchive)
-
-# Copy icon next to the executable after every build (mirrors database co-location pattern)
-add_custom_command(TARGET bookhub POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_SOURCE_DIR}/book_reader_icon.jpg"
-        "$<TARGET_FILE_DIR:bookhub>/book_reader_icon.jpg"
-    COMMENT "Copying book_reader_icon.jpg next to executable"
-)
 
 enable_testing()
 

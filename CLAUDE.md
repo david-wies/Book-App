@@ -66,7 +66,7 @@ The app runs two threads in one process:
 - **GUI Thread** — `QApplication::exec()` drives a `QMainWindow`. All widget interaction happens here.
 - **Collector Thread** — `CollectorWorker : QThread` polls for book metadata every 10 minutes and writes to SQLite. Starts fetching immediately on launch.
 
-Both threads share a single SQLite database (`bookhub.db`, placed next to the executable). Thread isolation is maintained by giving each thread its own named Qt SQL connection: `QSqlDatabase::defaultConnection` for the GUI and `"collector_connection"` for the collector.
+Both threads share a single SQLite database (`bookhub.db`, stored in `QStandardPaths::AppDataLocation`). Thread isolation is maintained by giving each thread its own named Qt SQL connection: `QSqlDatabase::defaultConnection` for the GUI and `"collector_connection"` for the collector.
 
 ### Data Source Adapter Pattern
 
@@ -98,7 +98,7 @@ Full ID model: `docs/design/book-identity-model.md`. Schema DDL: `src/shared/dat
 - **Shutdown coordination:** Uses `std::atomic_bool` flags (`m_shutdownRequested`, `m_updateInProgress`) and a mix of `Qt::QueuedConnection` / `Qt::DirectConnection` for safe cross-thread teardown.
 - **Comments:** Explain *why*, not *what*. Use tags: `TODO:`, `FIXME:`, `HACK:`, `NOTE:`, `WARNING:`, `PERF:`, `SECURITY:`.
 - **Git workflow:** Every piece of work — feature, bugfix, or chore — gets its own short-lived branch cut from `develop` (e.g. `feature/task-7-search-screen`, `fix/collector-crash`, `chore/update-deps`). Keep branches small and focused: one task per branch. Merge back to `develop` via PR; never commit directly to `develop` or `master`. Both branches are protected and require PRs (0 approvals — bump to 1 in GitHub settings when a second contributor joins). **Before creating a PR, always run `/review` to perform a code review of the branch changes and address any issues found.** The only permitted path into `master` is a PR from `develop` — this is enforced both by the `.githooks/pre-push` hook (local) and GitHub branch protection (server-side). No other branch may target `master` directly.
-- **Build artifacts:** The icon and database are co-located with the executable via a CMake `POST_BUILD` copy. The `build/` directory is git-ignored.
+- **Build artifacts:** The icon is embedded as a Qt resource (`.qrc`). The database is stored in `QStandardPaths::AppDataLocation`. The `build/` directory is git-ignored.
 - **Docs:** When changing a public API, adding a feature, or altering architecture, update the relevant files in `docs/`. The `docs/` directory is for internal use and will be removed before release.
 - **License:** All third-party dependencies must be MIT, BSD, Apache 2.0, or similarly permissive. GPL and LGPL dependencies are forbidden — they would force the application to be GPL-licensed. Always verify a library's license before adding it. TTS uses [Sherpa-ONNX](https://github.com/k2-fsa/sherpa-onnx) (Apache 2.0) for preset voices and [PocketTTS.cpp](https://github.com/VolgaGerm/PocketTTS.cpp) (MIT) for custom voice cloning. Do not introduce the Piper GPL fork (`OHF-Voice/piper1-gpl`).
 - **QProcess:** Do not use `QProcess` anywhere in the codebase. The earlier `tar` subprocess in `GutenbergAdapter` was replaced with a direct libarchive link. Prefer linking against libraries directly, using Qt's networking/IO APIs, or `QThread`/`QThreadPool` for background work.

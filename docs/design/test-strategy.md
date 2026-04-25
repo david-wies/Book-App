@@ -153,7 +153,7 @@ foundation for future planned screens.
 
 ### Database helpers
 
-- `databaseFilePath()` resolves next to the executable.
+- `databaseFilePath()` resolves to `QStandardPaths::AppDataLocation`.
 - `createSchema()` creates all expected tables.
 - `insertSampleData()` is idempotent enough for repeated local startup use.
 
