@@ -1,5 +1,6 @@
 #include "support/test_database_utils.h"
 
+#include <QStandardPaths>
 #include <QtTest>
 
 using namespace bookhub;
@@ -9,17 +10,18 @@ class DatabaseSchemaTest : public QObject
     Q_OBJECT
 
 private slots:
-    void databaseFilePath_resolvesNextToExecutable();
+    void databaseFilePath_resolvesToAppDataLocation();
     void createSchema_createsCoreTablesAndVersion();
     void verifySchemaVersion_freshDatabaseIsValid();
     void verifySchemaVersion_mismatchedVersionIsRejected();
     void constraints_andSampleData_behaveAsExpected();
 };
 
-void DatabaseSchemaTest::databaseFilePath_resolvesNextToExecutable()
+void DatabaseSchemaTest::databaseFilePath_resolvesToAppDataLocation()
 {
-    const QString expected =
-        QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("bookhub.db"));
+    const QString expected = QDir(
+        QStandardPaths::writableLocation(QStandardPaths::AppDataLocation))
+        .filePath(QStringLiteral("bookhub.db"));
     QCOMPARE(db::databaseFilePath(), expected);
 }
 

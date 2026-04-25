@@ -1,6 +1,7 @@
 #include "database.h"
 #include <QCoreApplication>
 #include <QDir>
+#include <QStandardPaths>
 #include <QSqlDatabase>
 #include <QSqlError>
 #include <QSqlQuery>
@@ -12,7 +13,10 @@ static const QString kDatabaseFileName = QStringLiteral("bookhub.db");
 
 QString databaseFilePath()
 {
-    return QDir(QCoreApplication::applicationDirPath()).filePath(kDatabaseFileName);
+    const QString dir =
+        QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QDir{}.mkpath(dir);
+    return QDir(dir).filePath(kDatabaseFileName);
 }
 
 bool initializeDatabase(const QString &filePath, const QString &connectionName)

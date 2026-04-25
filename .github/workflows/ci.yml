@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 20
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Cache apt packages
       uses: actions/cache@v5
@@ -42,7 +42,7 @@ jobs:
       uses: actions/cache@v5
       with:
         path: build
-        key: cmake-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'src/**') }}
+        key: cmake-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'src/**', 'resources.qrc', '*.jpg', '*.png') }}
         restore-keys: cmake-${{ runner.os }}-
 
     - name: Configure build
@@ -63,7 +63,7 @@ jobs:
 
     - name: Upload build artifact
       if: success()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: bookhub-${{ github.sha }}
         path: build/bookhub
