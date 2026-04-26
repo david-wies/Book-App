@@ -43,7 +43,8 @@ public:
     QList<LibraryItem> fetchItems(const QString &sortColumn = QStringLiteral("added_date")) const;
 
     // Inserts a new library_items row for the given book/edition pair.
-    // Returns the new row id, or -1 on failure.
+    // Returns the new row id on success, or -1 if the book is already in the
+    // library or if an SQL error occurred.
     int addBook(const QString &bookId, int editionId);
 
     // Deletes the library_items row with the given id.

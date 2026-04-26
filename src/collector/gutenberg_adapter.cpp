@@ -11,9 +11,7 @@
 namespace bookhub::collector {
 
 GutenbergAdapter::GutenbergAdapter(QObject* parent)
-    : ISourceAdapter(parent), m_networkManager(this) {
-    connect(&m_networkManager, &QNetworkAccessManager::finished, this, &GutenbergAdapter::onNetworkReply);
-}
+    : ISourceAdapter(parent), m_networkManager(this) {}
 
 void GutenbergAdapter::fetchBooks() {
     qDebug() << "GutenbergAdapter: Checking for RDF catalog updates...";
@@ -21,13 +19,16 @@ void GutenbergAdapter::fetchBooks() {
     QNetworkRequest request(QUrl("https://www.gutenberg.org/cache/epub/feeds/rdf-files.tar.bz2"));
 
     // Check If-Modified-Since to prevent redundant downloads
-    QSettings settings("BookHub", "BookHub");
+    QSettings settings;
     QString lastModified = settings.value("gutenberg_last_modified").toString();
     if (!lastModified.isEmpty()) {
         request.setRawHeader("If-Modified-Since", lastModified.toUtf8());
     }
 
-    m_networkManager.get(request);
+    QNetworkReply* reply = m_networkManager.get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        onNetworkReply(reply);
+    });
 }
 
 void GutenbergAdapter::onNetworkReply(QNetworkReply* reply) {
@@ -42,12 +43,12 @@ void GutenbergAdapter::onNetworkReply(QNetworkReply* reply) {
             // Save Last-Modified header
             QByteArray lastModified = reply->rawHeader("Last-Modified");
             if (!lastModified.isEmpty()) {
-                QSettings settings("BookHub", "BookHub");
+                QSettings settings;
                 settings.setValue("gutenberg_last_modified", QString::fromUtf8(lastModified));
             }
 
             qDebug() << "GutenbergAdapter: Extracting and parsing archive...";
-            extractAndParseArchive(reply->readAll());
+            extractAndParseArchive(reply);
         } else if (statusCode == 304) {
             // Not Modified
             qDebug() << "GutenbergAdapter: RDF catalog is up-to-date (304 Not Modified). No changes needed.";
@@ -65,7 +66,22 @@ void GutenbergAdapter::onNetworkReply(QNetworkReply* reply) {
     }
 }
 
-void GutenbergAdapter::extractAndParseArchive(const QByteArray& archiveData) {
+void GutenbergAdapter::extractAndParseArchive(QNetworkReply* reply) {
+    // Read directly from the network reply in chunks so the full ~800 MB
+    // compressed archive is never materialised in a single QByteArray.
+    struct ReadCtx {
+        QNetworkReply* reply;
+        QByteArray buf;
+    };
+    ReadCtx ctx{reply};
+
+    auto readCb = [](archive*, void* data, const void** buffer) -> la_ssize_t {
+        auto* ctx = static_cast<ReadCtx*>(data);
+        ctx->buf = ctx->reply->read(65536);
+        *buffer = ctx->buf.constData();
+        return static_cast<la_ssize_t>(ctx->buf.size());
+    };
+
     struct ArchiveDeleter {
         void operator()(archive* a) const noexcept { archive_read_free(a); }
     };
@@ -79,8 +95,7 @@ void GutenbergAdapter::extractAndParseArchive(const QByteArray& archiveData) {
     archive_read_support_filter_bzip2(a.get());
     archive_read_support_format_tar(a.get());
 
-    if (archive_read_open_memory(a.get(), archiveData.constData(),
-                                 static_cast<std::size_t>(archiveData.size())) != ARCHIVE_OK) {
+    if (archive_read_open(a.get(), &ctx, nullptr, readCb, nullptr) != ARCHIVE_OK) {
         emit fetchCompleted(false,
             QString("Failed to open archive: %1").arg(archive_error_string(a.get())));
         return;
@@ -344,7 +359,8 @@ QString GutenbergAdapter::normalizeLccn(const QString& raw)
     QString alpha = lccn.left(splitPos);
     QString digits = lccn.mid(splitPos);
 
-    // Post-2001 LCCNs have a 10-digit numeric portion — do not zero-pad those
+    // Pre-2001 LCCNs: 1–6 digit suffix, zero-padded to 6 digits (8 chars total with 2-letter prefix).
+    // Post-2001 LCCNs: exactly 8 digits with no alpha prefix — do not zero-pad those.
     if (digits.length() < 8) {
         digits = digits.rightJustified(8, '0');
     }

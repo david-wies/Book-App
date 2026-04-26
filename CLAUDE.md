@@ -51,6 +51,12 @@ sudo apt-get install build-essential cmake qt6-base-dev libqt6sql6 libarchive-de
 
 Requires C++23, GCC 13+/Clang 16+, Qt6 (Widgets, Sql, Network modules), and libarchive (used by the Gutenberg adapter for in-process `.tar.bz2` extraction).
 
+**Database migration:** If the app shows a schema version mismatch error at startup, run:
+```bash
+python3 tools/migrate_db.py
+```
+This upgrades an existing `bookhub.db` to the current schema version. See `src/shared/database.cpp` for the migration SQL.
+
 ## Testing & Linting
 
 There is no automated test suite — manual verification is required. The CI runs `ctest` but finds no tests. No linter or static analysis is configured.

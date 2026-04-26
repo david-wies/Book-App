@@ -11,9 +11,7 @@
 #include <QTimer>
 #include <QSplitter>
 
-#define private public
 #include "gui/screens/search_screen.h"
-#undef private
 
 #include "gui/widgets/search_result_delegate.h"
 #include "support/test_database_utils.h"

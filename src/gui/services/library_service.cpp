@@ -36,7 +36,7 @@ QList<LibraryItem> LibraryService::fetchItems(const QString &sortColumn) const
             b.author,
             b.publish_year,
             COALESCE(e.language, '')    AS language,
-            COALESCE(s.source_name, '') AS source_name,
+            COALESCE(MAX(s.source_name), '') AS source_name,
             COALESCE(li.status, 'saved') AS status,
             li.added_date
         FROM library_items li
@@ -91,7 +91,7 @@ int LibraryService::addBook(const QString &bookId, int editionId)
     }
 
     if (query.numRowsAffected() <= 0)
-        return 0;
+        return -1;
 
     const int newId = query.lastInsertId().toInt();
     emit libraryChanged();

@@ -14,6 +14,7 @@ class QStackedWidget;
 class QStandardItemModel;
 class QTimer;
 class QSplitter;
+class SearchScreenTest; // test friend — defined in tests/gui/
 
 namespace bookhub::gui {
 
@@ -60,6 +61,8 @@ private:
     void populateModel(const QList<SearchResult> &results, bool append);
     void updateCountLabel(int count);
     void setResultsState(int state); // 0=initial, 1=populated, 2=empty
+
+    friend class ::SearchScreenTest;
 
     SearchService         *m_service{};
     LibraryService        *m_libraryService{};

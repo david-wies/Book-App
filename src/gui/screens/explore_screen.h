@@ -10,6 +10,7 @@ class QScrollArea;
 class QWidget;
 class QGridLayout;
 class QHBoxLayout;
+class ExploreScreenTest; // test friend — defined in tests/gui/
 
 namespace bookhub::gui {
 
@@ -59,6 +60,8 @@ private:
     // Genre drill-down helpers
     void showGenreBooks(const QString &genreName);
     void appendGenreBooks(int offset);
+
+    friend class ::ExploreScreenTest;
 
     ExploreService *m_service{};
 

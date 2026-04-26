@@ -4,9 +4,7 @@
 #include <QPushButton>
 #include <QGridLayout>
 
-#define private public
 #include "gui/screens/explore_screen.h"
-#undef private
 
 #include "support/test_database_utils.h"
 

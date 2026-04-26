@@ -5,9 +5,7 @@
 #include <QStackedWidget>
 #include <QStandardItemModel>
 
-#define private public
 #include "gui/screens/library_screen.h"
-#undef private
 
 #include "gui/widgets/book_card_delegate.h"
 #include "gui/widgets/empty_state_widget.h"

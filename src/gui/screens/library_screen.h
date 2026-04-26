@@ -10,6 +10,7 @@ class QButtonGroup;
 class QStackedWidget;
 class QStandardItemModel;
 class QLabel;
+class LibraryScreenTest; // test friend — defined in tests/gui/
 
 namespace bookhub::gui {
 
@@ -50,6 +51,8 @@ private slots:
     void onRemoveRequested(int libraryItemId, const QString &bookId);
 
 private:
+    friend class ::LibraryScreenTest;
+
     void buildToolbar(QWidget *toolbar);
     void populateModel(const QList<LibraryItem> &items);
     void updateCountLabel(int count);

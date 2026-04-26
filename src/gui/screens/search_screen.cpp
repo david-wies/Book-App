@@ -730,7 +730,16 @@ void SearchScreen::onSortChanged(int index)
         ? QStringLiteral("author")
         : QStringLiteral("title");
 
-    runSearch();
+    if (!isQueryActive())
+        return;
+
+    // COUNT is invariant to sort order — reuse m_totalCount and only re-fetch
+    // the ordered result page.
+    const SearchParams params = collectParams();
+    const QList<SearchResult> results = m_service->search(params, 0, kPageSize);
+    populateModel(results, false);
+    m_currentOffset = results.size();
+    m_loadMoreBtn->setVisible(m_currentOffset < m_totalCount);
 }
 
 void SearchScreen::onShowMoreGenres()

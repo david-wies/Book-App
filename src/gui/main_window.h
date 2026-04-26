@@ -5,6 +5,7 @@
 class QStackedWidget;
 class QButtonGroup;
 class QLabel;
+class MainWindowTest; // test friend — defined in tests/gui/
 
 namespace bookhub::gui {
 
@@ -39,6 +40,8 @@ private slots:
     void onLibraryExploreRequested();
 
 private:
+    friend class ::MainWindowTest;
+
     void buildNavBar();
     void buildStatusBar();
     void setStatusDot(const QColor &color);

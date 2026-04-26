@@ -90,6 +90,11 @@ void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, co
         return;
     }
 
+    if (!db.transaction()) {
+        qWarning() << "BookDiscoveryService: Failed to start transaction:" << db.lastError().text();
+        return;
+    }
+
     QSqlQuery query(db);
     QString effectiveId = book.resolvedId;
 
@@ -112,6 +117,7 @@ void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, co
                 query.addBindValue(effectiveId);
                 if (!query.exec()) {
                     qWarning() << "Failed to promote book_id:" << query.lastError().text();
+                    db.rollback();
                     return;
                 }
                 effectiveId = book.resolvedId;
@@ -128,6 +134,7 @@ void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, co
     query.addBindValue(QVariant());   // summary not available from RDF
     if (!query.exec()) {
         qWarning() << "Failed to insert book:" << query.lastError().text();
+        db.rollback();
         return;
     }
 
@@ -150,6 +157,7 @@ void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, co
     query.addBindValue(primaryLang);
     if (!query.exec()) {
         qWarning() << "Failed to insert edition:" << query.lastError().text();
+        db.rollback();
         return;
     }
 
@@ -158,6 +166,7 @@ void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, co
     query.addBindValue(primaryLang);
     if (!query.exec() || !query.next()) {
         qWarning() << "Failed to retrieve edition id:" << query.lastError().text();
+        db.rollback();
         return;
     }
     const int editionId = query.value(0).toInt();
@@ -190,6 +199,11 @@ void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, co
         if (!sourceQuery.exec()) {
             qWarning() << "Failed to insert source:" << sourceQuery.lastError().text();
         }
+    }
+
+    if (!db.commit()) {
+        qWarning() << "BookDiscoveryService: Failed to commit transaction:" << db.lastError().text();
+        db.rollback();
     }
 }
 
