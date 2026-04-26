@@ -32,6 +32,17 @@ static const char* kSortColumns[] = {
 LibraryScreen::LibraryScreen(QWidget *parent)
     : QWidget(parent)
 {
+    init(new LibraryService(this));
+}
+
+LibraryScreen::LibraryScreen(LibraryService *service, QWidget *parent)
+    : QWidget(parent)
+{
+    init(service);
+}
+
+void LibraryScreen::init(LibraryService *service)
+{
     setStyleSheet(QStringLiteral("background-color: %1;").arg(ColorBackground));
 
     auto *root = new QVBoxLayout(this);
@@ -74,7 +85,8 @@ LibraryScreen::LibraryScreen(QWidget *parent)
 
     // Empty state
     m_emptyState = new EmptyStateWidget(
-        QIcon::fromTheme(QStringLiteral("folder-open")),
+        QIcon::fromTheme(QStringLiteral("folder-open"),
+                         QIcon(QStringLiteral(":/book_reader_icon.jpg"))),
         QStringLiteral("Your library is empty."),
         QStringLiteral("Start by exploring books from the Explore tab."),
         QStringLiteral("Explore Books"),
@@ -101,7 +113,7 @@ LibraryScreen::LibraryScreen(QWidget *parent)
     m_stack->setCurrentIndex(2);      // show loading until first reload() completes
 
     // Wire up service
-    m_service = new LibraryService(this);
+    m_service = service;
     connect(m_service, &LibraryService::libraryChanged,
             this, &LibraryScreen::reload);
 
@@ -110,6 +122,8 @@ LibraryScreen::LibraryScreen(QWidget *parent)
             this, &LibraryScreen::onDetailsRequested);
     connect(m_delegate, &BookCardDelegate::downloadRequested,
             this, &LibraryScreen::onDownloadRequested);
+    connect(m_delegate, &BookCardDelegate::audiobookRequested,
+            this, &LibraryScreen::onAudiobookRequested);
     connect(m_delegate, &BookCardDelegate::removeRequested,
             this, &LibraryScreen::onRemoveRequested);
 
@@ -289,6 +303,13 @@ void LibraryScreen::onDetailsRequested(int /*libraryItemId*/, const QString &boo
 void LibraryScreen::onDownloadRequested(int libraryItemId, const QString &bookId)
 {
     // TODO: open DownloadFlowDialog (Task 11)
+    Q_UNUSED(libraryItemId)
+    Q_UNUSED(bookId)
+}
+
+void LibraryScreen::onAudiobookRequested(int libraryItemId, const QString &bookId)
+{
+    // TODO: open AudiobookFlowDialog (Task 12)
     Q_UNUSED(libraryItemId)
     Q_UNUSED(bookId)
 }

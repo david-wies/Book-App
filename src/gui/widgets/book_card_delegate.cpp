@@ -285,7 +285,11 @@ bool BookCardDelegate::editorEvent(QEvent *event,
         return true;
     }
     if (actionButtonRect(r).contains(pos)) {
-        emit downloadRequested(itemId, bId);
+        const QString status = index.data(LibraryRole::Status).toString();
+        if (status == QLatin1String("audiobook_ready"))
+            emit audiobookRequested(itemId, bId);
+        else
+            emit downloadRequested(itemId, bId);
         return true;
     }
     if (removeButtonRect(r).contains(pos)) {

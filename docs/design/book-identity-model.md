@@ -39,7 +39,7 @@ the `books` table, plus a list of all known identifiers for the `book_identifier
 
 **Inputs:** Raw source record (e.g. a parsed Gutenberg RDF `DiscoveredBook` struct)  
 **Outputs:**
-- `resolved_id: QString` — the canonical primary key (e.g. `"lccn:2007012345"`)
+- `resolved_id: QString` — the canonical primary key (e.g. `"lccn:n78095332"`)
 - `identifiers: QList<BookIdentifier>` — all IDs extracted, including the source-specific one
 
 Resolution is performed by a free function (or method) within each adapter, not inside
@@ -146,13 +146,13 @@ All collected raw identifier strings are stored in `identifiers` regardless of w
 ```xml
 <pgterms:ebook rdf:about="ebooks/1342">
   <dcterms:identifier>http://www.gutenberg.org/ebooks/1342</dcterms:identifier>
-  <dcterms:identifier>lccn:2007012345</dcterms:identifier>
+  <dcterms:identifier>lccn:n78095332</dcterms:identifier>
   <dcterms:title>Pride and Prejudice</dcterms:title>
   ...
 </pgterms:ebook>
 ```
 
-In this case `resolvedId` becomes `"lccn:2007012345"` and `identifiers` contains two entries:
+In this case `resolvedId` becomes `"lccn:n78095332"` and `identifiers` contains two entries:
 `{type:"gutenberg", value:"1342"}` and `{type:"lccn", value:"2007012345"}`.
 
 ### Gutenberg books without standard identifiers
@@ -199,7 +199,7 @@ metadata (title, author, summary) is not overwritten — the first writer wins. 
 
 If Phase 1 finds an existing row keyed by a lower-priority fallback identifier (for example
 `gutenberg:1342`) and the incoming record resolves to a stronger canonical identifier (for example
-`lccn:2007012345`), the existing row is promoted to the stronger key. This update runs in a
+`lccn:n78095332`), the existing row is promoted to the stronger key. This update runs in a
 transaction and cascades through all foreign-key tables. The old identifier remains in
 `book_identifiers`, so lookups by either identifier continue to resolve to the same work.
 
@@ -248,22 +248,20 @@ identifier is seen again on a subsequent collector run.
 -- Format: "<type>:<value>" e.g. "lccn:n78095332", "oclc:42707429",
 --         "isbn:9780141439518", "gutenberg:1342", "archive:moby-dick"
 CREATE TABLE IF NOT EXISTS books (
-    book_id          TEXT PRIMARY KEY,
-    title            TEXT NOT NULL,
-    author           TEXT,
-    publish_year     INTEGER,
-    publication_date TEXT,
-    summary          TEXT
+    book_id      TEXT PRIMARY KEY,
+    title        TEXT NOT NULL,
+    author       TEXT,
+    publish_year INTEGER,
+    summary      TEXT
 );
 
 -- All known identifiers for a book (many per book, unique per type+value pair)
 -- Enables deduplication: query this table before inserting a new book
 CREATE TABLE IF NOT EXISTS book_identifiers (
-    book_id  TEXT NOT NULL,
-    type     TEXT NOT NULL,   -- 'lccn', 'oclc', 'isbn', 'gutenberg', 'archive', 'benyehuda'
-    value    TEXT NOT NULL,
-    PRIMARY KEY (type, value),
-    FOREIGN KEY (book_id) REFERENCES books(book_id) ON DELETE CASCADE ON UPDATE CASCADE
+    book_id TEXT NOT NULL REFERENCES books(book_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    type    TEXT NOT NULL,   -- 'lccn', 'oclc', 'isbn', 'gutenberg', 'archive', 'benyehuda'
+    value   TEXT NOT NULL,
+    UNIQUE(type, value)
 );
 
 -- Editions: one row per language variant of a work
@@ -335,26 +333,26 @@ CREATE TABLE IF NOT EXISTS library_items (
 ## Sample Data (updated)
 
 The following sample data replaces the existing `insertSampleData` content. It uses real LCCN values
-for the three sample books (Pride and Prejudice: `lccn:2007012345`, Huckleberry Finn: `lccn:2007012344`,
+for the three sample books (Pride and Prejudice: `lccn:n78095332`, Huckleberry Finn: `lccn:n79025140`,
 Count of Monte Cristo: uses Gutenberg fallback since no LCCN is in the public sample set).
 
 ```sql
 INSERT OR IGNORE INTO books (book_id, title, author, publish_year) VALUES
-    ('lccn:2007012345',   'Pride and Prejudice',                   'Jane Austen',       1813),
-    ('lccn:2007012344',   'The Adventures of Huckleberry Finn',    'Mark Twain',        1884),
+    ('lccn:n78095332',   'Pride and Prejudice',                   'Jane Austen',       1813),
+    ('lccn:n79025140',   'The Adventures of Huckleberry Finn',    'Mark Twain',        1884),
     ('gutenberg:1184',    'The Count of Monte Cristo',             'Alexandre Dumas',   1844);
 
 INSERT OR IGNORE INTO book_identifiers (book_id, type, value) VALUES
-    ('lccn:2007012345',  'lccn',       '2007012345'),
-    ('lccn:2007012345',  'gutenberg',  '1342'),
-    ('lccn:2007012344',  'lccn',       '2007012344'),
-    ('lccn:2007012344',  'gutenberg',  '76'),
+    ('lccn:n78095332',  'lccn',       '2007012345'),
+    ('lccn:n78095332',  'gutenberg',  '1342'),
+    ('lccn:n79025140',  'lccn',       '2007012344'),
+    ('lccn:n79025140',  'gutenberg',  '76'),
     ('gutenberg:1184',   'gutenberg',  '1184');
 
 INSERT OR IGNORE INTO editions (book_id, language) VALUES
-    ('lccn:2007012345', 'English'),
-    ('lccn:2007012345', 'French'),
-    ('lccn:2007012344', 'English'),
+    ('lccn:n78095332', 'English'),
+    ('lccn:n78095332', 'French'),
+    ('lccn:n79025140', 'English'),
     ('gutenberg:1184',  'English'),
     ('gutenberg:1184',  'French');
 ```
@@ -451,7 +449,7 @@ flowchart TD
 
 ## Rationale for Key Decisions
 
-**Prefixed string format for `book_id` (e.g. `"lccn:2007012345"`):** A bare number is ambiguous — the
+**Prefixed string format for `book_id` (e.g. `"lccn:n78095332"`):** A bare number is ambiguous — the
 same digit string might be a valid LCCN, an OCLC number, or a Gutenberg ID. The prefix removes
 ambiguity without adding a separate `id_type` column to the `books` table. It also makes the value
 self-documenting when inspecting the database directly.

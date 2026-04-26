@@ -22,7 +22,8 @@ struct LibraryItem;
 // ---------------------------------------------------------------------------
 // LibraryScreen — the Library tab's content widget (spec Section 2).
 //
-// Owns a LibraryService and a QListView driven by BookCardDelegate.
+// Owns or borrows a LibraryService (depending on which constructor is used)
+// and a QListView driven by BookCardDelegate.
 // Toolbar: book count label + sort combo + list/grid toggle.
 // Emits bookDetailsRequested when the user clicks "Details" on a card so
 // MainWindow can show the BookDetailsPanel (not yet implemented in Task 6).
@@ -32,6 +33,7 @@ class LibraryScreen : public QWidget {
     Q_OBJECT
 public:
     explicit LibraryScreen(QWidget *parent = nullptr);
+    explicit LibraryScreen(LibraryService *service, QWidget *parent = nullptr);
 
     // Refresh the list from the database. Call after any write operation.
     void reload();
@@ -48,16 +50,18 @@ private slots:
     void onViewToggled(int id, bool checked);
     void onDetailsRequested(int libraryItemId, const QString &bookId);
     void onDownloadRequested(int libraryItemId, const QString &bookId);
+    void onAudiobookRequested(int libraryItemId, const QString &bookId);
     void onRemoveRequested(int libraryItemId, const QString &bookId);
 
 private:
+    void init(LibraryService *service);
     friend class ::LibraryScreenTest;
 
     void buildToolbar(QWidget *toolbar);
     void populateModel(const QList<LibraryItem> &items);
     void updateCountLabel(int count);
 
-    LibraryService       *m_service{};
+    LibraryService       *m_service{};  // owned when default ctor used; borrowed (non-owning) otherwise
     QListView            *m_listView{};
     QStandardItemModel   *m_model{};
     BookCardDelegate     *m_delegate{};

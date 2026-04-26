@@ -208,6 +208,7 @@ bool verifySchemaVersion(const QString &connectionName)
                 qCritical() << "Migration v1→v2 failed at:" << sql
                             << "\nError:" << mq.lastError().text();
                 mq.exec("ROLLBACK");
+                mq.exec("PRAGMA foreign_keys = ON");
                 return false;
             }
         }
@@ -258,7 +259,7 @@ bool insertSampleData(const QString &connectionName)
             ('gutenberg:1184', 3), ('gutenberg:1184', 4), ('gutenberg:1184', 2)
         )",
         R"(INSERT OR IGNORE INTO formats (id, edition_id, format_type) VALUES
-            (1, 1, 'epub'), (2, 1, 'pdf'), (3, 3, 'epub'), (4, 4, 'epub')
+            (1, 1, 'epub_1'), (2, 1, 'pdf_1'), (3, 3, 'epub_1'), (4, 4, 'epub_1')
         )",
         R"(INSERT OR IGNORE INTO sources (id, format_id, source_name, download_link) VALUES
             (1, 1, 'Gutenberg', 'https://www.gutenberg.org/ebooks/1342.epub.images'),

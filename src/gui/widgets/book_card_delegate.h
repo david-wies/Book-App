@@ -62,6 +62,7 @@ public:
 signals:
     void detailsRequested(int libraryItemId, const QString &bookId);
     void downloadRequested(int libraryItemId, const QString &bookId);
+    void audiobookRequested(int libraryItemId, const QString &bookId);
     void removeRequested(int libraryItemId, const QString &bookId);
 
 private:

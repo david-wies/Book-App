@@ -1,61 +1,32 @@
 # Multiplatform Support
 
-This document describes changes required to support multiple platforms (beyond Ubuntu/Linux).
+This document describes the multiplatform changes implemented in Task 19 (PR #28).
 
-## Current Limitations
-
-The application currently has several hardcoded paths that assume:
-
-- Unix-like filesystem with executable co-located with mutable data
-- x86_64 architecture on Linux
-- SQLite database stored next to the executable
-
-## Required Changes
+## Implemented Changes
 
 ### 1. Database Location
 
-**File:** `src/shared/database.cpp:15`
+**File:** `src/shared/database.cpp`
 
-```cpp
-// Current (fails on Windows/macOS due to sandboxing):
-return QDir(QCoreApplication::applicationDirPath()).filePath(kDatabaseFileName);
+`databaseFilePath()` uses `QStandardPaths::AppDataLocation` — the platform-appropriate writable location:
 
-// Multiplatform (cross-platform):
-return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/" + kDatabaseFileName;
-```
+- **Linux:** `~/.local/share/BookHub/BookHub/bookhub.db`
+- **macOS:** `~/Library/Application Support/BookHub/BookHub/bookhub.db`
+- **Windows:** `%APPDATA%\BookHub\BookHub\bookhub.db`
 
-**Rationale:** Modern OS sandboxing (especially Windows UAP/code signing, macOS App Sandbox) prevents writing to the executable's directory. `QStandardPaths::AppDataLocation` provides the proper platform-specific location.
+**Rationale:** Modern OS sandboxing prevents writing to the executable's directory. `QStandardPaths::AppDataLocation` provides the correct per-user, per-application data path on all platforms.
 
-### 2. Icon Path
+### 2. Application Icon
 
-**File:** `src/main.cpp:31`
+**File:** `resources.qrc`, `src/main.cpp`
 
-```cpp
-// Current:
-QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("book_reader_icon.jpg"));
-
-// Multiplatform:
-QDir(QCoreApplication::applicationDirPath() + "/..").filePath(QStringLiteral("book_reader_icon.jpg"));
-// Or better: embed as Qt resources (see below)
-```
-
-**Alternative:** Consider embedding the icon as a Qt resource (`.qrc` file) instead of a filesystem copy. This eliminates platform-specific path issues entirely.
+The application icon (`book_reader_icon.jpg`) is embedded as a Qt resource via `resources.qrc`. The icon is loaded with `QIcon(":/book_reader_icon.jpg")` — no filesystem path required, no `POST_BUILD` copy step.
 
 ### 3. CMake Qt6 Path Fallback
 
-**File:** `CMakeLists.txt:11-12`
+**File:** `CMakeLists.txt`
 
-```cmake
-# Current (x86_64 only):
-list(APPEND CMAKE_PREFIX_PATH "/usr/lib/x86_64-linux-gnu/cmake")
-
-# Multiplatform:
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
-    list(APPEND CMAKE_PREFIX_PATH "/usr/lib/${CMAKE_SYSTEM_PROCESSOR}-linux-gnu/cmake")
-endif()
-```
-
-**Note:** The best approach is to remove this fallback entirely and rely on CMake's default search paths. Only add if Qt6 cannot be found.
+The hardcoded x86_64 `CMAKE_PREFIX_PATH` fallback has been removed. CMake finds Qt6 via its standard search paths.
 
 ## Platform-Specific Dependencies
 

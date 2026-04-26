@@ -10,6 +10,8 @@
 #include <QStandardItemModel>
 #include <QTimer>
 #include <QSplitter>
+#include <QCoreApplication>
+#include <QSettings>
 
 #include "gui/screens/search_screen.h"
 
@@ -38,6 +40,12 @@ private:
 
 void SearchScreenTest::init()
 {
+    bookhub::tests::isolateSettings(QStringLiteral("bookhub-test-search-screen"));
+    QCoreApplication::setOrganizationName(QStringLiteral("BookHub"));
+    QCoreApplication::setApplicationName(QStringLiteral("BookHub"));
+    QSettings settings(QStringLiteral("BookHub"), QStringLiteral("BookHub"));
+    settings.clear();
+
     m_db = std::make_unique<bookhub::tests::TestDatabase>();
     QVERIFY(m_db->open());
     QVERIFY(m_db->createSchema());
@@ -74,7 +82,7 @@ void SearchScreenTest::debounceAndEnterTriggerSearch()
     screen.m_searchBar->setText(QStringLiteral("Pride"));
     QCOMPARE(screen.m_resultsStack->currentIndex(), 0);
 
-    QTest::qWait(550);
+    screen.triggerSearchNow();
     QCOMPARE(screen.m_resultsStack->currentIndex(), 1);
     QVERIFY(screen.m_model->rowCount() >= 1);
 
@@ -89,7 +97,7 @@ void SearchScreenTest::clearFiltersAndAddToLibrary_updateUiState()
 {
     SearchScreen screen;
     screen.m_searchBar->setText(QStringLiteral("Pride"));
-    QTest::qWait(550);
+    screen.triggerSearchNow();
 
     QVERIFY(screen.m_model->rowCount() >= 1);
     const QString firstBookId = screen.m_model->item(0)->data(SearchRole::BookId).toString();
@@ -106,7 +114,7 @@ void SearchScreenTest::loadMoreAndYearClamp_work()
 {
     SearchScreen screen;
     screen.m_searchBar->setText(QStringLiteral("Bulk"));
-    QTest::qWait(550);
+    screen.triggerSearchNow();
 
     const int initialRows = screen.m_model->rowCount();
     QVERIFY(initialRows == 50);

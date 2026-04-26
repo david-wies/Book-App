@@ -46,7 +46,7 @@ make -j$(nproc)
 
 **Dependencies:**
 ```bash
-sudo apt-get install build-essential cmake qt6-base-dev libqt6sql6 libarchive-dev
+sudo apt-get install build-essential cmake qt6-base-dev libqt6sql6 libqt6network6 libarchive-dev
 ```
 
 Requires C++23, GCC 13+/Clang 16+, Qt6 (Widgets, Sql, Network modules), and libarchive (used by the Gutenberg adapter for in-process `.tar.bz2` extraction).
@@ -59,7 +59,7 @@ This upgrades an existing `bookhub.db` to the current schema version. See `src/s
 
 ## Testing & Linting
 
-There is no automated test suite — manual verification is required. The CI runs `ctest` but finds no tests. No linter or static analysis is configured.
+The test suite uses Qt Test. Ten targets are registered with CTest across `unit`, `integration`, and `gui` categories; the `sanity` label marks the fast-gate subset. Run with `ctest -L sanity` (fast) or `ctest` (full suite) from the build directory. No linter or static analysis is configured.
 
 ## Architecture
 

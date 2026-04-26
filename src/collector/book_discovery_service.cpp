@@ -201,6 +201,24 @@ void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, co
         }
     }
 
+    // Phase 5 — genres
+    for (const QString &subject : book.subjects) {
+        QSqlQuery gq(db);
+        gq.prepare(QStringLiteral("INSERT OR IGNORE INTO genres (genre_name) VALUES (?)"));
+        gq.addBindValue(subject);
+        if (!gq.exec())
+            qWarning() << "BookDiscoveryService: Failed to insert genre:" << gq.lastError().text();
+
+        QSqlQuery bgq(db);
+        bgq.prepare(QStringLiteral(
+            "INSERT OR IGNORE INTO book_genres (book_id, genre_id) "
+            "SELECT ?, id FROM genres WHERE genre_name = ?"));
+        bgq.addBindValue(effectiveId);
+        bgq.addBindValue(subject);
+        if (!bgq.exec())
+            qWarning() << "BookDiscoveryService: Failed to insert book_genre:" << bgq.lastError().text();
+    }
+
     if (!db.commit()) {
         qWarning() << "BookDiscoveryService: Failed to commit transaction:" << db.lastError().text();
         db.rollback();

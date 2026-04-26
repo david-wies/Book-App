@@ -87,7 +87,7 @@ graph TD
 **Navigation Model:**
 - Three `QPushButton` buttons styled as tabs (checkable, exclusive via `QButtonGroup`).
 - Clicking a tab calls `QStackedWidget::setCurrentIndex()`.
-- The active tab has a bottom border accent (2 px, accent colour).
+- The active tab has a bottom border accent (3 px, accent colour).
 - Keyboard: Tab/Shift-Tab cycles between nav buttons; Enter/Space activates.
 
 **Status Bar:**
@@ -949,7 +949,7 @@ These values should be defined as named constants in a shared header (`src/gui/s
 | `ColorBorder` | `#E5E7EB` | Card borders, separators |
 | `ColorNavBg` | `#1E293B` | Navigation bar background |
 | `ColorNavText` | `#F1F5F9` | Navigation button text |
-| `ColorNavActive` | `#2563EB` | Active tab bottom border (2 px) |
+| `ColorNavActive` | `#2563EB` | Active tab bottom border (3 px) |
 
 **Spacing:**
 

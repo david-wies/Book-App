@@ -113,6 +113,15 @@ SearchScreen::SearchScreen(QWidget *parent)
     }
 }
 
+SearchScreen::SearchScreen(LibraryService *service, QWidget *parent)
+    : SearchScreen(parent)
+{
+    // swap out the self-owned library service for the shared one so addBook()
+    // fires libraryChanged on the same instance that LibraryScreen watches
+    delete m_libraryService;
+    m_libraryService = service;
+}
+
 // ---------------------------------------------------------------------------
 // Widget builders
 // ---------------------------------------------------------------------------
@@ -600,6 +609,13 @@ void SearchScreen::setResultsState(int state)
 // ---------------------------------------------------------------------------
 // Slots
 // ---------------------------------------------------------------------------
+
+void SearchScreen::triggerSearchNow()
+{
+    m_searchTimer->stop();
+    m_authorTimer->stop();
+    runSearch();
+}
 
 void SearchScreen::onSearchBarChanged()
 {

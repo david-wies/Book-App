@@ -3,6 +3,7 @@
 #include "screens/library_screen.h"
 #include "screens/search_screen.h"
 #include "screens/explore_screen.h"
+#include "services/library_service.h"
 
 #include <QHBoxLayout>
 #include <QVBoxLayout>
@@ -41,8 +42,11 @@ MainWindow::MainWindow(QWidget *parent)
     m_stack = new QStackedWidget(central);
     root->addWidget(m_stack, 1);
 
+    // Shared library service so SearchScreen writes are visible in LibraryScreen
+    m_libraryService = new LibraryService(this);
+
     // Screen 0: Library (implemented)
-    m_libraryScreen = new LibraryScreen(m_stack);
+    m_libraryScreen = new LibraryScreen(m_libraryService, m_stack);
     connect(m_libraryScreen, &LibraryScreen::exploreRequested,
             this, &MainWindow::onLibraryExploreRequested);
     connect(m_libraryScreen, &LibraryScreen::bookDetailsRequested,
@@ -52,7 +56,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_stack->addWidget(m_libraryScreen); // index 0
 
     // Screen 1: Search (Task 7)
-    m_searchScreen = new SearchScreen(m_stack);
+    m_searchScreen = new SearchScreen(m_libraryService, m_stack);
     connect(m_searchScreen, &SearchScreen::bookDetailsRequested,
             this, [](const QString & /*bookId*/) {
                 // TODO: show BookDetailsPanel (Task 9)

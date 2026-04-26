@@ -10,6 +10,7 @@ class MainWindowTest; // test friend — defined in tests/gui/
 namespace bookhub::gui {
 
 class LibraryScreen;
+class LibraryService;
 class SearchScreen;
 class ExploreScreen;
 
@@ -49,6 +50,7 @@ private:
     QWidget        *m_navBar{};
     QStackedWidget *m_stack{};
     QButtonGroup   *m_navGroup{};
+    LibraryService *m_libraryService{};
     LibraryScreen  *m_libraryScreen{};
     SearchScreen   *m_searchScreen{};
     ExploreScreen  *m_exploreScreen{};

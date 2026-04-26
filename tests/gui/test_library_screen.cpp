@@ -102,17 +102,12 @@ void LibraryScreenTest::viewMode_persistsAndRemoveActionDeletesRow()
     const int initialRows = screen.m_model->rowCount();
     const int libraryItemId = screen.m_model->item(0)->data(LibraryRole::LibraryItemId).toInt();
 
-    QTimer acceptTimer;
-    connect(&acceptTimer, &QTimer::timeout, &screen, [] {
-        if (auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget())) {
-            if (auto *button = box->button(QMessageBox::Yes))
-                button->click();
-        }
+    QTimer::singleShot(0, &screen, [] {
+        if (auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget()))
+            if (auto *btn = box->button(QMessageBox::Yes))
+                btn->click();
     });
-    acceptTimer.start(10);
-
     screen.onRemoveRequested(libraryItemId, screen.m_model->item(0)->data(LibraryRole::BookId).toString());
-    acceptTimer.stop();
     QCOMPARE(m_db->scalarInt(QStringLiteral(
         "SELECT COUNT(*) FROM library_items WHERE id = %1").arg(libraryItemId)), 0);
     QCOMPARE(screen.m_model->rowCount(), initialRows - 1);

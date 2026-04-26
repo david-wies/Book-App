@@ -36,6 +36,9 @@ class SearchScreen : public QWidget {
     Q_OBJECT
 public:
     explicit SearchScreen(QWidget *parent = nullptr);
+    explicit SearchScreen(LibraryService *service, QWidget *parent = nullptr);
+
+    void triggerSearchNow(); // bypasses debounce — for use in tests
 
 signals:
     void bookDetailsRequested(const QString &bookId);
@@ -65,7 +68,7 @@ private:
     friend class ::SearchScreenTest;
 
     SearchService         *m_service{};
-    LibraryService        *m_libraryService{};
+    LibraryService        *m_libraryService{};  // owned when default ctor used; borrowed (non-owning) otherwise
     SearchResultDelegate  *m_delegate{};
     QStandardItemModel    *m_model{};
 
