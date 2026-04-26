@@ -122,7 +122,7 @@ LibraryScreen::LibraryScreen(QWidget *parent)
             });
 
     // Restore saved view mode — must happen after m_listView is constructed
-    QSettings settings(QStringLiteral("BookHub"), QStringLiteral("BookHub"));
+    QSettings settings;
     const int savedViewMode = settings.value(QStringLiteral("Library/viewMode"), 0).toInt();
     if (savedViewMode == 1) {
         // Trigger the grid button — QButtonGroup::idToggled fires onViewToggled
@@ -258,7 +258,7 @@ void LibraryScreen::onViewToggled(int id, bool checked)
     if (!checked)
         return;
 
-    QSettings settings(QStringLiteral("BookHub"), QStringLiteral("BookHub"));
+    QSettings settings;
     settings.setValue(QStringLiteral("Library/viewMode"), id);
 
     const ViewMode mode = (id == 1) ? ViewMode::Grid : ViewMode::List;

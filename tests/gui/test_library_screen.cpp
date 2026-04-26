@@ -38,6 +38,10 @@ private:
 void LibraryScreenTest::init()
 {
     bookhub::tests::isolateSettings(QStringLiteral("bookhub-test-library-screen"));
+    // Match the org/app name set by main.cpp so QSettings() in production code
+    // resolves to the same path as QSettings("BookHub","BookHub") in the test.
+    QCoreApplication::setOrganizationName(QStringLiteral("BookHub"));
+    QCoreApplication::setApplicationName(QStringLiteral("BookHub"));
     QSettings settings(QStringLiteral("BookHub"), QStringLiteral("BookHub"));
     settings.clear();
 
