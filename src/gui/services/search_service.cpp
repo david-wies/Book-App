@@ -31,28 +31,27 @@ static QString escapeLike(const QString &raw)
 // filters. Returns false if binding fails. The IN-list filters (genres,
 // languages, sources) use one `?` placeholder per value so no user input
 // is ever interpolated into SQL text.
+// Parameter order must exactly match the placeholders produced by buildSql.
 static bool bindParams(QSqlQuery &query,
                        const SearchParams &p,
                        int offset,
                        int limit,
                        bool isCount)
 {
-    // keyword
+    // keyword — only bound when the filter is active (clause omitted otherwise)
     const QString kwTrimmed = p.keyword.trimmed();
-    const QString kw = kwTrimmed.isEmpty()
-                     ? QStringLiteral("")
-                     : QStringLiteral("%") + escapeLike(kwTrimmed) + QStringLiteral("%");
-    query.addBindValue(kwTrimmed.isEmpty() ? QStringLiteral("") : QStringLiteral("x")); // sentinel for "? = ''"
-    query.addBindValue(kw);
-    query.addBindValue(kw);
+    if (!kwTrimmed.isEmpty()) {
+        const QString kw = QStringLiteral("%") + escapeLike(kwTrimmed) + QStringLiteral("%");
+        query.addBindValue(kw);
+        query.addBindValue(kw);
+    }
 
-    // author filter
+    // author filter — only bound when active
     const QString afTrimmed = p.author.trimmed();
-    const QString af = afTrimmed.isEmpty()
-                     ? QStringLiteral("")
-                     : QStringLiteral("%") + escapeLike(afTrimmed) + QStringLiteral("%");
-    query.addBindValue(afTrimmed.isEmpty() ? QStringLiteral("") : QStringLiteral("x"));
-    query.addBindValue(af);
+    if (!afTrimmed.isEmpty()) {
+        const QString af = QStringLiteral("%") + escapeLike(afTrimmed) + QStringLiteral("%");
+        query.addBindValue(af);
+    }
 
     // genre IN values
     for (const QString &g : p.genres)
@@ -123,6 +122,17 @@ static QString buildSql(const SearchParams &p, bool isCount)
         srcFilter = QStringLiteral("AND s.source_name IN (%1)").arg(ph.join(QLatin1String(",")));
     }
 
+    // Keyword filter clause — omitted entirely when no keyword is set so no
+    // binding placeholder is emitted. bindParams must bind in the same order.
+    const QString kwFilter = p.keyword.trimmed().isEmpty()
+        ? QString{}
+        : QStringLiteral("AND (b.title LIKE ? ESCAPE '\\' OR b.author LIKE ? ESCAPE '\\')");
+
+    // Author filter clause — omitted when author field is empty.
+    const QString authorFilter = p.author.trimmed().isEmpty()
+        ? QString{}
+        : QStringLiteral("AND b.author LIKE ? ESCAPE '\\'");
+
     // Genre JOIN is only needed when a genre filter is active; otherwise the
     // LEFT JOIN avoids expanding rows for books that have multiple genres.
     const QString genreJoin = p.genres.isEmpty()
@@ -152,16 +162,18 @@ static QString buildSql(const SearchParams &p, bool isCount)
             LEFT JOIN formats f ON e.id = f.edition_id
             LEFT JOIN sources s ON f.id = s.format_id
             %2
-            WHERE (? = '' OR b.title LIKE ? ESCAPE '\' OR b.author LIKE ? ESCAPE '\')
-              AND (? = '' OR b.author LIKE ? ESCAPE '\')
+            WHERE 1=1
               %3
-              AND (? = 0 OR b.publish_year >= ?)
-              AND (? = 0 OR b.publish_year <= ?)
               %4
               %5
+              AND (? = 0 OR b.publish_year >= ?)
+              AND (? = 0 OR b.publish_year <= ?)
+              %6
+              %7
               AND (? = 0 OR f.format_type IS NOT NULL)
               AND (? = 0 OR li.status = 'audiobook_ready')
-        )").arg(genreJoin, liJoin, genreFilter, langFilter, srcFilter);
+        )").arg(genreJoin, liJoin, kwFilter, authorFilter, genreFilter)
+           .arg(langFilter, srcFilter);
     }
 
     return QStringLiteral(R"(
@@ -176,19 +188,21 @@ static QString buildSql(const SearchParams &p, bool isCount)
         LEFT JOIN formats f ON e.id = f.edition_id
         LEFT JOIN sources s ON f.id = s.format_id
         %2
-        WHERE (? = '' OR b.title LIKE ? ESCAPE '\' OR b.author LIKE ? ESCAPE '\')
-          AND (? = '' OR b.author LIKE ? ESCAPE '\')
+        WHERE 1=1
           %3
-          AND (? = 0 OR b.publish_year >= ?)
-          AND (? = 0 OR b.publish_year <= ?)
           %4
           %5
+          AND (? = 0 OR b.publish_year >= ?)
+          AND (? = 0 OR b.publish_year <= ?)
+          %6
+          %7
           AND (? = 0 OR f.format_type IS NOT NULL)
           AND (? = 0 OR li.status = 'audiobook_ready')
         GROUP BY b.book_id
-        ORDER BY %6
+        ORDER BY %8
         LIMIT ? OFFSET ?
-    )").arg(genreJoin, liJoin, genreFilter, langFilter, srcFilter, orderCol);
+    )").arg(genreJoin, liJoin, kwFilter, authorFilter, genreFilter)
+       .arg(langFilter, srcFilter, orderCol);
 }
 
 // ---------------------------------------------------------------------------
