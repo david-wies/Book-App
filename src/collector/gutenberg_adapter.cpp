@@ -73,7 +73,7 @@ void GutenbergAdapter::extractAndParseArchive(QNetworkReply* reply) {
         QNetworkReply* reply;
         QByteArray buf;
     };
-    ReadCtx ctx{reply};
+    ReadCtx ctx{reply, {}};
 
     auto readCb = [](archive*, void* data, const void** buffer) -> la_ssize_t {
         auto* ctx = static_cast<ReadCtx*>(data);
