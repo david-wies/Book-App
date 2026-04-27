@@ -25,21 +25,25 @@ void ExploreService::connectToWorker(QueryWorker *worker)
 
     connect(worker, &QueryWorker::trendingCompleted, this,
             [this](quint64 id, QList<ExploreBook> books) {
+                Q_ASSERT(m_pendingCount > 0);
                 --m_pendingCount;
                 emit trendingCompleted(id, books);
             });
     connect(worker, &QueryWorker::newArrivalsCompleted, this,
             [this](quint64 id, QList<ExploreBook> books) {
+                Q_ASSERT(m_pendingCount > 0);
                 --m_pendingCount;
                 emit newArrivalsCompleted(id, books);
             });
     connect(worker, &QueryWorker::categoriesCompleted, this,
             [this](quint64 id, QList<ExploreCategory> cats) {
+                Q_ASSERT(m_pendingCount > 0);
                 --m_pendingCount;
                 emit categoriesCompleted(id, cats);
             });
     connect(worker, &QueryWorker::booksForGenreCompleted, this,
             [this](quint64 id, QList<ExploreBook> books) {
+                Q_ASSERT(m_pendingCount > 0);
                 --m_pendingCount;
                 emit booksForGenreCompleted(id, books);
             });

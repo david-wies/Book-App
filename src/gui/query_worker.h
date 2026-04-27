@@ -73,6 +73,7 @@ signals:
 
 private:
     static constexpr const char *kConnectionName = "gui_query_connection";
+    static QLatin1String conn() noexcept { return QLatin1String{kConnectionName}; }
 };
 
 } // namespace bookhub::gui

@@ -25,11 +25,13 @@ void LibraryService::connectToWorker(QueryWorker *worker)
 
     connect(worker, &QueryWorker::fetchItemsCompleted, this,
             [this](quint64 id, QList<LibraryItem> items) {
+                Q_ASSERT(m_pendingCount > 0);
                 --m_pendingCount;
                 emit fetchItemsCompleted(id, items);
             });
     connect(worker, &QueryWorker::addBookCompleted, this,
             [this](quint64 id, QString bookId, bool success, int newId) {
+                Q_ASSERT(m_pendingCount > 0);
                 --m_pendingCount;
                 emit addBookCompleted(id, bookId, success, newId);
                 if (success)
@@ -37,6 +39,7 @@ void LibraryService::connectToWorker(QueryWorker *worker)
             });
     connect(worker, &QueryWorker::removeBookCompleted, this,
             [this](quint64 id, bool success) {
+                Q_ASSERT(m_pendingCount > 0);
                 --m_pendingCount;
                 emit removeBookCompleted(id, success);
                 if (success)
@@ -44,6 +47,7 @@ void LibraryService::connectToWorker(QueryWorker *worker)
             });
     connect(worker, &QueryWorker::updateStatusCompleted, this,
             [this](quint64 id, bool success) {
+                Q_ASSERT(m_pendingCount > 0);
                 --m_pendingCount;
                 emit updateStatusCompleted(id, success);
                 if (success)

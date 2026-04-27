@@ -30,26 +30,31 @@ void SearchService::connectToWorker(QueryWorker *worker)
     // Relay results back from worker to callers
     connect(worker, &QueryWorker::searchCompleted, this,
             [this](quint64 id, QList<SearchResult> results) {
+                Q_ASSERT(m_pendingCount > 0);
                 --m_pendingCount;
                 emit searchCompleted(id, results);
             });
     connect(worker, &QueryWorker::countCompleted, this,
             [this](quint64 id, int count) {
+                Q_ASSERT(m_pendingCount > 0);
                 --m_pendingCount;
                 emit countCompleted(id, count);
             });
     connect(worker, &QueryWorker::languagesCompleted, this,
             [this](quint64 id, QStringList langs) {
+                Q_ASSERT(m_pendingCount > 0);
                 --m_pendingCount;
                 emit languagesCompleted(id, langs);
             });
     connect(worker, &QueryWorker::sourcesCompleted, this,
             [this](quint64 id, QStringList srcs) {
+                Q_ASSERT(m_pendingCount > 0);
                 --m_pendingCount;
                 emit sourcesCompleted(id, srcs);
             });
     connect(worker, &QueryWorker::genresCompleted, this,
             [this](quint64 id, QStringList genres) {
+                Q_ASSERT(m_pendingCount > 0);
                 --m_pendingCount;
                 emit genresCompleted(id, genres);
             });

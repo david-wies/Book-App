@@ -79,7 +79,7 @@ signals:
 
 private:
     std::atomic<quint64> m_nextRequestId{1};
-    quint64              m_pendingCount{0};
+    int                  m_pendingCount{0};
 };
 
 // ---------------------------------------------------------------------------
