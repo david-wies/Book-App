@@ -2,12 +2,14 @@ name: CI
 
 on:
   push:
-    branches: [ develop ]
+    branches: [ develop, master ]
   pull_request:
-    branches: [ develop ]
+    branches: [ develop, master ]
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # Include event_name so a push and a pull_request on the same ref do not
+  # cancel each other — they are distinct pipeline types.
+  group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -59,6 +61,8 @@ jobs:
       run: cd build && ctest -L sanity -j$(nproc) --output-on-failure
 
     - name: Run remaining tests
+      # Full suite only on master — develop gets sanity-only for fast feedback.
+      if: github.ref == 'refs/heads/master' || github.base_ref == 'master'
       run: cd build && ctest -LE sanity -j$(nproc) --output-on-failure
 
     - name: Upload build artifact

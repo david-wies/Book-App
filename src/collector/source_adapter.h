@@ -20,6 +20,9 @@ struct DiscoveredBook {
     QStringList languages;
     QStringList subjects;
     QList<BookIdentifier> identifiers;
+    // NOTE: format map keys use the pattern "<normalized_mime>_<count>",
+    // e.g. "epub_1", "epub_2", "text_plain_1". Count suffix avoids key
+    // collisions when a book has multiple files of the same MIME type.
     QMap<QString, QString> formats;
 };
 

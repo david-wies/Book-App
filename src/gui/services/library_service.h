@@ -4,14 +4,9 @@
 #include <QString>
 #include <QList>
 #include <QDateTime>
+#include <atomic>
 
 namespace bookhub::gui {
-
-// ---------------------------------------------------------------------------
-// LibraryItem — a single row from the library_items JOIN query.
-// Keeps all display-relevant fields flat so the view model doesn't need to
-// run additional queries per row.
-// ---------------------------------------------------------------------------
 
 struct LibraryItem {
     int         id{};
@@ -20,17 +15,20 @@ struct LibraryItem {
     QString     title;
     QString     author;
     int         publishYear{};
-    QString     language;       // from editions.language
-    QString     sourceName;     // from sources.source_name (first source found)
-    QString     status;         // library_items.status
+    QString     language;
+    QString     sourceName;
+    QString     status;
     QDateTime   addedDate;
 };
 
+class QueryWorker;
+
 // ---------------------------------------------------------------------------
-// LibraryService — plain QObject that executes synchronous SQL queries on the
-// GUI thread's default database connection.
+// LibraryService — async facade for library read/write operations.
 //
-// All methods must be called from the GUI thread only (Section 8.7 of spec).
+// Call connectToWorker() once after construction. Use request*() methods;
+// each returns a requestId. Write completions also emit libraryChanged() on
+// the GUI thread so LibraryScreen::reload() continues to work unchanged.
 // ---------------------------------------------------------------------------
 
 class LibraryService : public QObject {
@@ -38,23 +36,49 @@ class LibraryService : public QObject {
 public:
     explicit LibraryService(QObject *parent = nullptr);
 
-    // Returns all library items joined with books / editions / sources data.
-    // Sort column is one of: "added_date", "title", "author", "status".
-    QList<LibraryItem> fetchItems(const QString &sortColumn = QStringLiteral("added_date")) const;
+    void connectToWorker(QueryWorker *worker);
+    bool isBusy() const;
 
-    // Inserts a new library_items row for the given book/edition pair.
-    // Returns the new row id, or -1 on failure.
-    int addBook(const QString &bookId, int editionId);
-
-    // Deletes the library_items row with the given id.
-    bool removeBook(int libraryItemId);
-
-    // Updates the status field for the given library_items row.
-    bool updateStatus(int libraryItemId, const QString &status);
+    quint64 requestFetchItems(const QString &sortColumn = QStringLiteral("added_date"));
+    quint64 requestAddBook(const QString &bookId, int editionId);
+    quint64 requestRemoveBook(int libraryItemId);
+    quint64 requestUpdateStatus(int libraryItemId, const QString &status);
 
 signals:
-    // Emitted after any write operation so views can refresh.
+    // Result signals — delivered on the GUI thread
+    void fetchItemsCompleted(quint64 requestId, QList<bookhub::gui::LibraryItem> items);
+    void addBookCompleted(quint64 requestId, QString bookId, bool success, int newId);
+    void removeBookCompleted(quint64 requestId, bool success);
+    void updateStatusCompleted(quint64 requestId, bool success);
+
+    // Emitted after any successful write so views can refresh
     void libraryChanged();
+
+    // Internal request signals — routed to QueryWorker
+    void fetchItemsRequested(quint64 requestId, QString sortColumn);
+    void addBookRequested(quint64 requestId, QString bookId, int editionId);
+    void removeBookRequested(quint64 requestId, int libraryItemId);
+    void updateStatusRequested(quint64 requestId, int libraryItemId, QString status);
+
+private:
+    std::atomic<quint64> m_nextRequestId{1};
+    int                  m_pendingCount{0};
 };
+
+// ---------------------------------------------------------------------------
+// Internal free functions — called by QueryWorker and integration tests.
+// Write functions do NOT emit libraryChanged; the service does that on the
+// GUI thread after receiving the result signal.
+// ---------------------------------------------------------------------------
+namespace internal {
+    QList<LibraryItem> fetchItems(const QString &sortColumn,
+                                  const QString &connectionName);
+    // Returns new row ID (> 0) on success, 0 if already exists, -1 on error.
+    int addBook(const QString &bookId, int editionId,
+                const QString &connectionName);
+    bool removeBook(int libraryItemId, const QString &connectionName);
+    bool updateStatus(int libraryItemId, const QString &status,
+                      const QString &connectionName);
+} // namespace internal
 
 } // namespace bookhub::gui

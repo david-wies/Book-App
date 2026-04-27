@@ -46,27 +46,36 @@ make -j$(nproc)
 
 **Dependencies:**
 ```bash
-sudo apt-get install build-essential cmake qt6-base-dev libqt6sql6 libarchive-dev
+sudo apt-get install build-essential cmake qt6-base-dev libqt6sql6 libqt6network6 libarchive-dev
 ```
 
 Requires C++23, GCC 13+/Clang 16+, Qt6 (Widgets, Sql, Network modules), and libarchive (used by the Gutenberg adapter for in-process `.tar.bz2` extraction).
 
+**Database migration:** If the app shows a schema version mismatch error at startup, run:
+```bash
+python3 tools/migrate_db.py
+```
+This upgrades an existing `bookhub.db` to the current schema version. See `src/shared/database.cpp` for the migration SQL.
+
 ## Testing & Linting
 
-There is no automated test suite — manual verification is required. The CI runs `ctest` but finds no tests. No linter or static analysis is configured.
+The test suite uses Qt Test. Ten targets are registered with CTest across `unit`, `integration`, and `gui` categories; the `sanity` label marks the fast-gate subset. Run with `ctest -L sanity` (fast) or `ctest` (full suite) from the build directory. No linter or static analysis is configured.
 
 ## Architecture
 
 **BookHub** is a native C++/Qt6 desktop application for discovering public-domain books (initially from Project Gutenberg), managing a personal library, downloading ebook formats, and converting books to audiobooks via TTS.
 
-### Two-Thread Model
+### Three-Thread Model
 
-The app runs two threads in one process:
+The app runs three threads in one process:
 
 - **GUI Thread** — `QApplication::exec()` drives a `QMainWindow`. All widget interaction happens here.
+- **Query Thread** — `QueryWorker : QObject` (moved to a `QThread` via `moveToThread()`) executes all GUI database queries. `MainWindow` owns the thread and the worker. The worker opens `"gui_query_connection"` in `onThreadStarted()` and closes it in `onThreadFinished()`. Services (`SearchService`, `LibraryService`, `ExploreService`) route requests to the worker via Qt signals and receive results back on the GUI thread via `Qt::AutoConnection` (queued cross-thread, direct same-thread in tests).
 - **Collector Thread** — `CollectorWorker : QThread` polls for book metadata every 10 minutes and writes to SQLite. Starts fetching immediately on launch.
 
-Both threads share a single SQLite database (`bookhub.db`, stored in `QStandardPaths::AppDataLocation`). Thread isolation is maintained by giving each thread its own named Qt SQL connection: `QSqlDatabase::defaultConnection` for the GUI and `"collector_connection"` for the collector.
+All three threads share a single SQLite database (`bookhub.db`, stored in `QStandardPaths::AppDataLocation`). WAL mode enables concurrent reads from the query thread while the collector writes. Thread isolation is maintained by giving each thread its own named Qt SQL connection: `QSqlDatabase::defaultConnection` for the GUI, `"gui_query_connection"` for the query thread, and `"collector_connection"` for the collector.
+
+**Testing:** `TestQueryWorker` (in `tests/support/test_query_worker.h`) is a subclass of `QueryWorker` that overrides all `handle*Request` slots to call the same `internal::*` free functions but target `QSqlDatabase::defaultConnection`. It is never moved to a thread — staying on the GUI thread causes `Qt::AutoConnection` to resolve to `Qt::DirectConnection`, making the entire async chain synchronous in tests without `QTest::qWait`.
 
 ### Data Source Adapter Pattern
 

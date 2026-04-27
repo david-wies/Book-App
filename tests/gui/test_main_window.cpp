@@ -3,9 +3,7 @@
 #include <QButtonGroup>
 #include <QLabel>
 
-#define private public
 #include "gui/main_window.h"
-#undef private
 
 #include "gui/style_tokens.h"
 #include "support/test_database_utils.h"

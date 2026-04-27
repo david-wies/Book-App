@@ -22,14 +22,14 @@ void SearchServiceTest::search_appliesAndSemanticsAcrossFilters()
     QVERIFY(testDb.createSchema());
     QVERIFY(testDb.insertSampleData());
 
-    SearchService service;
     SearchParams params;
     params.keyword = QStringLiteral("Pride");
     params.languages = {QStringLiteral("English")};
     params.sources = {QStringLiteral("Gutenberg")};
     params.genres = {QStringLiteral("Romance")};
 
-    const QList<SearchResult> results = service.search(params);
+    const QList<SearchResult> results =
+        internal::runSearch(params, 0, 50, testDb.connection());
     QCOMPARE(results.size(), 1);
     QCOMPARE(results.first().bookId, QStringLiteral("lccn:n78095332"));
 }
@@ -43,10 +43,10 @@ void SearchServiceTest::search_supportsAudiobookFilterAndSorting()
     QVERIFY(bookhub::tests::execSql(testDb.database(), QStringLiteral(
         "UPDATE library_items SET status = 'audiobook_ready' WHERE book_id = 'lccn:n79025140'")));
 
-    SearchService service;
     SearchParams audiobook;
     audiobook.audiobookOnly = true;
-    const QList<SearchResult> audioResults = service.search(audiobook);
+    const QList<SearchResult> audioResults =
+        internal::runSearch(audiobook, 0, 50, testDb.connection());
     QCOMPARE(audioResults.size(), 1);
     QCOMPARE(audioResults.first().bookId, QStringLiteral("lccn:n79025140"));
 
@@ -54,7 +54,8 @@ void SearchServiceTest::search_supportsAudiobookFilterAndSorting()
     // Sample data has exactly 3 books; Alexandre Dumas sorts first alphabetically.
     SearchParams sortByAuthor;
     sortByAuthor.sortColumn = QStringLiteral("author");
-    const QList<SearchResult> sorted = service.search(sortByAuthor);
+    const QList<SearchResult> sorted =
+        internal::runSearch(sortByAuthor, 0, 50, testDb.connection());
     QCOMPARE(sorted.size(), 3);
     QCOMPARE(sorted.first().author, QStringLiteral("Alexandre Dumas"));
 }
@@ -82,16 +83,17 @@ void SearchServiceTest::search_escapesLikeWildcardsInKeyword()
         "('book:percent', 'English'), ('book:wild', 'English'), "
         "('book:under', 'English'), ('book:any', 'English')")));
 
-    SearchService service;
     SearchParams params;
 
     params.keyword = QStringLiteral("100%");
-    const QList<SearchResult> percentResults = service.search(params);
+    const QList<SearchResult> percentResults =
+        internal::runSearch(params, 0, 50, testDb.connection());
     QCOMPARE(percentResults.size(), 1);
     QCOMPARE(percentResults.first().bookId, QStringLiteral("book:percent"));
 
     params.keyword = QStringLiteral("A_B");
-    const QList<SearchResult> underResults = service.search(params);
+    const QList<SearchResult> underResults =
+        internal::runSearch(params, 0, 50, testDb.connection());
     QCOMPARE(underResults.size(), 1);
     QCOMPARE(underResults.first().bookId, QStringLiteral("book:under"));
 }

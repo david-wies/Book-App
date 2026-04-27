@@ -19,10 +19,21 @@ int main(int argc, char *argv[])
     }
 
     if (!bookhub::db::verifySchemaVersion()) {
+        QMessageBox::critical(nullptr,
+            QStringLiteral("Database error"),
+            QStringLiteral("Schema version mismatch. Run tools/migrate_db.py to upgrade.\n"
+                           "The application cannot start."));
         return 1;
     }
-    bookhub::db::createSchema();
+    if (!bookhub::db::createSchema()) {
+        QMessageBox::critical(nullptr,
+            QStringLiteral("Database error"),
+            QStringLiteral("Failed to create schema. The application cannot start."));
+        return 1;
+    }
+#ifdef QT_DEBUG
     bookhub::db::insertSampleData();
+#endif
 
     // Start background collector thread
     bookhub::collector::CollectorWorker collector;

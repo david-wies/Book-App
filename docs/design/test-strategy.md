@@ -85,20 +85,17 @@ Suggested structure:
 tests/
 ├── unit/
 │   ├── test_gutenberg_id_resolution.cpp
-│   ├── test_database_schema.cpp
-│   └── test_library_query_helpers.cpp
+│   └── test_database_schema.cpp
 ├── integration/
 │   ├── test_book_discovery_service.cpp
-│   ├── test_book_deduplication.cpp
-│   └── test_library_service.cpp
+│   ├── test_explore_service.cpp
+│   ├── test_library_service.cpp
+│   └── test_search_service.cpp
 └── gui/
     ├── test_main_window.cpp
     ├── test_library_screen.cpp
     ├── test_search_screen.cpp
-    ├── test_explore_screen.cpp
-    ├── test_book_details_panel.cpp
-    ├── test_download_flow_dialog.cpp
-    └── test_audiobook_flow_dialog.cpp
+    └── test_explore_screen.cpp
 ```
 
 ---

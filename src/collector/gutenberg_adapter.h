@@ -4,6 +4,8 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 
+class GutenbergIdResolutionTest; // test friend — defined in tests/unit/
+
 namespace bookhub::collector {
 
 class GutenbergAdapter : public ISourceAdapter {
@@ -18,7 +20,11 @@ private slots:
     void onNetworkReply(QNetworkReply* reply);
 
 private:
-    void extractAndParseArchive(const QByteArray& archiveData);
+    friend class ::GutenbergIdResolutionTest;
+
+    // Streams the archive directly from the network reply in chunks to avoid
+    // materialising the full ~800 MB download into a single QByteArray.
+    void extractAndParseArchive(QNetworkReply* reply);
     void parseSingleRdf(const QByteArray& data, const QString& entryName, QList<DiscoveredBook>& batch);
     QString normalizeFormatName(const QString& url, const QString& mimeType);
 

@@ -41,6 +41,7 @@ set(GUI_SOURCES
     src/gui/services/search_service.cpp
     src/gui/screens/explore_screen.cpp
     src/gui/services/explore_service.cpp
+    src/gui/query_worker.cpp
 )
 
 add_executable(bookhub

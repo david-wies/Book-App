@@ -142,8 +142,10 @@ bool verifySchemaVersion(const QString &connectionName)
     if (version == kSchemaVersion)
         return true;
 
-    // user_version=0 on a file that has never been initialised is a fresh DB —
-    // createSchema() will set it to kSchemaVersion immediately after this call.
+    // version 0 covers two cases:
+    // 1. Fresh DB with no tables — proceed; createSchema() sets the version next.
+    // 2. Legacy pre-versioned schema with a books table present — fall through to
+    //    mismatch handling below so the user is prompted to migrate.
     if (version == 0) {
         QSqlQuery tableCheck(db);
         tableCheck.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='books'");
@@ -159,6 +161,8 @@ bool verifySchemaVersion(const QString &connectionName)
     if (version == 1) {
         qDebug() << "Migrating database schema from version 1 to 2...";
         QStringList migration = {
+            // Must be outside a transaction; disables FK checks during table recreation.
+            "PRAGMA foreign_keys = OFF",
             "BEGIN",
             R"(CREATE TABLE formats_new (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -194,7 +198,8 @@ bool verifySchemaVersion(const QString &connectionName)
             "DROP TABLE library_items",
             "ALTER TABLE library_items_new RENAME TO library_items",
             QStringLiteral("PRAGMA user_version = %1").arg(kSchemaVersion),
-            "COMMIT"
+            "COMMIT",
+            "PRAGMA foreign_keys = ON"
         };
 
         QSqlQuery mq(db);
@@ -203,6 +208,7 @@ bool verifySchemaVersion(const QString &connectionName)
                 qCritical() << "Migration v1→v2 failed at:" << sql
                             << "\nError:" << mq.lastError().text();
                 mq.exec("ROLLBACK");
+                mq.exec("PRAGMA foreign_keys = ON");
                 return false;
             }
         }
@@ -210,10 +216,9 @@ bool verifySchemaVersion(const QString &connectionName)
         return true;
     }
 
-    fprintf(stderr,
-        "Database schema version mismatch: expected %d, found %d.\n"
-        "Run tools/migrate_db.py to upgrade the database.\n",
-        kSchemaVersion, version);
+    qCritical("Database schema version mismatch: expected %d, found %d. "
+              "Run tools/migrate_db.py to upgrade the database.",
+              kSchemaVersion, version);
     return false;
 }
 
@@ -254,7 +259,7 @@ bool insertSampleData(const QString &connectionName)
             ('gutenberg:1184', 3), ('gutenberg:1184', 4), ('gutenberg:1184', 2)
         )",
         R"(INSERT OR IGNORE INTO formats (id, edition_id, format_type) VALUES
-            (1, 1, 'epub'), (2, 1, 'pdf'), (3, 3, 'epub'), (4, 4, 'epub')
+            (1, 1, 'epub_1'), (2, 1, 'pdf_1'), (3, 3, 'epub_1'), (4, 4, 'epub_1')
         )",
         R"(INSERT OR IGNORE INTO sources (id, format_id, source_name, download_link) VALUES
             (1, 1, 'Gutenberg', 'https://www.gutenberg.org/ebooks/1342.epub.images'),

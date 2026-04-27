@@ -1,4 +1,5 @@
 #include "explore_service.h"
+#include "../query_worker.h"
 
 #include <QSqlDatabase>
 #include <QSqlQuery>
@@ -11,25 +12,100 @@ ExploreService::ExploreService(QObject *parent)
     : QObject(parent)
 {}
 
+void ExploreService::connectToWorker(QueryWorker *worker)
+{
+    connect(this, &ExploreService::trendingRequested,
+            worker, &QueryWorker::handleTrendingRequest);
+    connect(this, &ExploreService::newArrivalsRequested,
+            worker, &QueryWorker::handleNewArrivalsRequest);
+    connect(this, &ExploreService::categoriesRequested,
+            worker, &QueryWorker::handleCategoriesRequest);
+    connect(this, &ExploreService::booksForGenreRequested,
+            worker, &QueryWorker::handleBooksForGenreRequest);
+
+    connect(worker, &QueryWorker::trendingCompleted, this,
+            [this](quint64 id, QList<ExploreBook> books) {
+                Q_ASSERT(m_pendingCount > 0);
+                --m_pendingCount;
+                emit trendingCompleted(id, books);
+            });
+    connect(worker, &QueryWorker::newArrivalsCompleted, this,
+            [this](quint64 id, QList<ExploreBook> books) {
+                Q_ASSERT(m_pendingCount > 0);
+                --m_pendingCount;
+                emit newArrivalsCompleted(id, books);
+            });
+    connect(worker, &QueryWorker::categoriesCompleted, this,
+            [this](quint64 id, QList<ExploreCategory> cats) {
+                Q_ASSERT(m_pendingCount > 0);
+                --m_pendingCount;
+                emit categoriesCompleted(id, cats);
+            });
+    connect(worker, &QueryWorker::booksForGenreCompleted, this,
+            [this](quint64 id, QList<ExploreBook> books) {
+                Q_ASSERT(m_pendingCount > 0);
+                --m_pendingCount;
+                emit booksForGenreCompleted(id, books);
+            });
+}
+
+bool ExploreService::isBusy() const
+{
+    return m_pendingCount > 0;
+}
+
+quint64 ExploreService::requestTrending()
+{
+    const quint64 id = m_nextRequestId.fetch_add(1, std::memory_order_relaxed);
+    ++m_pendingCount;
+    emit trendingRequested(id);
+    return id;
+}
+
+quint64 ExploreService::requestNewArrivals()
+{
+    const quint64 id = m_nextRequestId.fetch_add(1, std::memory_order_relaxed);
+    ++m_pendingCount;
+    emit newArrivalsRequested(id);
+    return id;
+}
+
+quint64 ExploreService::requestCategories()
+{
+    const quint64 id = m_nextRequestId.fetch_add(1, std::memory_order_relaxed);
+    ++m_pendingCount;
+    emit categoriesRequested(id);
+    return id;
+}
+
+quint64 ExploreService::requestBooksForGenre(const QString &genre, int offset, int limit)
+{
+    const quint64 id = m_nextRequestId.fetch_add(1, std::memory_order_relaxed);
+    ++m_pendingCount;
+    emit booksForGenreRequested(id, genre, offset, limit);
+    return id;
+}
+
 // ---------------------------------------------------------------------------
-// Private helper — executes a simple SELECT and returns rows as ExploreBook
-// records. The caller provides the full SQL string (no user input is ever
-// interpolated into SQL text here; genre filtering uses bound parameters).
+// Internal free functions
 // ---------------------------------------------------------------------------
 
+namespace internal {
+
 static QList<ExploreBook> execBookQuery(const QString &sql,
-                                        const QVariantList &bindings = {})
+                                        const QVariantList &bindings,
+                                        const QString &connectionName)
 {
-    QSqlQuery query(QSqlDatabase::database());
+    QSqlQuery query(QSqlDatabase::database(connectionName));
     if (!query.prepare(sql)) {
-        qWarning() << "ExploreService: prepare failed:" << query.lastError().text();
+        qWarning() << "internal::execBookQuery prepare failed:" << query.lastError().text();
         return {};
     }
     for (const QVariant &v : bindings)
         query.addBindValue(v);
 
     if (!query.exec()) {
-        qWarning() << "ExploreService: exec failed:" << query.lastError().text();
+        qWarning() << "internal::execBookQuery exec failed:" << query.lastError().text();
         return {};
     }
 
@@ -44,30 +120,23 @@ static QList<ExploreBook> execBookQuery(const QString &sql,
     return result;
 }
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
-
-QList<ExploreBook> ExploreService::fetchTrending() const
+QList<ExploreBook> fetchTrending(const QString &connectionName)
 {
-    // rowid DESC gives us the most-recently ingested books, which serves as a
-    // reasonable "trending" proxy for MVP until a proper popularity signal
-    // (download count, view count) is available.
     return execBookQuery(QStringLiteral(
-        "SELECT book_id, title, author FROM books ORDER BY rowid DESC LIMIT 20"));
+        "SELECT book_id, title, author FROM books ORDER BY rowid DESC LIMIT 20"),
+        {}, connectionName);
 }
 
-QList<ExploreBook> ExploreService::fetchNewArrivals() const
+QList<ExploreBook> fetchNewArrivals(const QString &connectionName)
 {
-    // New Arrivals is the next window after Trending; OFFSET 20 avoids
-    // duplicate cards between the two horizontal carousels.
     return execBookQuery(QStringLiteral(
-        "SELECT book_id, title, author FROM books ORDER BY rowid DESC LIMIT 20 OFFSET 20"));
+        "SELECT book_id, title, author FROM books ORDER BY rowid DESC LIMIT 20 OFFSET 20"),
+        {}, connectionName);
 }
 
-QList<ExploreCategory> ExploreService::fetchCategories() const
+QList<ExploreCategory> fetchCategories(const QString &connectionName)
 {
-    QSqlQuery query(QSqlDatabase::database());
+    QSqlQuery query(QSqlDatabase::database(connectionName));
     if (!query.exec(QStringLiteral(R"(
             SELECT g.genre_name, COUNT(DISTINCT bg.book_id) AS cnt
             FROM genres g
@@ -75,8 +144,7 @@ QList<ExploreCategory> ExploreService::fetchCategories() const
             GROUP BY g.genre_name
             ORDER BY cnt DESC
         )"))) {
-        qWarning() << "ExploreService::fetchCategories failed:"
-                   << query.lastError().text();
+        qWarning() << "internal::fetchCategories failed:" << query.lastError().text();
         return {};
     }
 
@@ -90,11 +158,9 @@ QList<ExploreCategory> ExploreService::fetchCategories() const
     return result;
 }
 
-QList<ExploreBook> ExploreService::fetchBooksForGenre(const QString &genre,
-                                                       int offset,
-                                                       int limit) const
+QList<ExploreBook> fetchBooksForGenre(const QString &genre, int offset, int limit,
+                                       const QString &connectionName)
 {
-    // NOTE: genre is bound as a parameter — never interpolated into SQL text.
     return execBookQuery(QStringLiteral(R"(
         SELECT b.book_id, b.title, b.author
         FROM books b
@@ -103,7 +169,9 @@ QList<ExploreBook> ExploreService::fetchBooksForGenre(const QString &genre,
         WHERE g.genre_name = ?
         ORDER BY b.title
         LIMIT ? OFFSET ?
-    )"), {genre, limit, offset});
+    )"), {genre, limit, offset}, connectionName);
 }
+
+} // namespace internal
 
 } // namespace bookhub::gui

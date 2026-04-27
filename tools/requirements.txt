@@ -1,1 +1,1 @@
-# No third-party dependencies — all tools use Python stdlib only.
+platformdirs>=4.0.0

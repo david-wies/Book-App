@@ -90,6 +90,11 @@ void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, co
         return;
     }
 
+    if (!db.transaction()) {
+        qWarning() << "BookDiscoveryService: Failed to start transaction:" << db.lastError().text();
+        return;
+    }
+
     QSqlQuery query(db);
     QString effectiveId = book.resolvedId;
 
@@ -112,6 +117,7 @@ void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, co
                 query.addBindValue(effectiveId);
                 if (!query.exec()) {
                     qWarning() << "Failed to promote book_id:" << query.lastError().text();
+                    db.rollback();
                     return;
                 }
                 effectiveId = book.resolvedId;
@@ -128,6 +134,7 @@ void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, co
     query.addBindValue(QVariant());   // summary not available from RDF
     if (!query.exec()) {
         qWarning() << "Failed to insert book:" << query.lastError().text();
+        db.rollback();
         return;
     }
 
@@ -150,6 +157,7 @@ void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, co
     query.addBindValue(primaryLang);
     if (!query.exec()) {
         qWarning() << "Failed to insert edition:" << query.lastError().text();
+        db.rollback();
         return;
     }
 
@@ -158,6 +166,7 @@ void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, co
     query.addBindValue(primaryLang);
     if (!query.exec() || !query.next()) {
         qWarning() << "Failed to retrieve edition id:" << query.lastError().text();
+        db.rollback();
         return;
     }
     const int editionId = query.value(0).toInt();
@@ -190,6 +199,31 @@ void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, co
         if (!sourceQuery.exec()) {
             qWarning() << "Failed to insert source:" << sourceQuery.lastError().text();
         }
+    }
+
+    // Phase 5 — genres
+    // Genre inserts are best-effort within the loop: a single genre failure is
+    // logged and skipped rather than rolling back the whole transaction.
+    for (const QString &subject : book.subjects) {
+        QSqlQuery gq(db);
+        gq.prepare(QStringLiteral("INSERT OR IGNORE INTO genres (genre_name) VALUES (?)"));
+        gq.addBindValue(subject);
+        if (!gq.exec())
+            qWarning() << "BookDiscoveryService: Failed to insert genre:" << gq.lastError().text();
+
+        QSqlQuery bgq(db);
+        bgq.prepare(QStringLiteral(
+            "INSERT OR IGNORE INTO book_genres (book_id, genre_id) "
+            "SELECT ?, id FROM genres WHERE genre_name = ?"));
+        bgq.addBindValue(effectiveId);
+        bgq.addBindValue(subject);
+        if (!bgq.exec())
+            qWarning() << "BookDiscoveryService: Failed to insert book_genre:" << bgq.lastError().text();
+    }
+
+    if (!db.commit()) {
+        qWarning() << "BookDiscoveryService: Failed to commit transaction:" << db.lastError().text();
+        db.rollback();
     }
 }
 

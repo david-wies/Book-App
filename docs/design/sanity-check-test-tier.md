@@ -222,18 +222,15 @@ ctest --test-dir build -N -L sanity
 
 ### CI mapping
 
-Suggested `develop` gate:
+The tiering is implemented in `.github/workflows/ci.yml`. The `build` job runs two test steps:
 
-```bash
-cmake -S . -B build
-cmake --build build -j4
-ctest --test-dir build -L sanity --output-on-failure
+- **`develop` push / PR targeting `develop`** — `Run sanity tests` step only (`ctest -L sanity`). The `Run remaining tests` step is skipped.
+- **`master` push / PR targeting `master`** — both steps run: sanity first, then the remainder (`ctest -LE sanity`), producing the full suite.
+
+The condition on the full-suite step:
+
+```yaml
+if: github.ref == 'refs/heads/master' || github.base_ref == 'master'
 ```
 
-Suggested `master` gate:
-
-```bash
-cmake -S . -B build
-cmake --build build -j4
-ctest --test-dir build --output-on-failure
-```
+`github.base_ref` covers pull_request events (the target branch name). `github.ref` covers direct pushes to `master`.

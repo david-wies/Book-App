@@ -1,4 +1,5 @@
 #include "library_service.h"
+#include "../query_worker.h"
 
 #include <QSqlDatabase>
 #include <QSqlQuery>
@@ -11,10 +12,94 @@ LibraryService::LibraryService(QObject *parent)
     : QObject(parent)
 {}
 
-QList<LibraryItem> LibraryService::fetchItems(const QString &sortColumn) const
+void LibraryService::connectToWorker(QueryWorker *worker)
 {
-    // Build ORDER BY clause from caller-supplied sort key.
-    // The whitelist prevents SQL injection — only known column tokens are accepted.
+    connect(this, &LibraryService::fetchItemsRequested,
+            worker, &QueryWorker::handleFetchItemsRequest);
+    connect(this, &LibraryService::addBookRequested,
+            worker, &QueryWorker::handleAddBookRequest);
+    connect(this, &LibraryService::removeBookRequested,
+            worker, &QueryWorker::handleRemoveBookRequest);
+    connect(this, &LibraryService::updateStatusRequested,
+            worker, &QueryWorker::handleUpdateStatusRequest);
+
+    connect(worker, &QueryWorker::fetchItemsCompleted, this,
+            [this](quint64 id, QList<LibraryItem> items) {
+                Q_ASSERT(m_pendingCount > 0);
+                --m_pendingCount;
+                emit fetchItemsCompleted(id, items);
+            });
+    connect(worker, &QueryWorker::addBookCompleted, this,
+            [this](quint64 id, QString bookId, bool success, int newId) {
+                Q_ASSERT(m_pendingCount > 0);
+                --m_pendingCount;
+                emit addBookCompleted(id, bookId, success, newId);
+                if (success)
+                    emit libraryChanged();
+            });
+    connect(worker, &QueryWorker::removeBookCompleted, this,
+            [this](quint64 id, bool success) {
+                Q_ASSERT(m_pendingCount > 0);
+                --m_pendingCount;
+                emit removeBookCompleted(id, success);
+                if (success)
+                    emit libraryChanged();
+            });
+    connect(worker, &QueryWorker::updateStatusCompleted, this,
+            [this](quint64 id, bool success) {
+                Q_ASSERT(m_pendingCount > 0);
+                --m_pendingCount;
+                emit updateStatusCompleted(id, success);
+                if (success)
+                    emit libraryChanged();
+            });
+}
+
+bool LibraryService::isBusy() const
+{
+    return m_pendingCount > 0;
+}
+
+quint64 LibraryService::requestFetchItems(const QString &sortColumn)
+{
+    const quint64 id = m_nextRequestId.fetch_add(1, std::memory_order_relaxed);
+    ++m_pendingCount;
+    emit fetchItemsRequested(id, sortColumn);
+    return id;
+}
+
+quint64 LibraryService::requestAddBook(const QString &bookId, int editionId)
+{
+    const quint64 id = m_nextRequestId.fetch_add(1, std::memory_order_relaxed);
+    ++m_pendingCount;
+    emit addBookRequested(id, bookId, editionId);
+    return id;
+}
+
+quint64 LibraryService::requestRemoveBook(int libraryItemId)
+{
+    const quint64 id = m_nextRequestId.fetch_add(1, std::memory_order_relaxed);
+    ++m_pendingCount;
+    emit removeBookRequested(id, libraryItemId);
+    return id;
+}
+
+quint64 LibraryService::requestUpdateStatus(int libraryItemId, const QString &status)
+{
+    const quint64 id = m_nextRequestId.fetch_add(1, std::memory_order_relaxed);
+    ++m_pendingCount;
+    emit updateStatusRequested(id, libraryItemId, status);
+    return id;
+}
+
+// ---------------------------------------------------------------------------
+// Internal free functions
+// ---------------------------------------------------------------------------
+
+namespace internal {
+
+QList<LibraryItem> fetchItems(const QString &sortColumn, const QString &connectionName)
+{
     QString orderBy;
     if (sortColumn == QLatin1String("title")) {
         orderBy = QStringLiteral("b.title ASC");
@@ -23,7 +108,6 @@ QList<LibraryItem> LibraryService::fetchItems(const QString &sortColumn) const
     } else if (sortColumn == QLatin1String("status")) {
         orderBy = QStringLiteral("li.status ASC");
     } else {
-        // Default: newest first
         orderBy = QStringLiteral("li.added_date DESC");
     }
 
@@ -36,7 +120,7 @@ QList<LibraryItem> LibraryService::fetchItems(const QString &sortColumn) const
             b.author,
             b.publish_year,
             COALESCE(e.language, '')    AS language,
-            COALESCE(s.source_name, '') AS source_name,
+            COALESCE(MAX(s.source_name), '') AS source_name,
             COALESCE(li.status, 'saved') AS status,
             li.added_date
         FROM library_items li
@@ -48,9 +132,9 @@ QList<LibraryItem> LibraryService::fetchItems(const QString &sortColumn) const
         ORDER BY %1
     )").arg(orderBy);
 
-    QSqlQuery query(QSqlDatabase::database());
+    QSqlQuery query(QSqlDatabase::database(connectionName));
     if (!query.exec(sql)) {
-        qWarning() << "LibraryService::fetchItems failed:" << query.lastError().text();
+        qWarning() << "internal::fetchItems failed:" << query.lastError().text();
         return {};
     }
 
@@ -72,67 +156,56 @@ QList<LibraryItem> LibraryService::fetchItems(const QString &sortColumn) const
     return items;
 }
 
-int LibraryService::addBook(const QString &bookId, int editionId)
+int addBook(const QString &bookId, int editionId, const QString &connectionName)
 {
-    QSqlQuery query(QSqlDatabase::database());
+    QSqlQuery query(QSqlDatabase::database(connectionName));
     query.prepare(QStringLiteral(
         "INSERT OR IGNORE INTO library_items (book_id, edition_id, status) VALUES (?, ?, 'saved')"
     ));
     query.addBindValue(bookId);
-    // Store NULL when no specific edition is chosen — the FK allows NULL.
     if (editionId > 0)
         query.addBindValue(editionId);
     else
         query.addBindValue(QVariant(QMetaType::fromType<int>()));
 
     if (!query.exec()) {
-        qWarning() << "LibraryService::addBook failed:" << query.lastError().text();
+        qWarning() << "internal::addBook failed:" << query.lastError().text();
         return -1;
     }
 
     if (query.numRowsAffected() <= 0)
-        return 0;
+        return -1;
 
-    const int newId = query.lastInsertId().toInt();
-    emit libraryChanged();
-    return newId;
+    return query.lastInsertId().toInt();
 }
 
-bool LibraryService::removeBook(int libraryItemId)
+bool removeBook(int libraryItemId, const QString &connectionName)
 {
-    QSqlQuery query(QSqlDatabase::database());
+    QSqlQuery query(QSqlDatabase::database(connectionName));
     query.prepare(QStringLiteral("DELETE FROM library_items WHERE id = ?"));
     query.addBindValue(libraryItemId);
 
     if (!query.exec()) {
-        qWarning() << "LibraryService::removeBook failed:" << query.lastError().text();
+        qWarning() << "internal::removeBook failed:" << query.lastError().text();
         return false;
     }
-
-    if (query.numRowsAffected() == 0)
-        return true;
-
-    emit libraryChanged();
     return true;
 }
 
-bool LibraryService::updateStatus(int libraryItemId, const QString &status)
+bool updateStatus(int libraryItemId, const QString &status, const QString &connectionName)
 {
-    QSqlQuery query(QSqlDatabase::database());
+    QSqlQuery query(QSqlDatabase::database(connectionName));
     query.prepare(QStringLiteral("UPDATE library_items SET status = ? WHERE id = ?"));
     query.addBindValue(status);
     query.addBindValue(libraryItemId);
 
     if (!query.exec()) {
-        qWarning() << "LibraryService::updateStatus failed:" << query.lastError().text();
+        qWarning() << "internal::updateStatus failed:" << query.lastError().text();
         return false;
     }
-
-    if (query.numRowsAffected() == 0)
-        return true;
-
-    emit libraryChanged();
     return true;
 }
+
+} // namespace internal
 
 } // namespace bookhub::gui

@@ -1,5 +1,6 @@
 #include "library_screen.h"
 #include "../services/library_service.h"
+#include "../query_worker.h"
 #include "../widgets/book_card_delegate.h"
 #include "../widgets/empty_state_widget.h"
 #include "../style_tokens.h"
@@ -29,9 +30,24 @@ static const char* kSortColumns[] = {
     "status",     // 3: Status
 };
 
-LibraryScreen::LibraryScreen(QWidget *parent)
+LibraryScreen::LibraryScreen(QueryWorker *worker, QWidget *parent)
     : QWidget(parent)
 {
+    auto *service = new LibraryService(this);
+    service->connectToWorker(worker);
+    init(service);
+}
+
+LibraryScreen::LibraryScreen(LibraryService *service, QWidget *parent)
+    : QWidget(parent)
+{
+    init(service);
+}
+
+void LibraryScreen::init(LibraryService *service)
+{
+    m_service = service;
+
     setStyleSheet(QStringLiteral("background-color: %1;").arg(ColorBackground));
 
     auto *root = new QVBoxLayout(this);
@@ -74,7 +90,8 @@ LibraryScreen::LibraryScreen(QWidget *parent)
 
     // Empty state
     m_emptyState = new EmptyStateWidget(
-        QIcon::fromTheme(QStringLiteral("folder-open")),
+        QIcon::fromTheme(QStringLiteral("folder-open"),
+                         QIcon(QStringLiteral(":/book_reader_icon.jpg"))),
         QStringLiteral("Your library is empty."),
         QStringLiteral("Start by exploring books from the Explore tab."),
         QStringLiteral("Explore Books"),
@@ -101,15 +118,18 @@ LibraryScreen::LibraryScreen(QWidget *parent)
     m_stack->setCurrentIndex(2);      // show loading until first reload() completes
 
     // Wire up service
-    m_service = new LibraryService(this);
     connect(m_service, &LibraryService::libraryChanged,
             this, &LibraryScreen::reload);
+    connect(m_service, &LibraryService::fetchItemsCompleted,
+            this, &LibraryScreen::onFetchItemsCompleted);
 
     // Wire up delegate signals
     connect(m_delegate, &BookCardDelegate::detailsRequested,
             this, &LibraryScreen::onDetailsRequested);
     connect(m_delegate, &BookCardDelegate::downloadRequested,
             this, &LibraryScreen::onDownloadRequested);
+    connect(m_delegate, &BookCardDelegate::audiobookRequested,
+            this, &LibraryScreen::onAudiobookRequested);
     connect(m_delegate, &BookCardDelegate::removeRequested,
             this, &LibraryScreen::onRemoveRequested);
 
@@ -122,7 +142,7 @@ LibraryScreen::LibraryScreen(QWidget *parent)
             });
 
     // Restore saved view mode — must happen after m_listView is constructed
-    QSettings settings(QStringLiteral("BookHub"), QStringLiteral("BookHub"));
+    QSettings settings;
     const int savedViewMode = settings.value(QStringLiteral("Library/viewMode"), 0).toInt();
     if (savedViewMode == 1) {
         // Trigger the grid button — QButtonGroup::idToggled fires onViewToggled
@@ -198,12 +218,17 @@ void LibraryScreen::reload()
 {
     const int sortIdx = m_sortCombo ? m_sortCombo->currentIndex() : 0;
     const QString col = QString::fromLatin1(kSortColumns[sortIdx]);
-    const QList<LibraryItem> items = m_service->fetchItems(col);
+    m_stack->setCurrentIndex(2); // show loading while query is in flight
+    m_pendingFetchId = m_service->requestFetchItems(col);
+}
+
+void LibraryScreen::onFetchItemsCompleted(quint64 requestId, QList<LibraryItem> items)
+{
+    if (requestId < m_pendingFetchId)
+        return; // stale response — a newer reload() is already in flight
 
     populateModel(items);
     updateCountLabel(items.size());
-
-    // Show empty state or list depending on whether data is available.
     m_stack->setCurrentIndex(items.isEmpty() ? 1 : 0);
 }
 
@@ -258,7 +283,7 @@ void LibraryScreen::onViewToggled(int id, bool checked)
     if (!checked)
         return;
 
-    QSettings settings(QStringLiteral("BookHub"), QStringLiteral("BookHub"));
+    QSettings settings;
     settings.setValue(QStringLiteral("Library/viewMode"), id);
 
     const ViewMode mode = (id == 1) ? ViewMode::Grid : ViewMode::List;
@@ -293,6 +318,13 @@ void LibraryScreen::onDownloadRequested(int libraryItemId, const QString &bookId
     Q_UNUSED(bookId)
 }
 
+void LibraryScreen::onAudiobookRequested(int libraryItemId, const QString &bookId)
+{
+    // TODO: open AudiobookFlowDialog (Task 12)
+    Q_UNUSED(libraryItemId)
+    Q_UNUSED(bookId)
+}
+
 void LibraryScreen::onRemoveRequested(int libraryItemId, const QString &bookId)
 {
     // Resolve the display title from the model so the dialog names the book.
@@ -313,7 +345,7 @@ void LibraryScreen::onRemoveRequested(int libraryItemId, const QString &bookId)
         QMessageBox::Cancel);
 
     if (answer == QMessageBox::Yes)
-        m_service->removeBook(libraryItemId);
+        m_service->requestRemoveBook(libraryItemId);
 }
 
 } // namespace bookhub::gui

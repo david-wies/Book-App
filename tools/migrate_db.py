@@ -16,6 +16,14 @@ import re
 import sqlite3
 import sys
 
+try:
+    import platformdirs
+    _DEFAULT_DB = os.path.join(
+        platformdirs.user_data_dir("BookHub", "BookHub"), "bookhub.db"
+    )
+except ImportError:
+    _DEFAULT_DB = None  # fall back to requiring --db-path
+
 
 # ---------------------------------------------------------------------------
 # New schema DDL (version 1)
@@ -139,6 +147,7 @@ def column_exists(cur: sqlite3.Cursor, table: str, column: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def migrate(db_path: str) -> None:
+    print(f"Using database: {db_path}")
     if not os.path.exists(db_path):
         print(f"Error: database file not found: {db_path}", file=sys.stderr)
         sys.exit(1)
@@ -422,18 +431,30 @@ def migrate(db_path: str) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    if _DEFAULT_DB is not None:
+        default_help = f"Path to the SQLite database file (default: {_DEFAULT_DB})"
+    else:
+        default_help = (
+            "Path to the SQLite database file. "
+            "Install 'platformdirs' (pip install platformdirs) to use the platform default, "
+            "or supply --db-path explicitly."
+        )
     parser = argparse.ArgumentParser(
         description=(
             "Migrate bookhub.db from schema version 0 (ISBN-keyed) "
             "to version 1 (book_id-keyed). "
-            "The v1→v2 migration is handled automatically by the app at startup."
+            "The v1→v2 migration is handled automatically by the app at startup.\n\n"
+            "Platform default paths:\n"
+            "  Linux:   ~/.local/share/BookHub/BookHub/bookhub.db\n"
+            "  macOS:   ~/Library/Application Support/BookHub/BookHub/bookhub.db\n"
+            "  Windows: %APPDATA%\\BookHub\\BookHub\\bookhub.db"
         )
     )
     parser.add_argument(
-        "db_path",
-        nargs="?",
-        default=os.path.join("build", "bookhub.db"),
-        help="Path to the SQLite database file (default: build/bookhub.db)",
+        "--db-path",
+        default=_DEFAULT_DB,
+        required=(_DEFAULT_DB is None),
+        help=default_help,
     )
     args = parser.parse_args()
 

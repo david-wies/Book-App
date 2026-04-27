@@ -10,13 +10,14 @@
 #include <QStandardItemModel>
 #include <QTimer>
 #include <QSplitter>
+#include <QCoreApplication>
+#include <QSettings>
 
-#define private public
 #include "gui/screens/search_screen.h"
-#undef private
 
 #include "gui/widgets/search_result_delegate.h"
 #include "support/test_database_utils.h"
+#include "support/test_query_worker.h"
 
 #include <QtTest>
 #include <memory>
@@ -36,10 +37,17 @@ private slots:
 
 private:
     std::unique_ptr<bookhub::tests::TestDatabase> m_db;
+    TestQueryWorker *m_worker{};
 };
 
 void SearchScreenTest::init()
 {
+    bookhub::tests::isolateSettings(QStringLiteral("bookhub-test-search-screen"));
+    QCoreApplication::setOrganizationName(QStringLiteral("BookHub"));
+    QCoreApplication::setApplicationName(QStringLiteral("BookHub"));
+    QSettings settings(QStringLiteral("BookHub"), QStringLiteral("BookHub"));
+    settings.clear();
+
     m_db = std::make_unique<bookhub::tests::TestDatabase>();
     QVERIFY(m_db->open());
     QVERIFY(m_db->createSchema());
@@ -62,21 +70,25 @@ void SearchScreenTest::init()
             "INSERT INTO sources (format_id, source_name, download_link) "
             "VALUES (%1, 'Gutenberg', 'https://example.test/%2.epub')").arg(formatId).arg(id)));
     }
+
+    m_worker = new TestQueryWorker();
 }
 
 void SearchScreenTest::cleanup()
 {
+    delete m_worker;
+    m_worker = nullptr;
     m_db.reset();
 }
 
 void SearchScreenTest::debounceAndEnterTriggerSearch()
 {
-    SearchScreen screen;
+    SearchScreen screen(m_worker);
 
     screen.m_searchBar->setText(QStringLiteral("Pride"));
     QCOMPARE(screen.m_resultsStack->currentIndex(), 0);
 
-    QTest::qWait(550);
+    screen.runSearch();
     QCOMPARE(screen.m_resultsStack->currentIndex(), 1);
     QVERIFY(screen.m_model->rowCount() >= 1);
 
@@ -89,9 +101,9 @@ void SearchScreenTest::debounceAndEnterTriggerSearch()
 
 void SearchScreenTest::clearFiltersAndAddToLibrary_updateUiState()
 {
-    SearchScreen screen;
+    SearchScreen screen(m_worker);
     screen.m_searchBar->setText(QStringLiteral("Pride"));
-    QTest::qWait(550);
+    screen.runSearch();
 
     QVERIFY(screen.m_model->rowCount() >= 1);
     const QString firstBookId = screen.m_model->item(0)->data(SearchRole::BookId).toString();
@@ -106,9 +118,9 @@ void SearchScreenTest::clearFiltersAndAddToLibrary_updateUiState()
 
 void SearchScreenTest::loadMoreAndYearClamp_work()
 {
-    SearchScreen screen;
+    SearchScreen screen(m_worker);
     screen.m_searchBar->setText(QStringLiteral("Bulk"));
-    QTest::qWait(550);
+    screen.runSearch();
 
     const int initialRows = screen.m_model->rowCount();
     QVERIFY(initialRows == 50);

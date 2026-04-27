@@ -2,6 +2,9 @@
 
 #include <QWidget>
 #include <QList>
+#include <QHash>
+
+#include "../services/search_service.h"
 
 class QLineEdit;
 class QListWidget;
@@ -14,14 +17,13 @@ class QStackedWidget;
 class QStandardItemModel;
 class QTimer;
 class QSplitter;
+class SearchScreenTest; // test friend — defined in tests/gui/
 
 namespace bookhub::gui {
 
-class SearchService;
 class LibraryService;
 class SearchResultDelegate;
-struct SearchParams;
-struct SearchResult;
+class QueryWorker;
 
 // ---------------------------------------------------------------------------
 // SearchScreen — the Search tab's content widget (spec Section 3).
@@ -34,7 +36,12 @@ struct SearchResult;
 class SearchScreen : public QWidget {
     Q_OBJECT
 public:
-    explicit SearchScreen(QWidget *parent = nullptr);
+    // Default constructor — creates self-owned services, requires a worker.
+    explicit SearchScreen(QueryWorker *worker, QWidget *parent = nullptr);
+
+    // Injection constructor — borrows a shared LibraryService.
+    explicit SearchScreen(LibraryService *service, QueryWorker *worker,
+                          QWidget *parent = nullptr);
 
 signals:
     void bookDetailsRequested(const QString &bookId);
@@ -50,7 +57,17 @@ private slots:
     void onSortChanged(int index);
     void onShowMoreGenres();
 
+    // Async result slots
+    void onCountCompleted(quint64 requestId, int count);
+    void onSearchCompleted(quint64 requestId, QList<bookhub::gui::SearchResult> results);
+    void onLoadMoreCompleted(quint64 requestId, QList<bookhub::gui::SearchResult> results);
+    void onAddBookCompleted(quint64 requestId, QString bookId, bool success, int newId);
+    void onLanguagesCompleted(quint64 requestId, QStringList languages);
+    void onSourcesCompleted(quint64 requestId, QStringList sources);
+    void onGenresCompleted(quint64 requestId, QStringList genres);
+
 private:
+    void init(QueryWorker *worker);
     void buildSearchBar(QWidget *container);
     void buildFilterPanel(QWidget *panel);
     void buildResultsPane(QWidget *pane);
@@ -61,8 +78,10 @@ private:
     void updateCountLabel(int count);
     void setResultsState(int state); // 0=initial, 1=populated, 2=empty
 
+    friend class ::SearchScreenTest;
+
     SearchService         *m_service{};
-    LibraryService        *m_libraryService{};
+    LibraryService        *m_libraryService{};  // owned when default ctor used; borrowed (non-owning) otherwise
     SearchResultDelegate  *m_delegate{};
     QStandardItemModel    *m_model{};
 
@@ -92,6 +111,13 @@ private:
     int         m_currentOffset{0};
     int         m_totalCount{0};
     QString     m_currentSortColumn{QStringLiteral("title")};
+
+    // Pending request IDs for stale-response suppression
+    quint64 m_pendingCountId{0};
+    quint64 m_pendingSearchId{0};
+    quint64 m_pendingLoadMoreId{0};
+    // Cached params for the count→search hand-off
+    SearchParams m_pendingSearchParams;
 
     static constexpr int kPageSize       = 50;
     static constexpr int kGenreCollapsed = 6;

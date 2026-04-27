@@ -5,13 +5,12 @@
 #include <QStackedWidget>
 #include <QStandardItemModel>
 
-#define private public
 #include "gui/screens/library_screen.h"
-#undef private
 
 #include "gui/widgets/book_card_delegate.h"
 #include "gui/widgets/empty_state_widget.h"
 #include "support/test_database_utils.h"
+#include "support/test_query_worker.h"
 
 #include <QMessageBox>
 #include <QPushButton>
@@ -35,27 +34,36 @@ private slots:
 
 private:
     std::unique_ptr<bookhub::tests::TestDatabase> m_db;
+    TestQueryWorker *m_worker{};
 };
 
 void LibraryScreenTest::init()
 {
     bookhub::tests::isolateSettings(QStringLiteral("bookhub-test-library-screen"));
+    // Match the org/app name set by main.cpp so QSettings() in production code
+    // resolves to the same path as QSettings("BookHub","BookHub") in the test.
+    QCoreApplication::setOrganizationName(QStringLiteral("BookHub"));
+    QCoreApplication::setApplicationName(QStringLiteral("BookHub"));
     QSettings settings(QStringLiteral("BookHub"), QStringLiteral("BookHub"));
     settings.clear();
 
     m_db = std::make_unique<bookhub::tests::TestDatabase>();
     QVERIFY(m_db->open());
     QVERIFY(m_db->createSchema());
+
+    m_worker = new TestQueryWorker();
 }
 
 void LibraryScreenTest::cleanup()
 {
+    delete m_worker;
+    m_worker = nullptr;
     m_db.reset();
 }
 
 void LibraryScreenTest::emptyState_emitsExploreRequested()
 {
-    LibraryScreen screen;
+    LibraryScreen screen(m_worker);
     QSignalSpy spy(&screen, &LibraryScreen::exploreRequested);
 
     QCOMPARE(screen.m_stack->currentIndex(), 1);
@@ -68,7 +76,7 @@ void LibraryScreenTest::populatedState_supportsSortingAndDetails()
 {
     QVERIFY(m_db->insertSampleData());
 
-    LibraryScreen screen;
+    LibraryScreen screen(m_worker);
     QSignalSpy detailsSpy(&screen, &LibraryScreen::bookDetailsRequested);
 
     QCOMPARE(screen.m_stack->currentIndex(), 0);
@@ -87,7 +95,7 @@ void LibraryScreenTest::viewMode_persistsAndRemoveActionDeletesRow()
 {
     QVERIFY(m_db->insertSampleData());
 
-    LibraryScreen screen;
+    LibraryScreen screen(m_worker);
     screen.show();
     auto *gridButton = qobject_cast<QPushButton *>(screen.m_viewGroup->button(1));
     QVERIFY(gridButton);
@@ -100,17 +108,12 @@ void LibraryScreenTest::viewMode_persistsAndRemoveActionDeletesRow()
     const int initialRows = screen.m_model->rowCount();
     const int libraryItemId = screen.m_model->item(0)->data(LibraryRole::LibraryItemId).toInt();
 
-    QTimer acceptTimer;
-    connect(&acceptTimer, &QTimer::timeout, &screen, [] {
-        if (auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget())) {
-            if (auto *button = box->button(QMessageBox::Yes))
-                button->click();
-        }
+    QTimer::singleShot(0, &screen, [] {
+        if (auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget()))
+            if (auto *btn = box->button(QMessageBox::Yes))
+                btn->click();
     });
-    acceptTimer.start(10);
-
     screen.onRemoveRequested(libraryItemId, screen.m_model->item(0)->data(LibraryRole::BookId).toString());
-    acceptTimer.stop();
     QCOMPARE(m_db->scalarInt(QStringLiteral(
         "SELECT COUNT(*) FROM library_items WHERE id = %1").arg(libraryItemId)), 0);
     QCOMPARE(screen.m_model->rowCount(), initialRows - 1);

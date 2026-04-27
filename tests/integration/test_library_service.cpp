@@ -1,7 +1,6 @@
 #include "gui/services/library_service.h"
 #include "support/test_database_utils.h"
 
-#include <QSignalSpy>
 #include <QtTest>
 
 using namespace bookhub::gui;
@@ -12,7 +11,7 @@ class LibraryServiceTest : public QObject
 
 private slots:
     void fetchItems_returnsRowsInRequestedSortOrder();
-    void writeOperations_emitSignalsAndMutateRows();
+    void writeOperations_mutateRows();
 };
 
 void LibraryServiceTest::fetchItems_returnsRowsInRequestedSortOrder()
@@ -22,41 +21,38 @@ void LibraryServiceTest::fetchItems_returnsRowsInRequestedSortOrder()
     QVERIFY(testDb.createSchema());
     QVERIFY(testDb.insertSampleData());
 
-    LibraryService service;
-    const QList<LibraryItem> byTitle = service.fetchItems(QStringLiteral("title"));
+    const QList<LibraryItem> byTitle =
+        internal::fetchItems(QStringLiteral("title"), testDb.connection());
     QVERIFY(byTitle.size() >= 2);
     QCOMPARE(byTitle.first().title, QStringLiteral("Pride and Prejudice"));
 
-    const QList<LibraryItem> byStatus = service.fetchItems(QStringLiteral("status"));
+    const QList<LibraryItem> byStatus =
+        internal::fetchItems(QStringLiteral("status"), testDb.connection());
     QVERIFY(byStatus.size() >= 2);
     QCOMPARE(byStatus.first().status, QStringLiteral("downloaded"));
 }
 
-void LibraryServiceTest::writeOperations_emitSignalsAndMutateRows()
+void LibraryServiceTest::writeOperations_mutateRows()
 {
     bookhub::tests::TestDatabase testDb;
     QVERIFY(testDb.open());
     QVERIFY(testDb.createSchema());
     QVERIFY(testDb.insertSampleData());
 
-    LibraryService service;
-    QSignalSpy spy(&service, &LibraryService::libraryChanged);
-
     const int editionId = testDb.scalarInt(QStringLiteral(
         "SELECT id FROM editions WHERE book_id = 'gutenberg:1184' AND language = 'English'"));
     QVERIFY(editionId > 0);
-    const int addedId = service.addBook(QStringLiteral("gutenberg:1184"), editionId);
-    QVERIFY(addedId > 0);
-    QCOMPARE(spy.count(), 1);
 
-    QVERIFY(service.updateStatus(addedId, QStringLiteral("downloaded")));
-    QCOMPARE(spy.count(), 2);
+    const int addedId =
+        internal::addBook(QStringLiteral("gutenberg:1184"), editionId, testDb.connection());
+    QVERIFY(addedId > 0);
+
+    QVERIFY(internal::updateStatus(addedId, QStringLiteral("downloaded"), testDb.connection()));
     QCOMPARE(testDb.scalarString(QStringLiteral(
         "SELECT status FROM library_items WHERE id = %1").arg(addedId)),
         QStringLiteral("downloaded"));
 
-    QVERIFY(service.removeBook(addedId));
-    QCOMPARE(spy.count(), 3);
+    QVERIFY(internal::removeBook(addedId, testDb.connection()));
     QCOMPARE(testDb.scalarInt(QStringLiteral(
         "SELECT COUNT(*) FROM library_items WHERE id = %1").arg(addedId)),
         0);

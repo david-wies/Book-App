@@ -22,10 +22,10 @@ public:
     {
         close();
         connectionName = name;
-        filePath = tempDir.filePath(QStringLiteral("bookhub-test.db"));
-        QFile::remove(filePath);
+        m_filePath = tempDir.filePath(QStringLiteral("bookhub-test.db"));
+        QFile::remove(m_filePath);
 
-        if (!db::initializeDatabase(filePath, connectionName))
+        if (!db::initializeDatabase(m_filePath, connectionName))
             return false;
 
         db = QSqlDatabase::database(connectionName);
@@ -76,16 +76,17 @@ public:
             QSqlDatabase::removeDatabase(name);
         }
         connectionName.clear();
-        filePath.clear();
+        m_filePath.clear();
     }
 
     QSqlDatabase database() const { return db; }
     QString connection() const { return connectionName; }
+    QString filePath() const { return m_filePath; }
 
 private:
     QTemporaryDir tempDir;
     QString connectionName;
-    QString filePath;
+    QString m_filePath;
     QSqlDatabase db;
 };
 

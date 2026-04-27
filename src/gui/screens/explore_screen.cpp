@@ -1,5 +1,6 @@
 #include "explore_screen.h"
 #include "../services/explore_service.h"
+#include "../query_worker.h"
 #include "../style_tokens.h"
 
 #include <QVBoxLayout>
@@ -21,12 +22,7 @@
 namespace bookhub::gui {
 
 // ===========================================================================
-// BookMiniCard — 120 × 180 fixed-size clickable card showing a book's cover
-// placeholder, title (2 lines max, elided), and author (1 line, elided).
-//
-// The cover placeholder is drawn in paintEvent as a rounded rectangle using
-// ColorBorder as the fill so it follows the application theme without hard-
-// coding a colour.  bookClicked is intentionally left unwired until Task 9.
+// BookMiniCard — 120 × 180 fixed-size clickable card.
 // ===========================================================================
 
 class BookMiniCard : public QFrame {
@@ -59,14 +55,10 @@ public:
            .arg(RadiusMD)
            .arg(ColorAccent));
 
-        // Cover placeholder occupies the upper ~130 px; text is below.
-        // We use a nested QVBoxLayout rather than painting text ourselves so
-        // Qt handles font metrics and HiDPI scaling automatically.
         auto *layout = new QVBoxLayout(this);
         layout->setContentsMargins(6, 6, 6, 6);
         layout->setSpacing(4);
 
-        // Cover area — styled QLabel acts as the grey placeholder rectangle
         m_coverLabel = new QLabel(this);
         m_coverLabel->setFixedSize(108, 128);
         m_coverLabel->setAlignment(Qt::AlignCenter);
@@ -76,10 +68,8 @@ public:
             .arg(RadiusMD));
         layout->addWidget(m_coverLabel);
 
-        // Title label — bold 10pt, word-wrap capped to 2 lines via fixed height
         m_titleLabel = new QLabel(elidedTwoLines(title, 108, 10), this);
         m_titleLabel->setWordWrap(true);
-        // Fix height to exactly 2 lines so cards align in the carousel
         QFont titleFont = m_titleLabel->font();
         titleFont.setPointSize(10);
         titleFont.setBold(true);
@@ -89,7 +79,6 @@ public:
             .arg(ColorTextPrimary));
         layout->addWidget(m_titleLabel);
 
-        // Author label — muted 9pt, single line elided
         m_authorLabel = new QLabel(this);
         QFont authorFont = m_authorLabel->font();
         authorFont.setPointSize(9);
@@ -119,8 +108,6 @@ protected:
     }
 
 private:
-    // Elide text to fit within `widthPx` pixels over at most 2 lines.
-    // This is a best-effort approximation — Qt word-wrap handles final layout.
     static QString elidedTwoLines(const QString &text, int widthPx, int pointSize)
     {
         QFont f;
@@ -128,11 +115,9 @@ private:
         f.setBold(true);
         QFontMetrics fm(f);
 
-        // If the whole text fits in one line, return as-is
         if (fm.horizontalAdvance(text) <= widthPx)
             return text;
 
-        // Try to split at a word boundary that fills two lines
         QStringList words = text.split(QLatin1Char(' '));
         QString line1, line2;
         for (const QString &w : words) {
@@ -150,9 +135,7 @@ private:
         if (line2.isEmpty())
             return line1;
 
-        // Elide line2 to fit
-        const QString elided2 = fm.elidedText(line2, Qt::ElideRight, widthPx);
-        return line1 + QLatin1Char('\n') + elided2;
+        return line1 + QLatin1Char('\n') + fm.elidedText(line2, Qt::ElideRight, widthPx);
     }
 
     QString  m_bookId;
@@ -164,13 +147,9 @@ private:
 };
 
 // ===========================================================================
-// CategoryCard — 220 × 80 minimum-size clickable frame showing a genre name
-// and its book count.  Background rotates through a small pastel palette so
-// adjacent cards are visually distinct without requiring image assets.
+// CategoryCard
 // ===========================================================================
 
-// Pastel palette indexed by (cardIndex % 6). Values chosen to be visible on
-// both light and dark screen backgrounds while remaining unobtrusive.
 static constexpr const char* kCategoryPastels[] = {
     "#EFF6FF", "#F0FDF4", "#FFF7ED", "#FDF4FF", "#FEF9C3", "#F0F9FF"
 };
@@ -211,7 +190,6 @@ public:
             .arg(ColorTextPrimary));
         layout->addWidget(nameLabel);
 
-        // Format count with thousands separator for readability
         const QString countText = QStringLiteral("%L1 book%2")
             .arg(bookCount)
             .arg(bookCount == 1 ? QString{} : QStringLiteral("s"));
@@ -265,41 +243,49 @@ private:
     QString m_hoverBg;
 };
 
-// MOC must be included for inner Q_OBJECT classes defined in a .cpp file.
 #include "explore_screen.moc"
 
 // ===========================================================================
 // ExploreScreen
 // ===========================================================================
 
-ExploreScreen::ExploreScreen(QWidget *parent)
+ExploreScreen::ExploreScreen(QueryWorker *worker, QWidget *parent)
     : QWidget(parent)
 {
     setStyleSheet(QStringLiteral("background-color: %1;").arg(ColorBackground));
 
     m_service = new ExploreService(this);
+    m_service->connectToWorker(worker);
+
+    connect(m_service, &ExploreService::trendingCompleted,
+            this, &ExploreScreen::onTrendingCompleted);
+    connect(m_service, &ExploreService::newArrivalsCompleted,
+            this, &ExploreScreen::onNewArrivalsCompleted);
+    connect(m_service, &ExploreService::categoriesCompleted,
+            this, &ExploreScreen::onCategoriesCompleted);
+    connect(m_service, &ExploreService::booksForGenreCompleted,
+            this, &ExploreScreen::onBooksForGenreCompleted);
 
     auto *root = new QVBoxLayout(this);
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
 
-    // Internal navigation stack: index 0 = top-level, index 1 = genre drill-down
     m_exploreStack = new QStackedWidget(this);
     m_exploreStack->addWidget(buildTopLevelPage()); // index 0
     m_exploreStack->addWidget(buildGenreBooksPage()); // index 1
     m_exploreStack->setCurrentIndex(0);
 
     root->addWidget(m_exploreStack, 1);
+
+    loadTopLevelData();
 }
 
 // ---------------------------------------------------------------------------
-// Top-level page — scrollable, sections built top to bottom
+// Top-level page — scroll area with placeholder carousels/grid
 // ---------------------------------------------------------------------------
 
 QWidget *ExploreScreen::buildTopLevelPage()
 {
-    // Outer scroll area wraps everything on the top-level page so the user can
-    // scroll down to reach New Arrivals on small-height windows.
     auto *scrollArea = new QScrollArea(this);
     scrollArea->setWidgetResizable(true);
     scrollArea->setFrameShape(QFrame::NoFrame);
@@ -310,54 +296,140 @@ QWidget *ExploreScreen::buildTopLevelPage()
     auto *layout = new QVBoxLayout(page);
     layout->setContentsMargins(SpacingLG, SpacingLG, SpacingLG, SpacingLG);
     layout->setSpacing(SpacingMD);
+    m_topLevelLayout = layout; // store for later widget replacement
 
-    // Section header style — uppercase, muted, small
     const QString headerStyle = QStringLiteral(
         "font-size: %1pt; font-weight: bold; color: %2; letter-spacing: 1px;")
         .arg(FontSizeMeta)
         .arg(ColorTextMuted);
 
-    // ---- TRENDING section ----
+    // index 0: TRENDING label
     auto *trendingLabel = new QLabel(QStringLiteral("TRENDING"), page);
     trendingLabel->setStyleSheet(headerStyle);
-    layout->addWidget(trendingLabel);
+    layout->addWidget(trendingLabel); // index 0
 
-    layout->addWidget(buildCarousel(m_service->fetchTrending()));
+    // index 1: trending carousel placeholder
+    m_trendingCarousel = buildCarousel({});
+    layout->addWidget(m_trendingCarousel); // index 1
 
-    // ---- BROWSE CATEGORIES section ----
+    // index 2: BROWSE CATEGORIES label
     auto *categoriesLabel = new QLabel(QStringLiteral("BROWSE CATEGORIES"), page);
     categoriesLabel->setStyleSheet(headerStyle);
-    layout->addWidget(categoriesLabel);
+    layout->addWidget(categoriesLabel); // index 2
 
-    layout->addWidget(buildCategoryGrid(m_service->fetchCategories()));
+    // index 3: category grid placeholder
+    m_categoryGrid = buildCategoryGrid({});
+    layout->addWidget(m_categoryGrid); // index 3
 
-    // ---- NEW ARRIVALS section ----
+    // index 4: NEW ARRIVALS label
     auto *arrivalsLabel = new QLabel(QStringLiteral("NEW ARRIVALS"), page);
     arrivalsLabel->setStyleSheet(headerStyle);
-    layout->addWidget(arrivalsLabel);
+    layout->addWidget(arrivalsLabel); // index 4
 
-    layout->addWidget(buildCarousel(m_service->fetchNewArrivals()));
+    // index 5: new arrivals carousel placeholder
+    m_newArrivalsCarousel = buildCarousel({});
+    layout->addWidget(m_newArrivalsCarousel); // index 5
 
-    layout->addStretch();
+    layout->addStretch(); // index 6
 
     scrollArea->setWidget(page);
     return scrollArea;
 }
 
+void ExploreScreen::loadTopLevelData()
+{
+    m_pendingTrendingId    = m_service->requestTrending();
+    m_pendingCategoriesId  = m_service->requestCategories();
+    m_pendingNewArrivalsId = m_service->requestNewArrivals();
+}
+
 // ---------------------------------------------------------------------------
-// Horizontal carousel of BookMiniCards inside a QScrollArea
+// Async result slots — replace placeholders with populated widgets
+// ---------------------------------------------------------------------------
+
+void ExploreScreen::onTrendingCompleted(quint64 requestId,
+                                         QList<ExploreBook> books)
+{
+    if (requestId < m_pendingTrendingId)
+        return;
+
+    m_topLevelLayout->removeWidget(m_trendingCarousel);
+    delete m_trendingCarousel;
+    m_trendingCarousel = buildCarousel(books);
+    m_topLevelLayout->insertWidget(kTrendingCarouselIndex, m_trendingCarousel);
+}
+
+void ExploreScreen::onNewArrivalsCompleted(quint64 requestId,
+                                            QList<ExploreBook> books)
+{
+    if (requestId < m_pendingNewArrivalsId)
+        return;
+
+    m_topLevelLayout->removeWidget(m_newArrivalsCarousel);
+    delete m_newArrivalsCarousel;
+    m_newArrivalsCarousel = buildCarousel(books);
+    m_topLevelLayout->insertWidget(kNewArrivalsCarouselIndex, m_newArrivalsCarousel);
+}
+
+void ExploreScreen::onCategoriesCompleted(quint64 requestId,
+                                           QList<ExploreCategory> categories)
+{
+    if (requestId < m_pendingCategoriesId)
+        return;
+
+    m_topLevelLayout->removeWidget(m_categoryGrid);
+    delete m_categoryGrid;
+    m_categoryGrid = buildCategoryGrid(categories);
+    m_topLevelLayout->insertWidget(kCategoryGridIndex, m_categoryGrid);
+}
+
+void ExploreScreen::onBooksForGenreCompleted(quint64 requestId,
+                                              QList<ExploreBook> books)
+{
+    if (requestId < m_pendingGenreId)
+        return;
+
+    const int offset = m_genreOffset;
+
+    if (books.isEmpty() && offset == 0) {
+        auto *empty = new QLabel(
+            QStringLiteral("No books found for this category."),
+            m_genreGridContainer);
+        empty->setStyleSheet(QStringLiteral("color: %1; font-size: %2pt;")
+            .arg(ColorTextMuted).arg(FontSizeBody));
+        m_genreGridLayout->addWidget(empty, 0, 0, 1, kGridColumns);
+        m_loadMoreBtn->setVisible(false);
+        return;
+    }
+
+    for (int i = 0; i < books.size(); ++i) {
+        const ExploreBook &b = books[i];
+        auto *card = new BookMiniCard(b.bookId, b.title, b.author, m_genreGridContainer);
+        connect(card, &BookMiniCard::bookClicked,
+                this, &ExploreScreen::bookDetailsRequested);
+
+        const int absoluteIdx = offset + i;
+        m_genreGridLayout->addWidget(card, absoluteIdx / kGridColumns,
+                                            absoluteIdx % kGridColumns);
+    }
+
+    m_genreOffset = offset + books.size();
+    m_loadMoreBtn->setVisible(books.size() == kGenrePageSize);
+    m_loadMoreBtn->setEnabled(true);
+}
+
+// ---------------------------------------------------------------------------
+// Horizontal carousel of BookMiniCards
 // ---------------------------------------------------------------------------
 
 QWidget *ExploreScreen::buildCarousel(const QList<ExploreBook> &books)
 {
-    // The carousel is a horizontally scrollable strip. We never show a
-    // vertical scrollbar — cards are fixed-height so that's not needed.
     auto *scrollArea = new QScrollArea(this);
     scrollArea->setFrameShape(QFrame::NoFrame);
     scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     scrollArea->setWidgetResizable(false);
-    scrollArea->setFixedHeight(196); // card height (180) + breathing room (16)
+    scrollArea->setFixedHeight(196);
     scrollArea->setStyleSheet(QStringLiteral("background: transparent;"));
 
     auto *strip  = new QWidget(scrollArea);
@@ -416,7 +488,6 @@ QWidget *ExploreScreen::buildCategoryGrid(const QList<ExploreCategory> &categori
         }
     }
 
-    // Equalise column widths so cards fill available width evenly
     for (int c = 0; c < kCols; ++c)
         grid->setColumnStretch(c, 1);
 
@@ -424,7 +495,7 @@ QWidget *ExploreScreen::buildCategoryGrid(const QList<ExploreCategory> &categori
 }
 
 // ---------------------------------------------------------------------------
-// Genre drill-down page — built once, repopulated on each category click
+// Genre drill-down page
 // ---------------------------------------------------------------------------
 
 QWidget *ExploreScreen::buildGenreBooksPage()
@@ -434,7 +505,6 @@ QWidget *ExploreScreen::buildGenreBooksPage()
     layout->setContentsMargins(SpacingLG, SpacingMD, SpacingLG, SpacingLG);
     layout->setSpacing(SpacingMD);
 
-    // --- Header row: back button + breadcrumb ---
     auto *headerRow    = new QWidget(page);
     auto *headerLayout = new QHBoxLayout(headerRow);
     headerLayout->setContentsMargins(0, 0, 0, 0);
@@ -473,33 +543,28 @@ QWidget *ExploreScreen::buildGenreBooksPage()
 
     layout->addWidget(headerRow);
 
-    // Separator
     auto *sep = new QFrame(page);
     sep->setFrameShape(QFrame::HLine);
     sep->setStyleSheet(QStringLiteral("color: %1;").arg(ColorBorder));
     layout->addWidget(sep);
 
-    // --- Scrollable book grid ---
     auto *scrollArea = new QScrollArea(page);
     scrollArea->setWidgetResizable(true);
     scrollArea->setFrameShape(QFrame::NoFrame);
     scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     scrollArea->setStyleSheet(QStringLiteral("background-color: %1;").arg(ColorBackground));
 
-    // m_genreGridContainer is repopulated by appendGenreBooks each time
     m_genreGridContainer = new QWidget(scrollArea);
     m_genreGridLayout    = new QGridLayout(m_genreGridContainer);
     m_genreGridLayout->setContentsMargins(0, 0, 0, 0);
     m_genreGridLayout->setSpacing(SpacingMD);
 
-    // Equal column stretches for the 4-column grid
     for (int c = 0; c < kGridColumns; ++c)
         m_genreGridLayout->setColumnStretch(c, 1);
 
     scrollArea->setWidget(m_genreGridContainer);
     layout->addWidget(scrollArea, 1);
 
-    // --- Load more button ---
     m_loadMoreBtn = new QPushButton(QStringLiteral("Load more"), page);
     m_loadMoreBtn->setStyleSheet(QStringLiteral(R"(
         QPushButton {
@@ -534,7 +599,6 @@ void ExploreScreen::showGenreBooks(const QString &genreName)
     m_currentGenre = genreName;
     m_genreOffset  = 0;
 
-    // Clear the grid before repopulating
     while (QLayoutItem *item = m_genreGridLayout->takeAt(0)) {
         delete item->widget();
         delete item;
@@ -549,38 +613,10 @@ void ExploreScreen::showGenreBooks(const QString &genreName)
 
 void ExploreScreen::appendGenreBooks(int offset)
 {
-    const QList<ExploreBook> books =
-        m_service->fetchBooksForGenre(m_currentGenre, offset, kGenrePageSize);
-
-    if (books.isEmpty() && offset == 0) {
-        // Genre exists but has no books yet — show a placeholder label
-        auto *empty = new QLabel(
-            QStringLiteral("No books found for this category."),
-            m_genreGridContainer);
-        empty->setStyleSheet(QStringLiteral("color: %1; font-size: %2pt;")
-            .arg(ColorTextMuted).arg(FontSizeBody));
-        // Span all four columns
-        m_genreGridLayout->addWidget(empty, 0, 0, 1, kGridColumns);
-        m_loadMoreBtn->setVisible(false);
-        return;
-    }
-
-    for (int i = 0; i < books.size(); ++i) {
-        const ExploreBook &b = books[i];
-        auto *card = new BookMiniCard(b.bookId, b.title, b.author, m_genreGridContainer);
-        connect(card, &BookMiniCard::bookClicked,
-                this, &ExploreScreen::bookDetailsRequested);
-
-        const int absoluteIdx = offset + i;
-        const int row = absoluteIdx / kGridColumns;
-        const int col = absoluteIdx % kGridColumns;
-        m_genreGridLayout->addWidget(card, row, col);
-    }
-
-    m_genreOffset = offset + books.size();
-
-    // Show "Load more" if a full page was returned — there may be more
-    m_loadMoreBtn->setVisible(books.size() == kGenrePageSize);
+    m_loadMoreBtn->setEnabled(false);
+    m_genreOffset = offset; // updated in onBooksForGenreCompleted once results arrive
+    m_pendingGenreId = m_service->requestBooksForGenre(
+        m_currentGenre, offset, kGenrePageSize);
 }
 
 // ---------------------------------------------------------------------------

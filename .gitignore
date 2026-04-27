@@ -34,6 +34,7 @@ claude/
 .github/instructions/
 .github/skills/
 .github/AGENTS.md
+AGENTS.md
 .venv/
 venv/
 __pycache__/

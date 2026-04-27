@@ -6,9 +6,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 
-#define private public
 #include "collector/gutenberg_adapter.h"
-#undef private
 
 #include <QtTest>
 #include <algorithm>
