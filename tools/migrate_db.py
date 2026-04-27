@@ -12,10 +12,17 @@ rolled back and the database is left untouched.
 
 import argparse
 import os
-import platformdirs
 import re
 import sqlite3
 import sys
+
+try:
+    import platformdirs
+    _DEFAULT_DB = os.path.join(
+        platformdirs.user_data_dir("BookHub", "BookHub"), "bookhub.db"
+    )
+except ImportError:
+    _DEFAULT_DB = None  # fall back to requiring --db-path
 
 
 # ---------------------------------------------------------------------------
@@ -424,9 +431,14 @@ def migrate(db_path: str) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    default_db = os.path.join(
-        platformdirs.user_data_dir("BookHub", "BookHub"), "bookhub.db"
-    )
+    if _DEFAULT_DB is not None:
+        default_help = f"Path to the SQLite database file (default: {_DEFAULT_DB})"
+    else:
+        default_help = (
+            "Path to the SQLite database file. "
+            "Install 'platformdirs' (pip install platformdirs) to use the platform default, "
+            "or supply --db-path explicitly."
+        )
     parser = argparse.ArgumentParser(
         description=(
             "Migrate bookhub.db from schema version 0 (ISBN-keyed) "
@@ -440,8 +452,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--db-path",
-        default=default_db,
-        help=f"Path to the SQLite database file (default: {default_db})",
+        default=_DEFAULT_DB,
+        required=(_DEFAULT_DB is None),
+        help=default_help,
     )
     args = parser.parse_args()
 

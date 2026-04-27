@@ -10,6 +10,7 @@
 #include "gui/widgets/book_card_delegate.h"
 #include "gui/widgets/empty_state_widget.h"
 #include "support/test_database_utils.h"
+#include "support/test_query_worker.h"
 
 #include <QMessageBox>
 #include <QPushButton>
@@ -33,6 +34,7 @@ private slots:
 
 private:
     std::unique_ptr<bookhub::tests::TestDatabase> m_db;
+    TestQueryWorker *m_worker{};
 };
 
 void LibraryScreenTest::init()
@@ -48,16 +50,20 @@ void LibraryScreenTest::init()
     m_db = std::make_unique<bookhub::tests::TestDatabase>();
     QVERIFY(m_db->open());
     QVERIFY(m_db->createSchema());
+
+    m_worker = new TestQueryWorker();
 }
 
 void LibraryScreenTest::cleanup()
 {
+    delete m_worker;
+    m_worker = nullptr;
     m_db.reset();
 }
 
 void LibraryScreenTest::emptyState_emitsExploreRequested()
 {
-    LibraryScreen screen;
+    LibraryScreen screen(m_worker);
     QSignalSpy spy(&screen, &LibraryScreen::exploreRequested);
 
     QCOMPARE(screen.m_stack->currentIndex(), 1);
@@ -70,7 +76,7 @@ void LibraryScreenTest::populatedState_supportsSortingAndDetails()
 {
     QVERIFY(m_db->insertSampleData());
 
-    LibraryScreen screen;
+    LibraryScreen screen(m_worker);
     QSignalSpy detailsSpy(&screen, &LibraryScreen::bookDetailsRequested);
 
     QCOMPARE(screen.m_stack->currentIndex(), 0);
@@ -89,7 +95,7 @@ void LibraryScreenTest::viewMode_persistsAndRemoveActionDeletesRow()
 {
     QVERIFY(m_db->insertSampleData());
 
-    LibraryScreen screen;
+    LibraryScreen screen(m_worker);
     screen.show();
     auto *gridButton = qobject_cast<QPushButton *>(screen.m_viewGroup->button(1));
     QVERIFY(gridButton);

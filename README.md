@@ -12,12 +12,13 @@ A native C++/Qt6 desktop application for discovering public-domain literature, m
 
 ## Architecture
 
-BookHub runs two threads in a single process:
+The application uses a three-thread model:
 
-- **GUI Thread** — `QApplication::exec()` drives a `QMainWindow`. All widget interaction lives here.
-- **Collector Thread** — `CollectorWorker : QThread` polls for book metadata on a timer and writes results to SQLite. It starts immediately on launch.
+- **GUI Thread**: Runs `QApplication::exec()` with the Qt6 Widgets interface.
+- **Query Thread**: Dedicated background thread executing all SQLite read/write queries asynchronously. Services send requests via Qt signals and receive results on the GUI thread.
+- **Collector Thread**: Background thread polling external book sources.
 
-Both threads share a single SQLite database (`bookhub.db`, stored in `QStandardPaths::AppDataLocation`). Thread isolation is maintained by giving each thread its own named Qt SQL connection.
+All three threads share a single SQLite database (`bookhub.db`, stored in `QStandardPaths::AppDataLocation`). WAL mode enables concurrent reads from the query thread while the collector writes. Thread isolation is maintained by giving each thread its own named Qt SQL connection.
 
 Book metadata flows through an adapter pattern. `ISourceAdapter` defines the interface; `GutenbergAdapter` is the only current implementation. It downloads Gutenberg's RDF catalog (`.tar.bz2`), extracts it in-process via libarchive, and parses the RDF/XML files. `BookDiscoveryService` orchestrates adapters and writes discovered books to the database in batches of 500.
 

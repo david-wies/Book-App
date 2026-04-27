@@ -201,7 +201,7 @@ void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, co
         }
     }
 
-    // Phase 5 — genres
+    // Phase 5 — genres (best-effort: a failure does not roll back the book record)
     for (const QString &subject : book.subjects) {
         QSqlQuery gq(db);
         gq.prepare(QStringLiteral("INSERT OR IGNORE INTO genres (genre_name) VALUES (?)"));

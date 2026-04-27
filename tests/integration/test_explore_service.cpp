@@ -21,8 +21,8 @@ void ExploreServiceTest::fetchCategories_returnsCounts()
     QVERIFY(testDb.createSchema());
     QVERIFY(testDb.insertSampleData());
 
-    ExploreService service;
-    const QList<ExploreCategory> categories = service.fetchCategories();
+    const QList<ExploreCategory> categories =
+        internal::fetchCategories(testDb.connection());
     QVERIFY(!categories.isEmpty());
     QCOMPARE(categories.first().genreName, QStringLiteral("Classic"));
     QCOMPARE(categories.first().bookCount, 3);
@@ -43,9 +43,8 @@ void ExploreServiceTest::fetchTrendingAndGenreBooks_returnExpectedWindows()
             "INSERT INTO book_genres (book_id, genre_id) VALUES ('book:%1', %2)").arg(i).arg(i)));
     }
 
-    ExploreService service;
-    const QList<ExploreBook> trending = service.fetchTrending();
-    const QList<ExploreBook> arrivals = service.fetchNewArrivals();
+    const QList<ExploreBook> trending = internal::fetchTrending(testDb.connection());
+    const QList<ExploreBook> arrivals = internal::fetchNewArrivals(testDb.connection());
     QVERIFY(!trending.isEmpty());
     QVERIFY(!arrivals.isEmpty());
     // fetchTrending() selects ORDER BY rowid DESC LIMIT 20. Books 1..25 were
@@ -55,7 +54,8 @@ void ExploreServiceTest::fetchTrendingAndGenreBooks_returnExpectedWindows()
     // books 25..6. book:5 is the first of the remaining window (5, 4, 3, 2, 1).
     QCOMPARE(arrivals.first().bookId, QStringLiteral("book:5"));
 
-    const QList<ExploreBook> genreBooks = service.fetchBooksForGenre(QStringLiteral("Genre10"));
+    const QList<ExploreBook> genreBooks =
+        internal::fetchBooksForGenre(QStringLiteral("Genre10"), 0, 40, testDb.connection());
     QCOMPARE(genreBooks.size(), 1);
     QCOMPARE(genreBooks.first().bookId, QStringLiteral("book:10"));
 }

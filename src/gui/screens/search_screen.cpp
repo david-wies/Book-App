@@ -1,6 +1,7 @@
 #include "search_screen.h"
 #include "../services/search_service.h"
 #include "../services/library_service.h"
+#include "../query_worker.h"
 #include "../widgets/search_result_delegate.h"
 #include "../style_tokens.h"
 
@@ -31,13 +32,48 @@ namespace bookhub::gui {
 // Construction
 // ---------------------------------------------------------------------------
 
-SearchScreen::SearchScreen(QWidget *parent)
+SearchScreen::SearchScreen(QueryWorker *worker, QWidget *parent)
     : QWidget(parent)
 {
     setStyleSheet(QStringLiteral("background-color: %1;").arg(ColorBackground));
 
     m_service        = new SearchService(this);
     m_libraryService = new LibraryService(this);
+
+    init(worker);
+}
+
+SearchScreen::SearchScreen(LibraryService *service, QueryWorker *worker, QWidget *parent)
+    : QWidget(parent)
+{
+    setStyleSheet(QStringLiteral("background-color: %1;").arg(ColorBackground));
+
+    m_service        = new SearchService(this);
+    m_libraryService = service;
+
+    init(worker);
+}
+
+void SearchScreen::init(QueryWorker *worker)
+{
+    m_service->connectToWorker(worker);
+    m_libraryService->connectToWorker(worker);
+
+    // Connect result signals
+    connect(m_service, &SearchService::countCompleted,
+            this, &SearchScreen::onCountCompleted);
+    connect(m_service, &SearchService::searchCompleted,
+            this, &SearchScreen::onSearchCompleted);
+    // Load-more results come through the same searchCompleted signal; we
+    // differentiate by comparing requestId against m_pendingLoadMoreId.
+    connect(m_service, &SearchService::languagesCompleted,
+            this, &SearchScreen::onLanguagesCompleted);
+    connect(m_service, &SearchService::sourcesCompleted,
+            this, &SearchScreen::onSourcesCompleted);
+    connect(m_service, &SearchService::genresCompleted,
+            this, &SearchScreen::onGenresCompleted);
+    connect(m_libraryService, &LibraryService::addBookCompleted,
+            this, &SearchScreen::onAddBookCompleted);
 
     auto *root = new QVBoxLayout(this);
     root->setContentsMargins(SpacingMD, SpacingMD, SpacingMD, SpacingMD);
@@ -64,15 +100,13 @@ SearchScreen::SearchScreen(QWidget *parent)
     buildResultsPane(resultsPane);
     splitter->addWidget(resultsPane);
 
-    // 220px for filter panel; results pane gets the rest
     splitter->setSizes({220, 9999});
     splitter->setCollapsible(0, true);
     splitter->setCollapsible(1, false);
 
     root->addWidget(splitter, 1);
 
-    // Timers must exist before populating filter lists — setCheckState fires
-    // itemChanged which triggers onFiltersChanged which calls timer->stop().
+    // Timers must exist before populating filter lists
     m_searchTimer = new QTimer(this);
     m_searchTimer->setSingleShot(true);
     connect(m_searchTimer, &QTimer::timeout, this, &SearchScreen::runSearch);
@@ -81,45 +115,10 @@ SearchScreen::SearchScreen(QWidget *parent)
     m_authorTimer->setSingleShot(true);
     connect(m_authorTimer, &QTimer::timeout, this, &SearchScreen::runSearch);
 
-    // Populate filter controls from DB
-    const QStringList genres    = m_service->fetchGenres();
-    const QStringList languages = m_service->fetchDistinctLanguages();
-    const QStringList sources   = m_service->fetchDistinctSources();
-
-    for (int i = 0; i < genres.size(); ++i) {
-        auto *item = new QListWidgetItem(genres[i], m_genreList);
-        item->setCheckState(Qt::Unchecked);
-        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
-        if (i >= kGenreCollapsed)
-            item->setHidden(true);
-    }
-    m_showMoreGenres->setVisible(genres.size() > kGenreCollapsed);
-    {
-        const int rowH = m_genreList->sizeHintForRow(0);
-        if (rowH > 0)
-            m_genreList->setFixedHeight(kGenreCollapsed * rowH);
-    }
-
-    for (const QString &lang : languages) {
-        auto *item = new QListWidgetItem(lang, m_langList);
-        item->setCheckState(Qt::Unchecked);
-        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
-    }
-
-    for (const QString &src : sources) {
-        auto *item = new QListWidgetItem(src, m_srcList);
-        item->setCheckState(Qt::Unchecked);
-        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
-    }
-}
-
-SearchScreen::SearchScreen(LibraryService *service, QWidget *parent)
-    : SearchScreen(parent)
-{
-    // swap out the self-owned library service for the shared one so addBook()
-    // fires libraryChanged on the same instance that LibraryScreen watches
-    delete m_libraryService;
-    m_libraryService = service;
+    // Populate filter controls asynchronously
+    m_service->requestGenres();
+    m_service->requestLanguages();
+    m_service->requestSources();
 }
 
 // ---------------------------------------------------------------------------
@@ -157,7 +156,6 @@ void SearchScreen::buildSearchBar(QWidget *container)
        .arg(ColorTextPrimary)
        .arg(ColorAccent));
 
-    // Clear button inside the search bar area
     auto *clearBtn = new QToolButton(container);
     clearBtn->setText(QStringLiteral("✕"));
     clearBtn->setFixedSize(32, 32);
@@ -267,6 +265,7 @@ void SearchScreen::buildFilterPanel(QWidget *panel)
         "  color: %1; font-size: %2pt; text-align: left; padding: 0; }")
         .arg(ColorAccent).arg(FontSizeBody));
     m_showMoreGenres->setCursor(Qt::PointingHandCursor);
+    m_showMoreGenres->setVisible(false);
     connect(m_showMoreGenres, &QPushButton::clicked,
             this, &SearchScreen::onShowMoreGenres);
     layout->addWidget(m_showMoreGenres);
@@ -291,7 +290,6 @@ void SearchScreen::buildFilterPanel(QWidget *panel)
     m_yearTo->setSpecialValueText(QStringLiteral(" "));
     m_yearTo->setToolTip(QStringLiteral("Year to"));
 
-    // Clamp so from ≤ to
     connect(m_yearFrom, &QSpinBox::valueChanged, this, [this](int v) {
         if (v > m_yearTo->value())
             m_yearTo->setValue(v);
@@ -381,7 +379,7 @@ void SearchScreen::buildResultsPane(QWidget *pane)
     layout->setContentsMargins(SpacingMD, 0, 0, 0);
     layout->setSpacing(SpacingSM);
 
-    // Toolbar: count label + sort combo + view toggles (placeholder)
+    // Toolbar: count label + sort combo
     auto *toolbar = new QWidget(pane);
     auto *tbLayout = new QHBoxLayout(toolbar);
     tbLayout->setContentsMargins(0, 0, 0, 0);
@@ -524,7 +522,6 @@ SearchParams SearchScreen::collectParams() const
             p.genres.append(item->text());
     }
 
-    // Year: treat default boundary values as "no filter"
     const int yFrom = m_yearFrom->value();
     const int yTo   = m_yearTo->value();
     p.yearFrom = (yFrom > 1400) ? yFrom : 0;
@@ -578,7 +575,6 @@ void SearchScreen::populateModel(const QList<SearchResult> &results, bool append
         item->setData(r.formats,     SearchRole::Formats);
         item->setData(r.inLibrary,   SearchRole::InLibrary);
 
-        // Accessibility announcement
         item->setAccessibleText(
             QStringLiteral("%1 by %2, %3. Formats: %4. Source: %5.")
                 .arg(r.title, r.author)
@@ -610,28 +606,18 @@ void SearchScreen::setResultsState(int state)
 // Slots
 // ---------------------------------------------------------------------------
 
-void SearchScreen::triggerSearchNow()
-{
-    m_searchTimer->stop();
-    m_authorTimer->stop();
-    runSearch();
-}
-
 void SearchScreen::onSearchBarChanged()
 {
-    // 500 ms debounce — restarting the timer on each keystroke
     m_searchTimer->start(500);
 }
 
 void SearchScreen::onAuthorFilterChanged()
 {
-    // 300 ms debounce for the author sub-filter
     m_authorTimer->start(300);
 }
 
 void SearchScreen::onFiltersChanged()
 {
-    // Other filters trigger immediate search (no debounce needed for checkbox/spinbox)
     m_searchTimer->stop();
     m_authorTimer->stop();
     runSearch();
@@ -649,32 +635,52 @@ void SearchScreen::runSearch()
         return;
     }
 
-    const SearchParams params = collectParams();
+    m_pendingSearchParams = collectParams();
+    m_loadMoreBtn->setEnabled(false);
+    m_pendingCountId = m_service->requestCount(m_pendingSearchParams);
+}
 
-    // Count query runs only when filters change (not on "Load more")
-    m_totalCount = m_service->count(params);
-    updateCountLabel(m_totalCount);
+void SearchScreen::onCountCompleted(quint64 requestId, int count)
+{
+    if (requestId < m_pendingCountId)
+        return;
 
+    m_totalCount    = count;
     m_currentOffset = 0;
-    const QList<SearchResult> results = m_service->search(params, 0, kPageSize);
+    updateCountLabel(count);
 
-    populateModel(results, false);
+    // Peek the next ID before emitting so that synchronous (direct) connections
+    // in tests see m_pendingSearchId set before onSearchCompleted runs.
+    m_pendingSearchId = m_service->peekNextId();
+    m_service->requestSearch(m_pendingSearchParams, 0, kPageSize);
+}
 
-    if (results.isEmpty()) {
-        setResultsState(2); // empty state
-        m_loadMoreBtn->setVisible(false);
-    } else {
-        setResultsState(1); // results
-        m_currentOffset = results.size();
-        m_loadMoreBtn->setVisible(m_currentOffset < m_totalCount);
+void SearchScreen::onSearchCompleted(quint64 requestId, QList<SearchResult> results)
+{
+    if (requestId == m_pendingSearchId) {
+        populateModel(results, false);
+
+        if (results.isEmpty()) {
+            setResultsState(2);
+            m_loadMoreBtn->setVisible(false);
+        } else {
+            setResultsState(1);
+            m_currentOffset = results.size();
+            m_loadMoreBtn->setVisible(m_currentOffset < m_totalCount);
+            m_loadMoreBtn->setEnabled(true);
+        }
+        return;
+    }
+
+    if (requestId == m_pendingLoadMoreId) {
+        onLoadMoreCompleted(requestId, results);
     }
 }
 
-void SearchScreen::onLoadMore()
+void SearchScreen::onLoadMoreCompleted(quint64 requestId, QList<SearchResult> results)
 {
-    const SearchParams params = collectParams();
-    const QList<SearchResult> results =
-        m_service->search(params, m_currentOffset, kPageSize);
+    if (requestId < m_pendingLoadMoreId)
+        return;
 
     if (results.isEmpty())
         return;
@@ -682,16 +688,27 @@ void SearchScreen::onLoadMore()
     populateModel(results, true);
     m_currentOffset += results.size();
     m_loadMoreBtn->setVisible(m_currentOffset < m_totalCount);
+    m_loadMoreBtn->setEnabled(true);
+}
+
+void SearchScreen::onLoadMore()
+{
+    m_loadMoreBtn->setEnabled(false);
+    m_pendingLoadMoreId = m_service->peekNextId();
+    m_service->requestSearch(collectParams(), m_currentOffset, kPageSize);
 }
 
 void SearchScreen::onAddToLibrary(const QString &bookId)
 {
-    const int newId = m_libraryService->addBook(bookId, 0);
-    if (newId < 0)
-        return; // addBook already logs the error
+    m_libraryService->requestAddBook(bookId, 0);
+}
 
-    // Flip the inLibrary flag on the affected model row so the delegate
-    // repaints the button without a full re-query.
+void SearchScreen::onAddBookCompleted(quint64 /*requestId*/, QString bookId,
+                                       bool success, int /*newId*/)
+{
+    if (!success)
+        return;
+
     for (int r = 0; r < m_model->rowCount(); ++r) {
         auto *item = m_model->item(r);
         if (item->data(SearchRole::BookId).toString() == bookId) {
@@ -703,7 +720,6 @@ void SearchScreen::onAddToLibrary(const QString &bookId)
 
 void SearchScreen::onClearFilters()
 {
-    // Block signals while resetting to avoid triggering multiple re-searches.
     const QSignalBlocker bSearchBar(m_searchBar);
     const QSignalBlocker bAuthorFilter(m_authorFilter);
     const QSignalBlocker bGenreList(m_genreList);
@@ -731,7 +747,6 @@ void SearchScreen::onClearFilters()
     m_searchTimer->stop();
     m_authorTimer->stop();
 
-    // Return to initial state (no query active)
     m_model->clear();
     m_currentOffset = 0;
     m_totalCount    = 0;
@@ -749,13 +764,9 @@ void SearchScreen::onSortChanged(int index)
     if (!isQueryActive())
         return;
 
-    // COUNT is invariant to sort order — reuse m_totalCount and only re-fetch
-    // the ordered result page.
-    const SearchParams params = collectParams();
-    const QList<SearchResult> results = m_service->search(params, 0, kPageSize);
-    populateModel(results, false);
-    m_currentOffset = results.size();
-    m_loadMoreBtn->setVisible(m_currentOffset < m_totalCount);
+    m_pendingSearchParams.sortColumn = m_currentSortColumn;
+    m_pendingSearchId = m_service->peekNextId();
+    m_service->requestSearch(m_pendingSearchParams, 0, kPageSize);
 }
 
 void SearchScreen::onShowMoreGenres()
@@ -764,7 +775,6 @@ void SearchScreen::onShowMoreGenres()
     for (int i = kGenreCollapsed; i < m_genreList->count(); ++i)
         m_genreList->item(i)->setHidden(!m_genresExpanded);
 
-    // Resize the list to fit the newly visible items
     const int rows = m_genresExpanded ? m_genreList->count() : kGenreCollapsed;
     const int rowH = m_genreList->sizeHintForRow(0);
     if (rowH > 0)
@@ -772,6 +782,53 @@ void SearchScreen::onShowMoreGenres()
 
     m_showMoreGenres->setText(
         m_genresExpanded ? QStringLiteral("show less") : QStringLiteral("show more…"));
+}
+
+// ---------------------------------------------------------------------------
+// Filter population result slots
+// ---------------------------------------------------------------------------
+
+void SearchScreen::onGenresCompleted(quint64 /*requestId*/, QStringList genres)
+{
+    const QSignalBlocker blocker(m_genreList);
+    m_genreList->clear();
+
+    for (int i = 0; i < genres.size(); ++i) {
+        auto *item = new QListWidgetItem(genres[i], m_genreList);
+        item->setCheckState(Qt::Unchecked);
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+        if (i >= kGenreCollapsed)
+            item->setHidden(true);
+    }
+    m_showMoreGenres->setVisible(genres.size() > kGenreCollapsed);
+
+    const int rowH = m_genreList->sizeHintForRow(0);
+    if (rowH > 0)
+        m_genreList->setFixedHeight(kGenreCollapsed * rowH);
+}
+
+void SearchScreen::onLanguagesCompleted(quint64 /*requestId*/, QStringList languages)
+{
+    const QSignalBlocker blocker(m_langList);
+    m_langList->clear();
+
+    for (const QString &lang : languages) {
+        auto *item = new QListWidgetItem(lang, m_langList);
+        item->setCheckState(Qt::Unchecked);
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+    }
+}
+
+void SearchScreen::onSourcesCompleted(quint64 /*requestId*/, QStringList sources)
+{
+    const QSignalBlocker blocker(m_srcList);
+    m_srcList->clear();
+
+    for (const QString &src : sources) {
+        auto *item = new QListWidgetItem(src, m_srcList);
+        item->setCheckState(Qt::Unchecked);
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+    }
 }
 
 } // namespace bookhub::gui

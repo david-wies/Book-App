@@ -6,6 +6,7 @@ class QStackedWidget;
 class QButtonGroup;
 class QLabel;
 class MainWindowTest; // test friend — defined in tests/gui/
+class QThread;
 
 namespace bookhub::gui {
 
@@ -13,6 +14,7 @@ class LibraryScreen;
 class LibraryService;
 class SearchScreen;
 class ExploreScreen;
+class QueryWorker;
 
 // ---------------------------------------------------------------------------
 // MainWindow — the top-level QMainWindow for BookHub.
@@ -30,6 +32,7 @@ class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
     explicit MainWindow(QWidget *parent = nullptr);
+    ~MainWindow() override;
 
 public slots:
     // Connected to CollectorWorker signals (queued connection from main.cpp).
@@ -47,10 +50,13 @@ private:
     void buildStatusBar();
     void setStatusDot(const QColor &color);
 
+    QThread        *m_queryThread{};
+    QueryWorker    *m_queryWorker{};
+    LibraryService *m_libraryService{};
+
     QWidget        *m_navBar{};
     QStackedWidget *m_stack{};
     QButtonGroup   *m_navGroup{};
-    LibraryService *m_libraryService{};
     LibraryScreen  *m_libraryScreen{};
     SearchScreen   *m_searchScreen{};
     ExploreScreen  *m_exploreScreen{};

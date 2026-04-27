@@ -1,5 +1,6 @@
 #include "library_screen.h"
 #include "../services/library_service.h"
+#include "../query_worker.h"
 #include "../widgets/book_card_delegate.h"
 #include "../widgets/empty_state_widget.h"
 #include "../style_tokens.h"
@@ -29,10 +30,12 @@ static const char* kSortColumns[] = {
     "status",     // 3: Status
 };
 
-LibraryScreen::LibraryScreen(QWidget *parent)
+LibraryScreen::LibraryScreen(QueryWorker *worker, QWidget *parent)
     : QWidget(parent)
 {
-    init(new LibraryService(this));
+    auto *service = new LibraryService(this);
+    service->connectToWorker(worker);
+    init(service);
 }
 
 LibraryScreen::LibraryScreen(LibraryService *service, QWidget *parent)
@@ -43,6 +46,8 @@ LibraryScreen::LibraryScreen(LibraryService *service, QWidget *parent)
 
 void LibraryScreen::init(LibraryService *service)
 {
+    m_service = service;
+
     setStyleSheet(QStringLiteral("background-color: %1;").arg(ColorBackground));
 
     auto *root = new QVBoxLayout(this);
@@ -113,9 +118,10 @@ void LibraryScreen::init(LibraryService *service)
     m_stack->setCurrentIndex(2);      // show loading until first reload() completes
 
     // Wire up service
-    m_service = service;
     connect(m_service, &LibraryService::libraryChanged,
             this, &LibraryScreen::reload);
+    connect(m_service, &LibraryService::fetchItemsCompleted,
+            this, &LibraryScreen::onFetchItemsCompleted);
 
     // Wire up delegate signals
     connect(m_delegate, &BookCardDelegate::detailsRequested,
@@ -212,12 +218,17 @@ void LibraryScreen::reload()
 {
     const int sortIdx = m_sortCombo ? m_sortCombo->currentIndex() : 0;
     const QString col = QString::fromLatin1(kSortColumns[sortIdx]);
-    const QList<LibraryItem> items = m_service->fetchItems(col);
+    m_stack->setCurrentIndex(2); // show loading while query is in flight
+    m_pendingFetchId = m_service->requestFetchItems(col);
+}
+
+void LibraryScreen::onFetchItemsCompleted(quint64 requestId, QList<LibraryItem> items)
+{
+    if (requestId < m_pendingFetchId)
+        return; // stale response — a newer reload() is already in flight
 
     populateModel(items);
     updateCountLabel(items.size());
-
-    // Show empty state or list depending on whether data is available.
     m_stack->setCurrentIndex(items.isEmpty() ? 1 : 0);
 }
 
@@ -334,7 +345,7 @@ void LibraryScreen::onRemoveRequested(int libraryItemId, const QString &bookId)
         QMessageBox::Cancel);
 
     if (answer == QMessageBox::Yes)
-        m_service->removeBook(libraryItemId);
+        m_service->requestRemoveBook(libraryItemId);
 }
 
 } // namespace bookhub::gui

@@ -7,6 +7,7 @@
 #include "gui/screens/explore_screen.h"
 
 #include "support/test_database_utils.h"
+#include "support/test_query_worker.h"
 
 #include <QtTest>
 #include <memory>
@@ -25,6 +26,7 @@ private slots:
 
 private:
     std::unique_ptr<bookhub::tests::TestDatabase> m_db;
+    TestQueryWorker *m_worker{};
 };
 
 void ExploreScreenTest::init()
@@ -42,16 +44,20 @@ void ExploreScreenTest::init()
         QVERIFY(bookhub::tests::execSql(m_db->database(), QStringLiteral(
             "INSERT INTO book_genres (book_id, genre_id) VALUES ('epic:%1', 1)").arg(i)));
     }
+
+    m_worker = new TestQueryWorker();
 }
 
 void ExploreScreenTest::cleanup()
 {
+    delete m_worker;
+    m_worker = nullptr;
     m_db.reset();
 }
 
 void ExploreScreenTest::categoryClick_updatesBreadcrumbAndSupportsBack()
 {
-    ExploreScreen screen;
+    ExploreScreen screen(m_worker);
     screen.onCategoryClicked(QStringLiteral("Epic"));
 
     QCOMPARE(screen.m_exploreStack->currentIndex(), 1);
@@ -68,7 +74,7 @@ void ExploreScreenTest::categoryClick_updatesBreadcrumbAndSupportsBack()
 
 void ExploreScreenTest::loadMoreAndBookClick_emitExpectedSignals()
 {
-    ExploreScreen screen;
+    ExploreScreen screen(m_worker);
     QSignalSpy spy(&screen, &ExploreScreen::bookDetailsRequested);
 
     screen.onCategoryClicked(QStringLiteral("Epic"));

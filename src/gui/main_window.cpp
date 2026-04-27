@@ -1,5 +1,7 @@
 #include "main_window.h"
 #include "style_tokens.h"
+#include "query_worker.h"
+#include "services/library_service.h"
 #include "screens/library_screen.h"
 #include "screens/search_screen.h"
 #include "screens/explore_screen.h"
@@ -14,6 +16,7 @@
 #include <QLabel>
 #include <QWidget>
 #include <QFrame>
+#include <QThread>
 
 namespace bookhub::gui {
 
@@ -24,7 +27,31 @@ MainWindow::MainWindow(QWidget *parent)
     setMinimumSize(WindowMinWidth, WindowMinHeight);
     resize(WindowDefWidth, WindowDefHeight);
 
-    // Root layout inside the central widget
+    // -----------------------------------------------------------------------
+    // Query thread — must be set up before any screen that calls connectToWorker().
+    // The worker is parented to nothing so moveToThread() can transfer ownership.
+    // -----------------------------------------------------------------------
+    m_queryThread  = new QThread(this);
+    m_queryWorker  = new QueryWorker();   // no parent — will be moved to thread
+    m_queryWorker->moveToThread(m_queryThread);
+
+    connect(m_queryThread, &QThread::started,
+            m_queryWorker, &QueryWorker::onThreadStarted);
+    connect(m_queryThread, &QThread::finished,
+            m_queryWorker, &QueryWorker::onThreadFinished);
+    connect(m_queryThread, &QThread::finished,
+            m_queryWorker, &QObject::deleteLater);
+
+    m_queryThread->start();
+
+    // Shared LibraryService — owned by MainWindow, passed to both LibraryScreen
+    // and SearchScreen so they see the same libraryChanged notifications.
+    m_libraryService = new LibraryService(this);
+    m_libraryService->connectToWorker(m_queryWorker);
+
+    // -----------------------------------------------------------------------
+    // Root layout
+    // -----------------------------------------------------------------------
     auto *central = new QWidget(this);
     setCentralWidget(central);
     auto *root = new QVBoxLayout(central);
@@ -42,10 +69,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_stack = new QStackedWidget(central);
     root->addWidget(m_stack, 1);
 
-    // Shared library service so SearchScreen writes are visible in LibraryScreen
-    m_libraryService = new LibraryService(this);
-
-    // Screen 0: Library (implemented)
+    // Screen 0: Library
     m_libraryScreen = new LibraryScreen(m_libraryService, m_stack);
     connect(m_libraryScreen, &LibraryScreen::exploreRequested,
             this, &MainWindow::onLibraryExploreRequested);
@@ -55,16 +79,16 @@ MainWindow::MainWindow(QWidget *parent)
             });
     m_stack->addWidget(m_libraryScreen); // index 0
 
-    // Screen 1: Search (Task 7)
-    m_searchScreen = new SearchScreen(m_libraryService, m_stack);
+    // Screen 1: Search — borrows the shared LibraryService
+    m_searchScreen = new SearchScreen(m_libraryService, m_queryWorker, m_stack);
     connect(m_searchScreen, &SearchScreen::bookDetailsRequested,
             this, [](const QString & /*bookId*/) {
                 // TODO: show BookDetailsPanel (Task 9)
             });
     m_stack->addWidget(m_searchScreen); // index 1
 
-    // Screen 2: Explore (Task 8)
-    m_exploreScreen = new ExploreScreen(m_stack);
+    // Screen 2: Explore
+    m_exploreScreen = new ExploreScreen(m_queryWorker, m_stack);
     connect(m_exploreScreen, &ExploreScreen::bookDetailsRequested,
             this, [](const QString & /*bookId*/) {
                 // TODO: show BookDetailsPanel (Task 9)
@@ -75,6 +99,16 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Status bar
     buildStatusBar();
+}
+
+MainWindow::~MainWindow()
+{
+    m_queryThread->quit();
+    if (!m_queryThread->wait(3000)) {
+        qWarning() << "QueryWorker: thread did not stop within 3 s — forcing termination";
+        m_queryThread->terminate();
+        m_queryThread->wait();
+    }
 }
 
 void MainWindow::buildNavBar()

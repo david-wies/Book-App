@@ -1,4 +1,5 @@
 #include "search_service.h"
+#include "../query_worker.h"
 
 #include <QSqlDatabase>
 #include <QSqlQuery>
@@ -12,12 +13,105 @@ SearchService::SearchService(QObject *parent)
     : QObject(parent)
 {}
 
+void SearchService::connectToWorker(QueryWorker *worker)
+{
+    // Route requests to worker (Qt::AutoConnection → queued cross-thread, direct same-thread)
+    connect(this, &SearchService::searchRequested,
+            worker, &QueryWorker::handleSearchRequest);
+    connect(this, &SearchService::countRequested,
+            worker, &QueryWorker::handleCountRequest);
+    connect(this, &SearchService::languagesRequested,
+            worker, &QueryWorker::handleLanguagesRequest);
+    connect(this, &SearchService::sourcesRequested,
+            worker, &QueryWorker::handleSourcesRequest);
+    connect(this, &SearchService::genresRequested,
+            worker, &QueryWorker::handleGenresRequest);
+
+    // Relay results back from worker to callers
+    connect(worker, &QueryWorker::searchCompleted, this,
+            [this](quint64 id, QList<SearchResult> results) {
+                --m_pendingCount;
+                emit searchCompleted(id, results);
+            });
+    connect(worker, &QueryWorker::countCompleted, this,
+            [this](quint64 id, int count) {
+                --m_pendingCount;
+                emit countCompleted(id, count);
+            });
+    connect(worker, &QueryWorker::languagesCompleted, this,
+            [this](quint64 id, QStringList langs) {
+                --m_pendingCount;
+                emit languagesCompleted(id, langs);
+            });
+    connect(worker, &QueryWorker::sourcesCompleted, this,
+            [this](quint64 id, QStringList srcs) {
+                --m_pendingCount;
+                emit sourcesCompleted(id, srcs);
+            });
+    connect(worker, &QueryWorker::genresCompleted, this,
+            [this](quint64 id, QStringList genres) {
+                --m_pendingCount;
+                emit genresCompleted(id, genres);
+            });
+}
+
+bool SearchService::isBusy() const
+{
+    return m_pendingCount > 0;
+}
+
+quint64 SearchService::peekNextId() const
+{
+    return m_nextRequestId.load(std::memory_order_relaxed);
+}
+
+quint64 SearchService::requestSearch(const SearchParams &params, int offset, int limit)
+{
+    const quint64 id = m_nextRequestId.fetch_add(1, std::memory_order_relaxed);
+    ++m_pendingCount;
+    emit searchRequested(id, params, offset, limit);
+    return id;
+}
+
+quint64 SearchService::requestCount(const SearchParams &params)
+{
+    const quint64 id = m_nextRequestId.fetch_add(1, std::memory_order_relaxed);
+    ++m_pendingCount;
+    emit countRequested(id, params);
+    return id;
+}
+
+quint64 SearchService::requestLanguages()
+{
+    const quint64 id = m_nextRequestId.fetch_add(1, std::memory_order_relaxed);
+    ++m_pendingCount;
+    emit languagesRequested(id);
+    return id;
+}
+
+quint64 SearchService::requestSources()
+{
+    const quint64 id = m_nextRequestId.fetch_add(1, std::memory_order_relaxed);
+    ++m_pendingCount;
+    emit sourcesRequested(id);
+    return id;
+}
+
+quint64 SearchService::requestGenres()
+{
+    const quint64 id = m_nextRequestId.fetch_add(1, std::memory_order_relaxed);
+    ++m_pendingCount;
+    emit genresRequested(id);
+    return id;
+}
+
 // ---------------------------------------------------------------------------
-// Internal helpers
+// Internal helpers (used by the internal free functions below)
 // ---------------------------------------------------------------------------
 
+namespace internal {
+
 // Escape SQLite LIKE wildcards so user-supplied text is treated as literal.
-// The backslash escape character is declared in every LIKE clause below.
 static QString escapeLike(const QString &raw)
 {
     QString out = raw;
@@ -27,11 +121,6 @@ static QString escapeLike(const QString &raw)
     return out;
 }
 
-// Builds the WHERE clause and binds values into `query` for all active
-// filters. Returns false if binding fails. The IN-list filters (genres,
-// languages, sources) use one `?` placeholder per value so no user input
-// is ever interpolated into SQL text.
-// Parameter order must exactly match the placeholders produced by buildSql.
 static bool bindParams(QSqlQuery &query,
                        const SearchParams &p,
                        int offset,
@@ -87,9 +176,6 @@ static bool bindParams(QSqlQuery &query,
     return true;
 }
 
-// Generates the WHERE fragment + GROUP BY + ORDER BY + LIMIT/OFFSET.
-// IN-list placeholders are generated here so bindParams and the SQL text
-// always agree on the number of bound parameters.
 static QString buildSql(const SearchParams &p, bool isCount)
 {
     // Genre IN clause
@@ -122,33 +208,24 @@ static QString buildSql(const SearchParams &p, bool isCount)
         srcFilter = QStringLiteral("AND s.source_name IN (%1)").arg(ph.join(QLatin1String(",")));
     }
 
-    // Keyword filter clause — omitted entirely when no keyword is set so no
-    // binding placeholder is emitted. bindParams must bind in the same order.
     const QString kwFilter = p.keyword.trimmed().isEmpty()
         ? QString{}
         : QStringLiteral("AND (b.title LIKE ? ESCAPE '\\' OR b.author LIKE ? ESCAPE '\\')");
 
-    // Author filter clause — omitted when author field is empty.
     const QString authorFilter = p.author.trimmed().isEmpty()
         ? QString{}
         : QStringLiteral("AND b.author LIKE ? ESCAPE '\\'");
 
-    // Genre JOIN is only needed when a genre filter is active; otherwise the
-    // LEFT JOIN avoids expanding rows for books that have multiple genres.
     const QString genreJoin = p.genres.isEmpty()
         ? QStringLiteral("LEFT JOIN book_genres bg ON b.book_id = bg.book_id\n"
                          "        LEFT JOIN genres g ON bg.genre_id = g.id")
         : QStringLiteral("JOIN book_genres bg ON b.book_id = bg.book_id\n"
                          "        JOIN genres g ON bg.genre_id = g.id");
 
-    // The audiobook filter targets library_items.status — force an INNER JOIN
-    // when that flag is set; otherwise LEFT JOIN suffices.
     const QString liJoin = p.audiobookOnly
         ? QStringLiteral("JOIN library_items li ON b.book_id = li.book_id")
         : QStringLiteral("LEFT JOIN library_items li ON b.book_id = li.book_id");
 
-    // Whitelist the sort column to prevent SQL injection; only "author" is an
-    // alternative — everything else falls back to the default "title".
     const QString orderCol = (p.sortColumn == QLatin1String("author"))
                              ? QStringLiteral("b.author")
                              : QStringLiteral("b.title");
@@ -206,18 +283,19 @@ static QString buildSql(const SearchParams &p, bool isCount)
 }
 
 // ---------------------------------------------------------------------------
+// Public internal API
+// ---------------------------------------------------------------------------
 
-QList<SearchResult> SearchService::search(const SearchParams &params,
-                                          int offset,
-                                          int limit) const
+QList<SearchResult> runSearch(const SearchParams &params, int offset, int limit,
+                               const QString &connectionName)
 {
     const QString sql = buildSql(params, false);
-    QSqlQuery query(QSqlDatabase::database());
+    QSqlQuery query(QSqlDatabase::database(connectionName));
     query.prepare(sql);
     bindParams(query, params, offset, limit, false);
 
     if (!query.exec()) {
-        qWarning() << "SearchService::search failed:" << query.lastError().text();
+        qWarning() << "internal::runSearch failed:" << query.lastError().text();
         return {};
     }
 
@@ -247,27 +325,26 @@ QList<SearchResult> SearchService::search(const SearchParams &params,
     return results;
 }
 
-int SearchService::count(const SearchParams &params) const
+int runCount(const SearchParams &params, const QString &connectionName)
 {
     const QString sql = buildSql(params, true);
-    QSqlQuery query(QSqlDatabase::database());
+    QSqlQuery query(QSqlDatabase::database(connectionName));
     query.prepare(sql);
     bindParams(query, params, 0, 0, true);
 
     if (!query.exec() || !query.next()) {
-        qWarning() << "SearchService::count failed:" << query.lastError().text();
+        qWarning() << "internal::runCount failed:" << query.lastError().text();
         return 0;
     }
     return query.value(0).toInt();
 }
 
-QStringList SearchService::fetchDistinctLanguages() const
+QStringList fetchLanguages(const QString &connectionName)
 {
-    QSqlQuery query(QSqlDatabase::database());
+    QSqlQuery query(QSqlDatabase::database(connectionName));
     if (!query.exec(QStringLiteral(
             "SELECT DISTINCT language FROM editions ORDER BY language"))) {
-        qWarning() << "SearchService::fetchDistinctLanguages failed:"
-                   << query.lastError().text();
+        qWarning() << "internal::fetchLanguages failed:" << query.lastError().text();
         return {};
     }
     QStringList result;
@@ -276,13 +353,12 @@ QStringList SearchService::fetchDistinctLanguages() const
     return result;
 }
 
-QStringList SearchService::fetchDistinctSources() const
+QStringList fetchSources(const QString &connectionName)
 {
-    QSqlQuery query(QSqlDatabase::database());
+    QSqlQuery query(QSqlDatabase::database(connectionName));
     if (!query.exec(QStringLiteral(
             "SELECT DISTINCT source_name FROM sources ORDER BY source_name"))) {
-        qWarning() << "SearchService::fetchDistinctSources failed:"
-                   << query.lastError().text();
+        qWarning() << "internal::fetchSources failed:" << query.lastError().text();
         return {};
     }
     QStringList result;
@@ -291,12 +367,12 @@ QStringList SearchService::fetchDistinctSources() const
     return result;
 }
 
-QStringList SearchService::fetchGenres() const
+QStringList fetchGenres(const QString &connectionName)
 {
-    QSqlQuery query(QSqlDatabase::database());
+    QSqlQuery query(QSqlDatabase::database(connectionName));
     if (!query.exec(QStringLiteral(
             "SELECT genre_name FROM genres ORDER BY genre_name"))) {
-        qWarning() << "SearchService::fetchGenres failed:" << query.lastError().text();
+        qWarning() << "internal::fetchGenres failed:" << query.lastError().text();
         return {};
     }
     QStringList result;
@@ -304,5 +380,7 @@ QStringList SearchService::fetchGenres() const
         result.append(query.value(0).toString());
     return result;
 }
+
+} // namespace internal
 
 } // namespace bookhub::gui
