@@ -285,7 +285,6 @@ void BookDetailsPanelTest::dismissButton_emitsDismissedSignal()
     BookDetailsPanel panel(m_libraryService, m_worker);
     QSignalSpy spy(&panel, &BookDetailsPanel::dismissed);
 
-    auto *backBtn = panel.findChildren<QPushButton *>().first();
     // find the button with "Back" text
     auto it = std::find_if(panel.findChildren<QPushButton *>().begin(),
                            panel.findChildren<QPushButton *>().end(),
