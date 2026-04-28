@@ -33,6 +33,7 @@ inline constexpr const char* ColorLangBadgeText = "#1D4ED8";
 inline constexpr const char* ColorLangBadgeBorder= "#BFDBFE";
 
 inline constexpr const char* ColorSrcBadgeBg    = "#F0FDF4";
+inline constexpr const char* ColorSrcBadgeHover = "#DCFCE7";
 inline constexpr const char* ColorSrcBadgeText  = "#15803D";
 inline constexpr const char* ColorSrcBadgeBorder= "#BBF7D0";
 

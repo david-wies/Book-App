@@ -49,7 +49,8 @@ void BookDetailsPanel::loadBook(const QString &bookId)
 {
     m_currentBookId = bookId;
     m_outerStack->setCurrentIndex(0); // show loading before the request fires
-    m_pendingDetailsId = m_detailsService->requestBookDetails(bookId);
+    m_pendingDetailsId = m_detailsService->peekNextId();
+    m_detailsService->requestBookDetails(bookId);
 }
 
 // ---------------------------------------------------------------------------
@@ -58,23 +59,24 @@ void BookDetailsPanel::loadBook(const QString &bookId)
 
 void BookDetailsPanel::onDetailsCompleted(quint64 requestId, BookDetails details)
 {
-    if (requestId < m_pendingDetailsId)
+    if (requestId != m_pendingDetailsId)
         return;
 
     populateDetails(details);
     m_outerStack->setCurrentIndex(1); // reveal content
 
-    if (!details.editions.isEmpty())
-        m_pendingFormatsId =
-            m_detailsService->requestFormatsForEdition(details.editions.first().editionId);
-    else
+    if (!details.editions.isEmpty()) {
+        m_pendingFormatsId = m_detailsService->peekNextId();
+        m_detailsService->requestFormatsForEdition(details.editions.first().editionId);
+    } else {
         populateFormats({});
+    }
 }
 
 void BookDetailsPanel::onFormatsCompleted(quint64 requestId,
                                           QList<BookFormatEntry> formats)
 {
-    if (requestId < m_pendingFormatsId)
+    if (requestId != m_pendingFormatsId)
         return;
     populateFormats(formats);
 }
@@ -83,28 +85,31 @@ void BookDetailsPanel::onLanguageChanged(int index)
 {
     if (index < 0 || index >= m_editionIds.size())
         return;
-    m_pendingFormatsId =
-        m_detailsService->requestFormatsForEdition(m_editionIds.at(index));
+    m_pendingFormatsId = m_detailsService->peekNextId();
+    m_detailsService->requestFormatsForEdition(m_editionIds.at(index));
 }
 
 void BookDetailsPanel::onAddToLibraryClicked()
 {
     const int editionId = m_editionIds.value(m_langCombo->currentIndex(), 0);
     m_libraryBtn->setEnabled(false);
-    m_pendingAddId = m_libraryService->requestAddBook(m_currentBookId, editionId);
+    m_pendingAddId = m_libraryService->peekNextId();
+    m_libraryService->requestAddBook(m_currentBookId, editionId);
 }
 
 void BookDetailsPanel::onRemoveFromLibraryClicked()
 {
     m_libraryBtn->setEnabled(false);
-    m_pendingRemoveId = m_libraryService->requestRemoveBook(m_libraryItemId);
+    m_pendingRemoveId = m_libraryService->peekNextId();
+    m_libraryService->requestRemoveBook(m_libraryItemId);
 }
 
 void BookDetailsPanel::onAddBookCompleted(quint64 requestId, QString /*bookId*/,
                                           bool success, int newId)
 {
-    if (requestId < m_pendingAddId)
+    if (requestId != m_pendingAddId)
         return;
+    m_pendingAddId = 0;
     if (success) {
         m_inLibrary     = true;
         m_libraryItemId = newId;
@@ -114,8 +119,9 @@ void BookDetailsPanel::onAddBookCompleted(quint64 requestId, QString /*bookId*/,
 
 void BookDetailsPanel::onRemoveBookCompleted(quint64 requestId, bool success)
 {
-    if (requestId < m_pendingRemoveId)
+    if (requestId != m_pendingRemoveId)
         return;
+    m_pendingRemoveId = 0;
     if (success) {
         m_inLibrary     = false;
         m_libraryItemId = 0;
@@ -525,7 +531,7 @@ void BookDetailsPanel::populateFormats(const QList<BookFormatEntry> &formats)
                 "QPushButton:hover { background: %6; }")
                 .arg(ColorSrcBadgeText, ColorSrcBadgeBg, ColorSrcBadgeBorder)
                 .arg(RadiusPill).arg(FontSizeBadge)
-                .arg(ColorLangBadgeBg));
+                .arg(ColorSrcBadgeHover));
             rowLayout->addWidget(srcBtn);
         }
 

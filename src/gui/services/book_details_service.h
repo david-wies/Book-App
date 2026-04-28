@@ -53,6 +53,9 @@ public:
 
     void connectToWorker(QueryWorker *worker);
 
+    // Call before request*() to capture the pending ID before synchronous dispatch.
+    quint64 peekNextId() const { return m_nextRequestId; }
+
     quint64 requestBookDetails(const QString &bookId);
     quint64 requestFormatsForEdition(int editionId);
 
