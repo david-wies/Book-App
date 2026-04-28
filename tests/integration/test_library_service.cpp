@@ -12,6 +12,7 @@ class LibraryServiceTest : public QObject
 private slots:
     void fetchItems_returnsRowsInRequestedSortOrder();
     void writeOperations_mutateRows();
+    void removeBookByBookId_deletesRowAndReturnsTrueOnNoMatch();
 };
 
 void LibraryServiceTest::fetchItems_returnsRowsInRequestedSortOrder()
@@ -56,6 +57,30 @@ void LibraryServiceTest::writeOperations_mutateRows()
     QCOMPARE(testDb.scalarInt(QStringLiteral(
         "SELECT COUNT(*) FROM library_items WHERE id = %1").arg(addedId)),
         0);
+}
+
+void LibraryServiceTest::removeBookByBookId_deletesRowAndReturnsTrueOnNoMatch()
+{
+    bookhub::tests::TestDatabase testDb;
+    QVERIFY(testDb.open());
+    QVERIFY(testDb.createSchema());
+    QVERIFY(testDb.insertSampleData());
+
+    const int editionId = testDb.scalarInt(QStringLiteral(
+        "SELECT id FROM editions WHERE book_id = 'gutenberg:1184' AND language = 'English'"));
+    QVERIFY(editionId > 0);
+
+    const int addedId =
+        internal::addBook(QStringLiteral("gutenberg:1184"), editionId, testDb.connection());
+    QVERIFY(addedId > 0);
+
+    QVERIFY(internal::removeBookByBookId(QStringLiteral("gutenberg:1184"), testDb.connection()));
+    QCOMPARE(testDb.scalarInt(QStringLiteral(
+        "SELECT COUNT(*) FROM library_items WHERE book_id = 'gutenberg:1184'")),
+        0);
+
+    // Deleting a book that is not in the library is not an error.
+    QVERIFY(internal::removeBookByBookId(QStringLiteral("gutenberg:1184"), testDb.connection()));
 }
 
 QTEST_GUILESS_MAIN(LibraryServiceTest)
