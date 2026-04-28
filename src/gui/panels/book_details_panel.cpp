@@ -101,7 +101,7 @@ void BookDetailsPanel::onRemoveFromLibraryClicked()
 {
     m_libraryBtn->setEnabled(false);
     m_pendingRemoveId = m_libraryService->peekNextId();
-    m_libraryService->requestRemoveBook(m_libraryItemId);
+    m_libraryService->requestRemoveBook(m_libraryItemId, m_currentBookId);
 }
 
 void BookDetailsPanel::onAddBookCompleted(quint64 requestId, QString /*bookId*/,
@@ -117,7 +117,7 @@ void BookDetailsPanel::onAddBookCompleted(quint64 requestId, QString /*bookId*/,
     setLibraryButtonState(m_inLibrary);
 }
 
-void BookDetailsPanel::onRemoveBookCompleted(quint64 requestId, bool success)
+void BookDetailsPanel::onRemoveBookCompleted(quint64 requestId, QString /*bookId*/, bool success)
 {
     if (requestId != m_pendingRemoveId)
         return;

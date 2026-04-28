@@ -43,7 +43,8 @@ public slots:
     // Library
     virtual void handleFetchItemsRequest(quint64 requestId, QString sortColumn);
     virtual void handleAddBookRequest(quint64 requestId, QString bookId, int editionId);
-    virtual void handleRemoveBookRequest(quint64 requestId, int libraryItemId);
+    virtual void handleRemoveBookRequest(quint64 requestId, int libraryItemId, QString bookId);
+    virtual void handleRemoveBookByBookIdRequest(quint64 requestId, QString bookId);
     virtual void handleUpdateStatusRequest(quint64 requestId, int libraryItemId, QString status);
 
     // Explore
@@ -67,7 +68,7 @@ signals:
     // Library results
     void fetchItemsCompleted(quint64 requestId, QList<bookhub::gui::LibraryItem> items);
     void addBookCompleted(quint64 requestId, QString bookId, bool success, int newId);
-    void removeBookCompleted(quint64 requestId, bool success);
+    void removeBookCompleted(quint64 requestId, QString bookId, bool success);
     void updateStatusCompleted(quint64 requestId, bool success);
 
     // Explore results

@@ -89,10 +89,16 @@ void QueryWorker::handleAddBookRequest(quint64 requestId, QString bookId, int ed
     emit addBookCompleted(requestId, bookId, newId > 0, newId);
 }
 
-void QueryWorker::handleRemoveBookRequest(quint64 requestId, int libraryItemId)
+void QueryWorker::handleRemoveBookRequest(quint64 requestId, int libraryItemId, QString bookId)
 {
-    emit removeBookCompleted(requestId,
-        internal::removeBook(libraryItemId, conn()));
+    const bool ok = internal::removeBook(libraryItemId, conn());
+    emit removeBookCompleted(requestId, bookId, ok);
+}
+
+void QueryWorker::handleRemoveBookByBookIdRequest(quint64 requestId, QString bookId)
+{
+    const bool ok = internal::removeBookByBookId(bookId, conn());
+    emit removeBookCompleted(requestId, bookId, ok);
 }
 
 void QueryWorker::handleUpdateStatusRequest(quint64 requestId, int libraryItemId,

@@ -193,6 +193,8 @@ bool SearchResultDelegate::editorEvent(QEvent *event,
         const bool inLibrary = index.data(SearchRole::InLibrary).toBool();
         if (!inLibrary)
             emit addToLibraryRequested(bookId);
+        else
+            emit removeFromLibraryRequested(bookId);
         return true;
     }
 
