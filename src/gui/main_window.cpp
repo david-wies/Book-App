@@ -1,4 +1,5 @@
 #include "main_window.h"
+#include "panels/book_details_panel.h"
 #include "query_worker.h"
 #include "screens/explore_screen.h"
 #include "screens/library_screen.h"
@@ -11,6 +12,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
+#include <QSplitter>
 #include <QStackedWidget>
 #include <QStatusBar>
 #include <QThread>
@@ -64,37 +66,48 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
   buildNavBar();
   root->addWidget(m_navBar);
 
-  // Content stack
-  m_stack = new QStackedWidget(central);
-  root->addWidget(m_stack, 1);
+  // Content splitter — left: screen stack, right: book details panel (hidden initially)
+  m_contentSplitter = new QSplitter(Qt::Horizontal, central);
+  m_contentSplitter->setHandleWidth(1);
+  m_contentSplitter->setChildrenCollapsible(false);
+  m_contentSplitter->setStyleSheet(
+      QStringLiteral("QSplitter::handle { background-color: %1; }").arg(ColorBorder));
+  root->addWidget(m_contentSplitter, 1);
+
+  // Screen stack (left pane)
+  m_stack = new QStackedWidget(m_contentSplitter);
+  m_contentSplitter->addWidget(m_stack);
 
   // Screen 0: Library
   m_libraryScreen = new LibraryScreen(m_libraryService, m_stack);
   connect(m_libraryScreen, &LibraryScreen::exploreRequested, this,
           &MainWindow::onLibraryExploreRequested);
-  connect(m_libraryScreen, &LibraryScreen::bookDetailsRequested, this,
-          [](const QString & /*bookId*/) {
-            // TODO: show BookDetailsPanel (Task 9)
-          });
+  connect(m_libraryScreen, &LibraryScreen::bookDetailsRequested,
+          this, &MainWindow::onBookDetailsRequested);
   m_stack->addWidget(m_libraryScreen); // index 0
 
   // Screen 1: Search — borrows the shared LibraryService
   m_searchScreen = new SearchScreen(m_libraryService, m_queryWorker, m_stack);
-  connect(m_searchScreen, &SearchScreen::bookDetailsRequested, this,
-          [](const QString & /*bookId*/) {
-            // TODO: show BookDetailsPanel (Task 9)
-          });
+  connect(m_searchScreen, &SearchScreen::bookDetailsRequested,
+          this, &MainWindow::onBookDetailsRequested);
   m_stack->addWidget(m_searchScreen); // index 1
 
   // Screen 2: Explore
   m_exploreScreen = new ExploreScreen(m_queryWorker, m_stack);
-  connect(m_exploreScreen, &ExploreScreen::bookDetailsRequested, this,
-          [](const QString & /*bookId*/) {
-            // TODO: show BookDetailsPanel (Task 9)
-          });
+  connect(m_exploreScreen, &ExploreScreen::bookDetailsRequested,
+          this, &MainWindow::onBookDetailsRequested);
   m_stack->addWidget(m_exploreScreen); // index 2
 
   m_stack->setCurrentIndex(0);
+
+  // Book details panel (right pane — hidden until a book is clicked)
+  m_bookDetailsPanel =
+      new BookDetailsPanel(m_libraryService, m_queryWorker, m_contentSplitter);
+  m_contentSplitter->addWidget(m_bookDetailsPanel);
+  m_bookDetailsPanel->hide();
+
+  connect(m_bookDetailsPanel, &BookDetailsPanel::dismissed,
+          this, &MainWindow::onBookDetailsDismissed);
 
   // Status bar
   buildStatusBar();
@@ -227,6 +240,19 @@ void MainWindow::onLibraryExploreRequested() {
   if (auto *btn = qobject_cast<QPushButton *>(m_navGroup->button(2))) {
     btn->setChecked(true);
   }
+}
+
+void MainWindow::onBookDetailsRequested(const QString &bookId) {
+  m_bookDetailsPanel->loadBook(bookId);
+  if (!m_bookDetailsPanel->isVisible()) {
+    m_bookDetailsPanel->show();
+    const int total = m_contentSplitter->width();
+    m_contentSplitter->setSizes({total / 2, total / 2});
+  }
+}
+
+void MainWindow::onBookDetailsDismissed() {
+  m_bookDetailsPanel->hide();
 }
 
 } // namespace bookhub::gui

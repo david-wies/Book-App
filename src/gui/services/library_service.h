@@ -39,6 +39,9 @@ public:
     void connectToWorker(QueryWorker *worker);
     bool isBusy() const;
 
+    // Call before request*() to capture the pending ID before synchronous dispatch.
+    quint64 peekNextId() const { return m_nextRequestId.load(std::memory_order_relaxed); }
+
     quint64 requestFetchItems(const QString &sortColumn = QStringLiteral("added_date"));
     quint64 requestAddBook(const QString &bookId, int editionId);
     quint64 requestRemoveBook(int libraryItemId);

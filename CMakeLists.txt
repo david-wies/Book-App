@@ -31,16 +31,18 @@ set(COLLECTOR_SOURCES
 
 set(GUI_SOURCES
     src/gui/main_window.cpp
+    src/gui/panels/book_details_panel.cpp
+    src/gui/screens/explore_screen.cpp
     src/gui/screens/library_screen.cpp
-    src/gui/widgets/book_card_delegate.cpp
-    src/gui/widgets/empty_state_widget.cpp
-    src/gui/widgets/badge_label.cpp
     src/gui/screens/search_screen.cpp
-    src/gui/widgets/search_result_delegate.cpp
+    src/gui/services/book_details_service.cpp
+    src/gui/services/explore_service.cpp
     src/gui/services/library_service.cpp
     src/gui/services/search_service.cpp
-    src/gui/screens/explore_screen.cpp
-    src/gui/services/explore_service.cpp
+    src/gui/widgets/badge_label.cpp
+    src/gui/widgets/book_card_delegate.cpp
+    src/gui/widgets/empty_state_widget.cpp
+    src/gui/widgets/search_result_delegate.cpp
     src/gui/query_worker.cpp
 )
 
@@ -118,3 +120,8 @@ add_bookhub_test(test_explore_screen
     tests/gui/test_explore_screen.cpp
 )
 label_bookhub_test(test_explore_screen gui explore)
+
+add_bookhub_test(test_book_details_panel
+    tests/gui/test_book_details_panel.cpp
+)
+label_bookhub_test(test_book_details_panel sanity gui details)

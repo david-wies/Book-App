@@ -1,8 +1,9 @@
 #include "query_worker.h"
 
-#include "services/search_service.h"
-#include "services/library_service.h"
+#include "services/book_details_service.h"
 #include "services/explore_service.h"
+#include "services/library_service.h"
+#include "services/search_service.h"
 
 #include <QSqlDatabase>
 #include <QSqlError>
@@ -128,6 +129,22 @@ void QueryWorker::handleBooksForGenreRequest(quint64 requestId, QString genre,
 {
     emit booksForGenreCompleted(requestId,
         internal::fetchBooksForGenre(genre, offset, limit, conn()));
+}
+
+// ---------------------------------------------------------------------------
+// Book details handlers
+// ---------------------------------------------------------------------------
+
+void QueryWorker::handleBookDetailsRequest(quint64 requestId, QString bookId)
+{
+    emit bookDetailsCompleted(requestId,
+        internal::fetchBookDetails(bookId, conn()));
+}
+
+void QueryWorker::handleFormatsForEditionRequest(quint64 requestId, int editionId)
+{
+    emit formatsForEditionCompleted(requestId,
+        internal::fetchFormatsForEdition(editionId, conn()));
 }
 
 } // namespace bookhub::gui
