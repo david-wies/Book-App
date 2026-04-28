@@ -49,7 +49,7 @@ signals:
     void addToLibraryRequested(const QString &bookId);
     void removeFromLibraryRequested(const QString &bookId);
 
-protected:
+private:
     static QRect libraryButtonRect(const QRect &rowRect);
 };
 

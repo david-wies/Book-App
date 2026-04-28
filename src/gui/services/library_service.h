@@ -53,7 +53,6 @@ signals:
     void fetchItemsCompleted(quint64 requestId, QList<bookhub::gui::LibraryItem> items);
     void addBookCompleted(quint64 requestId, QString bookId, bool success, int newId);
     void removeBookCompleted(quint64 requestId, QString bookId, bool success);
-    void removeBookByBookIdCompleted(quint64 requestId, QString bookId, bool success);
     void updateStatusCompleted(quint64 requestId, bool success);
 
     // Emitted after any successful write so views can refresh

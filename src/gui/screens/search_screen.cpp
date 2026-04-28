@@ -74,12 +74,7 @@ void SearchScreen::init(QueryWorker *worker)
             this, &SearchScreen::onGenresCompleted);
     connect(m_libraryService, &LibraryService::addBookCompleted,
             this, &SearchScreen::onAddBookCompleted);
-    // Both signals carry (requestId, bookId, success) and need the same model update.
-    // removeBookCompleted fires when BookDetailsPanel removes by libraryItemId;
-    // removeBookByBookIdCompleted fires when this screen removes by bookId directly.
     connect(m_libraryService, &LibraryService::removeBookCompleted,
-            this, &SearchScreen::onRemoveBookCompleted);
-    connect(m_libraryService, &LibraryService::removeBookByBookIdCompleted,
             this, &SearchScreen::onRemoveBookCompleted);
 
     auto *root = new QVBoxLayout(this);

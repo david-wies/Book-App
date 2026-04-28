@@ -47,14 +47,6 @@ void LibraryService::connectToWorker(QueryWorker *worker)
                 if (success)
                     emit libraryChanged();
             });
-    connect(worker, &QueryWorker::removeBookByBookIdCompleted, this,
-            [this](quint64 id, QString bookId, bool success) {
-                Q_ASSERT(m_pendingCount > 0);
-                --m_pendingCount;
-                emit removeBookByBookIdCompleted(id, bookId, success);
-                if (success)
-                    emit libraryChanged();
-            });
     connect(worker, &QueryWorker::updateStatusCompleted, this,
             [this](quint64 id, bool success) {
                 Q_ASSERT(m_pendingCount > 0);

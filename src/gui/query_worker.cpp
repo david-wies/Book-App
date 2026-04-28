@@ -98,7 +98,7 @@ void QueryWorker::handleRemoveBookRequest(quint64 requestId, int libraryItemId, 
 void QueryWorker::handleRemoveBookByBookIdRequest(quint64 requestId, QString bookId)
 {
     const bool ok = internal::removeBookByBookId(bookId, conn());
-    emit removeBookByBookIdCompleted(requestId, bookId, ok);
+    emit removeBookCompleted(requestId, bookId, ok);
 }
 
 void QueryWorker::handleUpdateStatusRequest(quint64 requestId, int libraryItemId,
