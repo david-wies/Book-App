@@ -285,13 +285,12 @@ void BookDetailsPanelTest::dismissButton_emitsDismissedSignal()
     BookDetailsPanel panel(m_libraryService, m_worker);
     QSignalSpy spy(&panel, &BookDetailsPanel::dismissed);
 
-    // find the button with "Back" text
-    auto it = std::find_if(panel.findChildren<QPushButton *>().begin(),
-                           panel.findChildren<QPushButton *>().end(),
+    const auto buttons = panel.findChildren<QPushButton *>();
+    auto it = std::find_if(buttons.begin(), buttons.end(),
                            [](QPushButton *b) {
                                return b->text().contains(QStringLiteral("Back"));
                            });
-    QVERIFY(it != panel.findChildren<QPushButton *>().end());
+    QVERIFY(it != buttons.end());
     (*it)->click();
 
     QCOMPARE(spy.count(), 1);
