@@ -74,6 +74,10 @@ void SearchScreen::init(QueryWorker *worker)
             this, &SearchScreen::onGenresCompleted);
     connect(m_libraryService, &LibraryService::addBookCompleted,
             this, &SearchScreen::onAddBookCompleted);
+    connect(m_libraryService, &LibraryService::removeBookCompleted,
+            this, &SearchScreen::onRemoveBookCompleted);
+    connect(m_libraryService, &LibraryService::removeBookByBookIdCompleted,
+            this, &SearchScreen::onRemoveBookCompleted);
 
     auto *root = new QVBoxLayout(this);
     root->setContentsMargins(SpacingMD, SpacingMD, SpacingMD, SpacingMD);
@@ -450,6 +454,8 @@ void SearchScreen::buildResultsPane(QWidget *pane)
 
     connect(m_delegate, &SearchResultDelegate::addToLibraryRequested,
             this, &SearchScreen::onAddToLibrary);
+    connect(m_delegate, &SearchResultDelegate::removeFromLibraryRequested,
+            this, &SearchScreen::onRemoveFromLibrary);
     connect(m_delegate, &SearchResultDelegate::detailsRequested,
             this, &SearchScreen::bookDetailsRequested);
 
@@ -703,6 +709,11 @@ void SearchScreen::onAddToLibrary(const QString &bookId)
     m_libraryService->requestAddBook(bookId, 0);
 }
 
+void SearchScreen::onRemoveFromLibrary(const QString &bookId)
+{
+    m_libraryService->requestRemoveBookByBookId(bookId);
+}
+
 void SearchScreen::onAddBookCompleted(quint64 /*requestId*/, QString bookId,
                                        bool success, int /*newId*/)
 {
@@ -713,6 +724,20 @@ void SearchScreen::onAddBookCompleted(quint64 /*requestId*/, QString bookId,
         auto *item = m_model->item(r);
         if (item->data(SearchRole::BookId).toString() == bookId) {
             item->setData(true, SearchRole::InLibrary);
+            break;
+        }
+    }
+}
+
+void SearchScreen::onRemoveBookCompleted(quint64 /*requestId*/, QString bookId, bool success)
+{
+    if (!success)
+        return;
+
+    for (int r = 0; r < m_model->rowCount(); ++r) {
+        auto *item = m_model->item(r);
+        if (item->data(SearchRole::BookId).toString() == bookId) {
+            item->setData(false, SearchRole::InLibrary);
             break;
         }
     }

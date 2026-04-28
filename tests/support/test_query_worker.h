@@ -71,10 +71,16 @@ public slots:
         emit addBookCompleted(requestId, bookId, newId > 0, newId);
     }
 
-    void handleRemoveBookRequest(quint64 requestId, int libraryItemId) override
+    void handleRemoveBookRequest(quint64 requestId, int libraryItemId, QString bookId) override
     {
-        emit removeBookCompleted(requestId,
+        emit removeBookCompleted(requestId, bookId,
             internal::removeBook(libraryItemId, QSqlDatabase::defaultConnection));
+    }
+
+    void handleRemoveBookByBookIdRequest(quint64 requestId, QString bookId) override
+    {
+        emit removeBookByBookIdCompleted(requestId, bookId,
+            internal::removeBookByBookId(bookId, QSqlDatabase::defaultConnection));
     }
 
     void handleUpdateStatusRequest(quint64 requestId, int libraryItemId,

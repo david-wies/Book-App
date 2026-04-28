@@ -55,7 +55,7 @@ private slots:
     void onAddToLibraryClicked();
     void onRemoveFromLibraryClicked();
     void onAddBookCompleted(quint64 requestId, QString bookId, bool success, int newId);
-    void onRemoveBookCompleted(quint64 requestId, bool success);
+    void onRemoveBookCompleted(quint64 requestId, QString bookId, bool success);
     void onToggleSummary();
 
 private:

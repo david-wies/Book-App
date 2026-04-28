@@ -45,10 +45,11 @@ public:
                      const QModelIndex &index) override;
 
 signals:
-    void addToLibraryRequested(const QString &bookId);
     void detailsRequested(const QString &bookId);
+    void addToLibraryRequested(const QString &bookId);
+    void removeFromLibraryRequested(const QString &bookId);
 
-private:
+protected:
     static QRect libraryButtonRect(const QRect &rowRect);
 };
 

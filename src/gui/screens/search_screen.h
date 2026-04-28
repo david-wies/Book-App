@@ -53,6 +53,7 @@ private slots:
     void runSearch();
     void onLoadMore();
     void onAddToLibrary(const QString &bookId);
+    void onRemoveFromLibrary(const QString &bookId);
     void onClearFilters();
     void onSortChanged(int index);
     void onShowMoreGenres();
@@ -62,6 +63,7 @@ private slots:
     void onSearchCompleted(quint64 requestId, QList<bookhub::gui::SearchResult> results);
     void onLoadMoreCompleted(quint64 requestId, QList<bookhub::gui::SearchResult> results);
     void onAddBookCompleted(quint64 requestId, QString bookId, bool success, int newId);
+    void onRemoveBookCompleted(quint64 requestId, QString bookId, bool success);
     void onLanguagesCompleted(quint64 requestId, QStringList languages);
     void onSourcesCompleted(quint64 requestId, QStringList sources);
     void onGenresCompleted(quint64 requestId, QStringList genres);

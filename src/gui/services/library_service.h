@@ -44,14 +44,16 @@ public:
 
     quint64 requestFetchItems(const QString &sortColumn = QStringLiteral("added_date"));
     quint64 requestAddBook(const QString &bookId, int editionId);
-    quint64 requestRemoveBook(int libraryItemId);
+    quint64 requestRemoveBook(int libraryItemId, const QString &bookId);
+    quint64 requestRemoveBookByBookId(const QString &bookId);
     quint64 requestUpdateStatus(int libraryItemId, const QString &status);
 
 signals:
     // Result signals — delivered on the GUI thread
     void fetchItemsCompleted(quint64 requestId, QList<bookhub::gui::LibraryItem> items);
     void addBookCompleted(quint64 requestId, QString bookId, bool success, int newId);
-    void removeBookCompleted(quint64 requestId, bool success);
+    void removeBookCompleted(quint64 requestId, QString bookId, bool success);
+    void removeBookByBookIdCompleted(quint64 requestId, QString bookId, bool success);
     void updateStatusCompleted(quint64 requestId, bool success);
 
     // Emitted after any successful write so views can refresh
@@ -60,7 +62,8 @@ signals:
     // Internal request signals — routed to QueryWorker
     void fetchItemsRequested(quint64 requestId, QString sortColumn);
     void addBookRequested(quint64 requestId, QString bookId, int editionId);
-    void removeBookRequested(quint64 requestId, int libraryItemId);
+    void removeBookRequested(quint64 requestId, int libraryItemId, QString bookId);
+    void removeBookByBookIdRequested(quint64 requestId, QString bookId);
     void updateStatusRequested(quint64 requestId, int libraryItemId, QString status);
 
 private:
@@ -80,6 +83,7 @@ namespace internal {
     int addBook(const QString &bookId, int editionId,
                 const QString &connectionName);
     bool removeBook(int libraryItemId, const QString &connectionName);
+    bool removeBookByBookId(const QString &bookId, const QString &connectionName);
     bool updateStatus(int libraryItemId, const QString &status,
                       const QString &connectionName);
 } // namespace internal

@@ -345,7 +345,7 @@ void LibraryScreen::onRemoveRequested(int libraryItemId, const QString &bookId)
         QMessageBox::Cancel);
 
     if (answer == QMessageBox::Yes)
-        m_service->requestRemoveBook(libraryItemId);
+        m_service->requestRemoveBook(libraryItemId, bookId);
 }
 
 } // namespace bookhub::gui

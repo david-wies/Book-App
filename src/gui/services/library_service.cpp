@@ -20,6 +20,8 @@ void LibraryService::connectToWorker(QueryWorker *worker)
             worker, &QueryWorker::handleAddBookRequest);
     connect(this, &LibraryService::removeBookRequested,
             worker, &QueryWorker::handleRemoveBookRequest);
+    connect(this, &LibraryService::removeBookByBookIdRequested,
+            worker, &QueryWorker::handleRemoveBookByBookIdRequest);
     connect(this, &LibraryService::updateStatusRequested,
             worker, &QueryWorker::handleUpdateStatusRequest);
 
@@ -38,10 +40,18 @@ void LibraryService::connectToWorker(QueryWorker *worker)
                     emit libraryChanged();
             });
     connect(worker, &QueryWorker::removeBookCompleted, this,
-            [this](quint64 id, bool success) {
+            [this](quint64 id, QString bookId, bool success) {
                 Q_ASSERT(m_pendingCount > 0);
                 --m_pendingCount;
-                emit removeBookCompleted(id, success);
+                emit removeBookCompleted(id, bookId, success);
+                if (success)
+                    emit libraryChanged();
+            });
+    connect(worker, &QueryWorker::removeBookByBookIdCompleted, this,
+            [this](quint64 id, QString bookId, bool success) {
+                Q_ASSERT(m_pendingCount > 0);
+                --m_pendingCount;
+                emit removeBookByBookIdCompleted(id, bookId, success);
                 if (success)
                     emit libraryChanged();
             });
@@ -76,11 +86,19 @@ quint64 LibraryService::requestAddBook(const QString &bookId, int editionId)
     return id;
 }
 
-quint64 LibraryService::requestRemoveBook(int libraryItemId)
+quint64 LibraryService::requestRemoveBook(int libraryItemId, const QString &bookId)
 {
     const quint64 id = m_nextRequestId.fetch_add(1, std::memory_order_relaxed);
     ++m_pendingCount;
-    emit removeBookRequested(id, libraryItemId);
+    emit removeBookRequested(id, libraryItemId, bookId);
+    return id;
+}
+
+quint64 LibraryService::requestRemoveBookByBookId(const QString &bookId)
+{
+    const quint64 id = m_nextRequestId.fetch_add(1, std::memory_order_relaxed);
+    ++m_pendingCount;
+    emit removeBookByBookIdRequested(id, bookId);
     return id;
 }
 
@@ -187,6 +205,19 @@ bool removeBook(int libraryItemId, const QString &connectionName)
 
     if (!query.exec()) {
         qWarning() << "internal::removeBook failed:" << query.lastError().text();
+        return false;
+    }
+    return true;
+}
+
+bool removeBookByBookId(const QString &bookId, const QString &connectionName)
+{
+    QSqlQuery query(QSqlDatabase::database(connectionName));
+    query.prepare(QStringLiteral("DELETE FROM library_items WHERE book_id = ?"));
+    query.addBindValue(bookId);
+
+    if (!query.exec()) {
+        qWarning() << "internal::removeBookByBookId failed:" << query.lastError().text();
         return false;
     }
     return true;
