@@ -5,9 +5,10 @@
 #include <QString>
 #include <QStringList>
 
-#include "services/search_service.h"
-#include "services/library_service.h"
+#include "services/book_details_service.h"
 #include "services/explore_service.h"
+#include "services/library_service.h"
+#include "services/search_service.h"
 
 namespace bookhub::gui {
 
@@ -51,6 +52,10 @@ public slots:
     virtual void handleCategoriesRequest(quint64 requestId);
     virtual void handleBooksForGenreRequest(quint64 requestId, QString genre, int offset, int limit);
 
+    // Book details
+    virtual void handleBookDetailsRequest(quint64 requestId, QString bookId);
+    virtual void handleFormatsForEditionRequest(quint64 requestId, int editionId);
+
 signals:
     // Search results
     void searchCompleted(quint64 requestId, QList<bookhub::gui::SearchResult> results);
@@ -70,6 +75,11 @@ signals:
     void newArrivalsCompleted(quint64 requestId, QList<bookhub::gui::ExploreBook> books);
     void categoriesCompleted(quint64 requestId, QList<bookhub::gui::ExploreCategory> categories);
     void booksForGenreCompleted(quint64 requestId, QList<bookhub::gui::ExploreBook> books);
+
+    // Book details results
+    void bookDetailsCompleted(quint64 requestId, bookhub::gui::BookDetails details);
+    void formatsForEditionCompleted(quint64 requestId,
+                                    QList<bookhub::gui::BookFormatEntry> formats);
 
 private:
     static constexpr const char *kConnectionName = "gui_query_connection";

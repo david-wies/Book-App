@@ -2,6 +2,7 @@
 
 #include <QMainWindow>
 
+class QSplitter;
 class QStackedWidget;
 class QButtonGroup;
 class QLabel;
@@ -10,11 +11,12 @@ class QThread;
 
 namespace bookhub::gui {
 
+class BookDetailsPanel;
+class ExploreScreen;
 class LibraryScreen;
 class LibraryService;
-class SearchScreen;
-class ExploreScreen;
 class QueryWorker;
+class SearchScreen;
 
 // ---------------------------------------------------------------------------
 // MainWindow — the top-level QMainWindow for BookHub.
@@ -42,6 +44,8 @@ public slots:
 private slots:
     void onNavTabChanged(int id, bool checked);
     void onLibraryExploreRequested();
+    void onBookDetailsRequested(const QString &bookId);
+    void onBookDetailsDismissed();
 
 private:
     friend class ::MainWindowTest;
@@ -54,12 +58,14 @@ private:
     QueryWorker    *m_queryWorker{};
     LibraryService *m_libraryService{};
 
-    QWidget        *m_navBar{};
-    QStackedWidget *m_stack{};
-    QButtonGroup   *m_navGroup{};
-    LibraryScreen  *m_libraryScreen{};
-    SearchScreen   *m_searchScreen{};
-    ExploreScreen  *m_exploreScreen{};
+    QWidget           *m_navBar{};
+    QSplitter         *m_contentSplitter{};
+    QStackedWidget    *m_stack{};
+    QButtonGroup      *m_navGroup{};
+    LibraryScreen     *m_libraryScreen{};
+    SearchScreen      *m_searchScreen{};
+    ExploreScreen     *m_exploreScreen{};
+    BookDetailsPanel  *m_bookDetailsPanel{};
 
     // Status bar widgets
     QLabel *m_statusLabel{};

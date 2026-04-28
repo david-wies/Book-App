@@ -1,9 +1,10 @@
 #pragma once
 
 #include "gui/query_worker.h"
-#include "gui/services/search_service.h"
-#include "gui/services/library_service.h"
+#include "gui/services/book_details_service.h"
 #include "gui/services/explore_service.h"
+#include "gui/services/library_service.h"
+#include "gui/services/search_service.h"
 
 #include <QSqlDatabase>
 
@@ -107,6 +108,19 @@ public slots:
         emit booksForGenreCompleted(requestId,
             internal::fetchBooksForGenre(genre, offset, limit,
                                          QSqlDatabase::defaultConnection));
+    }
+
+    void handleBookDetailsRequest(quint64 requestId, QString bookId) override
+    {
+        emit bookDetailsCompleted(requestId,
+            internal::fetchBookDetails(bookId, QSqlDatabase::defaultConnection));
+    }
+
+    void handleFormatsForEditionRequest(quint64 requestId, int editionId) override
+    {
+        emit formatsForEditionCompleted(requestId,
+            internal::fetchFormatsForEdition(editionId,
+                                             QSqlDatabase::defaultConnection));
     }
 };
 
