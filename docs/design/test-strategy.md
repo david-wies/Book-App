@@ -242,7 +242,7 @@ service.addBook("gutenberg:1184", editionId);
 
 Using `keyword = " "` to retrieve all results is fragile: if the service trims whitespace before
 querying, it returns zero results, and an assertion like `QVERIFY(results.size() >= N)` passes
-vacously. Use `SearchParams{}` with no keyword to express "no filter", or test the empty‑keyword
+vacuously. Use `SearchParams{}` with no keyword to express "no filter", or test the empty‑keyword
 contract explicitly with `QCOMPARE`.
 
 ### Avoid `QTest::qWait` for debounce timing
