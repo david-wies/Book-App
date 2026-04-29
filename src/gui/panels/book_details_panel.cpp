@@ -398,7 +398,7 @@ void BookDetailsPanel::buildUi()
 
     m_downloadBtn = new QPushButton(QStringLiteral("↓ Download"), secondaryRow);
     m_downloadBtn->setStyleSheet(secondaryStyle);
-    m_downloadBtn->setToolTip(QStringLiteral("Download — coming soon"));
+    m_downloadBtn->setToolTip(QStringLiteral("Download this book"));
     m_downloadBtn->setEnabled(false); // Task 11
     connect(m_downloadBtn, &QPushButton::clicked, this,
             [this] { emit downloadRequested(m_currentBookId); });
@@ -479,6 +479,7 @@ void BookDetailsPanel::populateDetails(const BookDetails &details)
     }
 
     setLibraryButtonState(m_inLibrary);
+    m_downloadBtn->setEnabled(false);
 
     // Clear formats; they'll be loaded by the requestFormatsForEdition call
     // that follows immediately in onDetailsCompleted.
@@ -495,6 +496,7 @@ void BookDetailsPanel::populateFormats(const QList<BookFormatEntry> &formats)
     clearFormatsSection();
 
     if (formats.isEmpty()) {
+        m_downloadBtn->setEnabled(false);
         auto *noFmt = new QLabel(
             QStringLiteral("No downloadable formats available yet."),
             m_formatsWidget);
@@ -504,6 +506,8 @@ void BookDetailsPanel::populateFormats(const QList<BookFormatEntry> &formats)
         m_formatsLayout->addWidget(noFmt);
         return;
     }
+
+    m_downloadBtn->setEnabled(true);
 
     for (const auto &fmt : formats) {
         auto *row       = new QWidget(m_formatsWidget);
