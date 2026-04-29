@@ -219,6 +219,7 @@ ctest --test-dir build -N -L sanity
 - `test_book_discovery_service`
 - `test_library_service`
 - `test_main_window`
+- `test_book_details_panel`
 
 ### CI mapping
 
