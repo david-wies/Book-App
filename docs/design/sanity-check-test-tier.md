@@ -144,20 +144,20 @@ We should remove a test from `sanity check` if:
 
 Included in `sanity check`:
 
-- Test Task 1: Database and schema integrity tests
-- Test Task 2: Gutenberg identifier resolution tests
-- Test Task 3: Book discovery deduplication and promotion tests
-- Test Task 4: Library service tests
-- Test Task 6: Main window shell and navigation tests
+- [Test Task 1: Database and schema integrity tests](../tasks/test-task-breakdown.md#test-task-1-database-and-schema-integrity-tests)
+- [Test Task 2: Gutenberg identifier resolution tests](../tasks/test-task-breakdown.md#test-task-2-gutenberg-identifier-resolution-tests)
+- [Test Task 3: Book discovery deduplication and promotion tests](../tasks/test-task-breakdown.md#test-task-3-book-discovery-deduplication-and-promotion-tests)
+- [Test Task 4: Library service tests](../tasks/test-task-breakdown.md#test-task-4-library-service-tests)
+- [Test Task 6: Main window shell and navigation tests](../tasks/test-task-breakdown.md#test-task-6-main-window-shell-and-navigation-tests)
 
 Full-suite only:
 
-- Test Task 5: Library screen GUI tests
-- Test Task 7: Search service tests
-- Test Task 8: Search screen GUI tests
-- Test Task 9: Explore service tests
-- Test Task 10: Explore screen GUI tests
-- Test Task 11+: partial and blocked buckets
+- [Test Task 5: Library screen GUI tests](../tasks/test-task-breakdown.md#test-task-5-library-screen-gui-tests)
+- [Test Task 7: Search service tests](../tasks/test-task-breakdown.md#test-task-7-search-service-tests)
+- [Test Task 8: Search screen GUI tests](../tasks/test-task-breakdown.md#test-task-8-search-screen-gui-tests)
+- [Test Task 9: Explore service tests](../tasks/test-task-breakdown.md#test-task-9-explore-service-tests)
+- [Test Task 10: Explore screen GUI tests](../tasks/test-task-breakdown.md#test-task-10-explore-screen-gui-tests)
+- [Test Task 11+](../tasks/test-task-breakdown.md): partial and blocked buckets
 
 ---
 
@@ -219,6 +219,7 @@ ctest --test-dir build -N -L sanity
 - `test_book_discovery_service`
 - `test_library_service`
 - `test_main_window`
+- `test_book_details_panel`
 
 ### CI mapping
 

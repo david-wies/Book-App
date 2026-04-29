@@ -71,6 +71,10 @@ python3 tools/migrate_db.py --db-path <path above>
 
 ## Testing
 
+BookHub uses `Qt6::Test` for unit, integration, and GUI testing. The suite is divided into tiers to ensure fast feedback during development while maintaining high release-quality confidence.
+
+### Running Tests
+
 ```bash
 # Run the fast sanity tier (< 5 s)
 cd build && ctest -L sanity --output-on-failure
@@ -78,6 +82,16 @@ cd build && ctest -L sanity --output-on-failure
 # Run the full suite
 cd build && ctest --output-on-failure
 ```
+
+### Documentation
+
+- **[Test Strategy](docs/design/test-strategy.md)** — Comprehensive plan covering goals, layers, and implementation quality rules.
+- **[Sanity-Check Test Tier](docs/design/sanity-check-test-tier.md)** — Detailed policy on tiering, selection rules, and CI integration.
+
+### CI Integration
+
+Pull requests targeting `develop` run only the `sanity` tier. Pull requests targeting `master` must pass the `full` suite before merging.
+
 
 ## Project Layout
 
