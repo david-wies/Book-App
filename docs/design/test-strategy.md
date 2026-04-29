@@ -1,9 +1,26 @@
 # Design: Test Strategy and Suggested Coverage
 
+## Table of Contents
+- [Overview](#overview)
+- [Testing Goals](#testing-goals)
+- [Scope by Delivery Stage](#scope-by-delivery-stage)
+- [Recommended Test Layers](#recommended-test-layers)
+- [Framework Setup](#framework-setup)
+- [Highest‑Priority Tests](#highest‑priority-tests)
+- [Unit Test Suggestions](#unit-test-suggestions)
+- [Integration Test Suggestions](#integration-test-suggestions)
+- [Test Implementation Quality Rules](#test-implementation-quality-rules)
+- [GUI Test Suggestions](#gui-test-suggestions)
+- [Manual Acceptance Checklist](#manual-acceptance-checklist)
+- [Suggested Seed Datasets](#suggested-seed-datasets)
+- [Implementation Order](#implementation-order)
+- [Definition of Done for New Screens](#definition-of-done-for-new-screens)
+- [Revision History](#revision-history)
+
 ## Overview
 
 This document turns the current design work into a practical test plan for BookHub. It is intentionally
-forward-looking: the scope includes both:
+forward‑looking: the scope includes both:
 
 - behavior that already exists in the current codebase
 - behavior that is planned in the design documents but not implemented yet
@@ -15,10 +32,10 @@ It is based on:
 - the current SQLite schema in `src/shared/database.cpp`
 - the current collector flow in `src/collector/`
 
-The goal is to catch regressions and guide implementation in two high-risk areas:
+The goal is to catch regressions and guide implementation in two high‑risk areas:
 
-1. data correctness, especially book identity resolution and cross-source deduplication
-2. GUI behavior, especially screen states, navigation, and per-book actions
+1. data correctness, especially book identity resolution and cross‑source deduplication
+2. GUI behavior, especially screen states, navigation, and per‑book actions
 
 ---
 
@@ -29,7 +46,9 @@ The goal is to catch regressions and guide implementation in two high-risk areas
 - Verify that repeated discovery runs do not create duplicate logical books.
 - Verify that schema rules and foreign keys preserve data integrity during promotion and deletion.
 - Verify that planned GUI flows behave correctly across loading, empty, populated, and error states.
-- Verify that user-visible actions map cleanly to service/database changes.
+- Verify that user‑visible actions map cleanly to service/database changes.
+
+See the tiering policy in [Sanity-Check Test Tier](sanity-check-test-tier.md).
 
 ---
 
@@ -48,16 +67,16 @@ These tests can be written against code that already exists or is partially in p
 
 ### Planned implementation
 
-These tests should be treated as design-level acceptance criteria for upcoming work:
+These tests should be treated as design‑level acceptance criteria for upcoming work:
 
-- Search screen filters, pagination, and add-to-library flow
-- Explore screen category drill-down, breadcrumbs, and carousel behavior
-- Book details panel language switching, summary expansion, and action-state rules
+- Search screen filters, pagination, and add‑to‑library flow
+- Explore screen category drill‑down, breadcrumbs, and carousel behavior
+- Book details panel language switching, summary expansion, and action‑state rules
 - Download flow dialog validation, progress, completion, and retry behavior
 - Audiobook flow dialog voice selection, preview, upload validation, generation progress, and completion
 
 For planned features, the tests define the intended behavior even when the production code does not exist yet.
-That makes this document a test-design reference, not only a snapshot of current coverage needs.
+That makes this document a test‑design reference, not only a snapshot of current coverage needs.
 
 ---
 
@@ -72,9 +91,9 @@ That makes this document a test-design reference, not only a snapshot of current
 
 ---
 
-## Suggested Framework Setup
+## Framework Setup
 
-- Use `Qt6::Test` for widget tests, signal assertions, and event-loop-aware checks.
+- Use `Qt6::Test` for widget tests, signal assertions, and event‑loop‑aware checks.
 - Add a dedicated `tests/` tree with temporary SQLite databases per test case.
 - Prefer small fixture builders that seed `books`, `book_identifiers`, `editions`, `formats`, `sources`, and `library_items`.
 - Keep network and filesystem side effects mocked or isolated behind temporary directories.
@@ -100,7 +119,7 @@ tests/
 
 ---
 
-## Highest-Priority Tests
+## Highest‑Priority Tests
 
 These should be implemented first because they protect the most fragile behavior and provide the strongest
 foundation for future planned screens.
@@ -109,7 +128,7 @@ foundation for future planned screens.
 
 - Resolves `lccn` ahead of `oclc`, `isbn`, and source fallback.
 - Normalizes `http://id.loc.gov/...` values into canonical `lccn:<value>`.
-- Converts ISBN-10 into normalized ISBN-13.
+- Converts ISBN‑10 into normalized ISBN‑13.
 - Falls back to `gutenberg:<id>` when no stronger identifier exists.
 - Stores all discovered identifiers, not only the winning one.
 
@@ -142,11 +161,11 @@ foundation for future planned screens.
 
 ### `GutenbergAdapter`
 
-- `normalizeLccn()` zero-pads pre-2001 numeric portions correctly.
+- `normalizeLccn()` zero‑pads pre‑2001 numeric portions correctly.
 - `normalizeLccn()` preserves prefixed letter segments.
-- `resolveBookId()` chooses the highest-priority available identifier.
+- `resolveBookId()` chooses the highest‑priority available identifier.
 - `normalizeFormatName()` maps known MIME types to expected internal names.
-- RDF parsing ignores image-only formats.
+- RDF parsing ignores image‑only formats.
 
 ### Database helpers
 
@@ -156,7 +175,7 @@ foundation for future planned screens.
 
 ### Query/state helpers to extract later
 
-If search, explore, and details logic grow, extract small query-builder or presenter helpers and add unit tests for:
+If search, explore, and details logic grow, extract small query‑builder or presenter helpers and add unit tests for:
 
 - active filter to SQL fragment mapping
 - sort option to `ORDER BY` mapping
@@ -172,12 +191,12 @@ If search, explore, and details logic grow, extract small query-builder or prese
 - Inserts one book with one edition, multiple formats, and matching source rows.
 - Handles repeated discovery of the same source book without exploding row counts.
 - Merges two source records that share an LCCN into one logical book.
-- Accepts a later stronger identifier and promotes the primary key in a transaction-safe way.
-- Keeps first-writer book metadata when a later source has different title/summary values.
+- Accepts a later stronger identifier and promotes the primary key in a transaction‑safe way.
+- Keeps first‑writer book metadata when a later source has different title/summary values.
 
 Representative scenarios:
 
-1. Gutenberg-only book with fallback ID
+1. Gutenberg‑only book with fallback ID
 2. Gutenberg book later rediscovered with LCCN
 3. Gutenberg and Archive records with shared `oclc`
 4. two editions with same `book_id` but different languages
@@ -187,7 +206,7 @@ Representative scenarios:
 
 - Keyword containing `%` or `_` is escaped before being passed to the `LIKE` clause, so it matches
   literal characters rather than SQL wildcards.
-- Empty keyword with no filters returns all books. `SearchParams{}` is a no-filter query and must
+- Empty keyword with no filters returns all books. `SearchParams{}` is a no‑filter query and must
   return every row in the database; test with `QCOMPARE(results.size(), totalBooks)`.
 - AND semantics hold across all active filters simultaneously.
 
@@ -195,7 +214,7 @@ Representative scenarios:
 
 - Adding a library item makes it appear in the library query.
 - Removing a book cleans up dependent library rows safely.
-- Audiobook-ready status is queryable for search filters.
+- Audiobook‑ready status is queryable for search filters.
 - Distinct languages, formats, and source lists are returned correctly for details/search views.
 
 ---
@@ -223,7 +242,7 @@ service.addBook("gutenberg:1184", editionId);
 
 Using `keyword = " "` to retrieve all results is fragile: if the service trims whitespace before
 querying, it returns zero results, and an assertion like `QVERIFY(results.size() >= N)` passes
-vacuously. Use `SearchParams{}` with no keyword to express "no filter", or test the empty-keyword
+vacously. Use `SearchParams{}` with no keyword to express "no filter", or test the empty‑keyword
 contract explicitly with `QCOMPARE`.
 
 ### Avoid `QTest::qWait` for debounce timing
@@ -240,16 +259,16 @@ A `QTimer` with a 10ms interval fires before the dialog renders on a slow machin
 `QTimer::singleShot(0, ...)` plus `QCoreApplication::processEvents()` after the action, or
 spy on the dialog's `finished` signal directly.
 
-### Document non-obvious ordering assertions
+### Document non‑obvious ordering assertions
 
 If a test asserts a specific item at position 0, add a comment explaining the invariant that
 produces that order. Assertions like `QCOMPARE(trending.first().bookId, "book:25")` with no
 explanation are opaque and break silently when query ordering changes.
 
-### Clarify fresh-database contracts
+### Clarify fresh‑database contracts
 
 `verifySchemaVersion` returning `true` for an empty database is only correct if the production
-code defines an empty database as fresh-and-valid. Wherever this contract is tested, name the
+code defines an empty database as fresh‑and‑valid. Wherever this contract is tested, name the
 test `freshDatabase_isValid` and `versionMismatch_isInvalid` as separate cases with a comment
 stating the intended invariant.
 
@@ -275,9 +294,9 @@ those screens and flows are added.
 - Loading indicator appears while the initial query is in progress.
 - Empty state shows the expected message and CTA when the library is empty.
 - Clicking `Explore Books` switches to the Explore tab.
-- Double-clicking a row opens the details panel.
-- List-mode row buttons trigger details, download, audiobook, and remove actions.
-- Grid mode hides inline action buttons and still supports double-click to details.
+- Double‑clicking a row opens the details panel.
+- List‑mode row buttons trigger details, download, audiobook, and remove actions.
+- Grid mode hides inline action buttons and still supports double‑click to details.
 - Status labels render correctly for `saved`, `downloading`, `downloaded`, `converting`, `audiobook_ready`, and `error`.
 
 ### Search screen
@@ -289,32 +308,32 @@ those screens and flows are added.
 - Year range clamps invalid `from > to` input.
 - `Load more` appends the next page instead of replacing the existing model.
 - `+ Library` changes to `In Library` after adding a result.
-- No-results state shows the expected guidance.
+- No‑results state shows the expected guidance.
 
 ### Explore screen
 
-- Top-level categories render with counts.
+- Top‑level categories render with counts.
 - Clicking a category navigates to subcategories.
 - Clicking a subcategory shows the book grid.
 - Back button and breadcrumb reflect navigation depth.
-- Empty-genre state appears with the collector note.
+- Empty‑genre state appears with the collector note.
 - Carousel cards open the details panel.
 
 ### Book details panel
 
 - Panel opens from library, search, and explore contexts.
-- Language selector appears only for multi-language books.
+- Language selector appears only for multi‑language books.
 - Changing language refreshes available formats and sources.
 - Summary defaults to collapsed and expands with `Show more`.
 - `Add to Library` changes to `In Library` after success.
 - `Download` is disabled or hidden when no formats exist.
-- `Convert to Audiobook` is enabled only when text-capable formats exist.
+- `Convert to Audiobook` is enabled only when text‑compatible formats exist.
 
 ### Download flow dialog
 
 - `Next` stays disabled until a choice is made at each step.
 - Changing language clears a previously selected format.
-- Pre-seeded launch from the details panel skips or auto-selects known values correctly.
+- Pre‑seeded launch from the details panel skips or auto‑selects known values correctly.
 - Progress bar updates on download progress signals.
 - Error state surfaces retry behavior.
 - Completion state exposes `Open file` and `Close`.
@@ -322,22 +341,22 @@ those screens and flows are added.
 ### Audiobook flow dialog
 
 - Step indicator advances and rewinds correctly.
-- Only text-compatible formats are available in the format step.
+- Only text‑compatible formats are available in the format step.
 - Voice preview buttons start the correct sample.
 - Upload dialog validates file type and duration bounds.
 - Generate step updates progress and supports cancel.
-- Completion state exposes output actions and marks the book as audiobook-ready if that behavior is implemented.
+- Completion state exposes output actions and marks the book as audiobook‑ready if that behavior is implemented.
 
 ---
 
-## Manual Acceptance Test Checklist
+## Manual Acceptance Checklist
 
 - Resize from minimum width up to large desktop sizes without clipped controls.
-- Verify keyboard-only navigation across shell, list rows, filters, and dialogs.
-- Verify screen-reader labels for major controls and cards.
+- Verify keyboard‑only navigation across shell, list rows, filters, and dialogs.
+- Verify screen‑reader labels for major controls and cards.
 - Verify placeholder cover, empty state, loading state, and error state visuals.
-- Verify long titles, multiple authors, and multi-language books do not break layouts.
-- Verify right-to-left or Hebrew metadata does not render incorrectly in cards and details views.
+- Verify long titles, multiple authors, and multi‑language books do not break layouts.
+- Verify right‑to‑left or Hebrew metadata does not render incorrectly in cards and details views.
 
 ---
 
@@ -345,7 +364,7 @@ those screens and flows are added.
 
 Create a few reusable fixtures to keep tests readable.
 
-### Fixture A: simple single-source book
+### Fixture A: simple single‑source book
 
 - one book
 - one language
@@ -353,7 +372,7 @@ Create a few reusable fixtures to keep tests readable.
 - one source
 - not in library
 
-### Fixture B: multi-language classic
+### Fixture B: multi‑language classic
 
 - one book
 - English and French editions
@@ -367,12 +386,12 @@ Create a few reusable fixtures to keep tests readable.
 - incoming discovery record with matching Gutenberg identifier plus `lccn:n78095332`
 - existing dependent rows in `editions`, `formats`, `sources`, and `library_items`
 
-### Fixture D: audiobook-capable book
+### Fixture D: audiobook‑capable book
 
 - text format available
 - library item status transitions from `saved` to `converting` to `audiobook_ready`
 
-### Fixture E: edge-case metadata
+### Fixture E: edge‑case metadata
 
 - missing summary
 - no cover
@@ -382,24 +401,34 @@ Create a few reusable fixtures to keep tests readable.
 
 ---
 
-## Suggested Implementation Order
+## Implementation Order
 
 1. Add `Qt6::Test` support in CMake and create a `tests/` target.
 2. Implement unit tests for identifier normalization and resolution.
 3. Implement integration tests for `BookDiscoveryService` and schema cascade behavior.
 4. Add library screen widget tests, since that screen already exists.
 5. Create pending or scaffolded test cases for Search, Explore, Details, Download, and Audiobook behavior directly from the design docs.
-6. Convert those scaffolded planned-feature tests into active tests as each component lands.
+6. Convert those scaffolded planned‑feature tests into active tests as each component lands.
 
 ---
 
-## Definition of Done for Each New Screen
+## Definition of Done for New Screens
 
 A new screen or flow should not be considered complete until it has:
 
-- one happy-path GUI test
-- one empty/loading/error-state GUI test
+- one happy‑path GUI test
+- one empty/loading/error‑state GUI test
 - one integration test covering its backing query or service behavior
 - one regression test for its riskiest branching rule
 
 This keeps the test suite aligned with the design documents instead of adding coverage only after bugs appear.
+
+---
+
+## Revision History
+
+| Date | Author | Change |
+|---|---|---|
+| 2026‑04‑28 | Antigravity | Added Table of Contents, cross‑link to sanity‑check tier, standardized headings, and revision history. |
+
+(End of file)
