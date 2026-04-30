@@ -78,7 +78,6 @@ private:
     int     m_currentStep{0}; // 0=language, 1=format, 2=source
 
     QString m_targetFilePath;
-    QString m_lastError;
 
     QLabel      *m_titleLabel{};
     QLabel      *m_stepLabel{};

@@ -51,7 +51,7 @@ void DownloadFlowDialogTest::singleLanguage_startsAtFormatStep()
     dialog.onDetailsCompleted(7, details);
 
     QCOMPARE(dialog.m_currentStep, 1);
-    QCOMPARE(dialog.m_stepLabel->text(), QStringLiteral("Step 2 of 3: Format"));
+    QCOMPARE(dialog.m_stepLabel->text(), QStringLiteral("Step 1 of 2: Format"));
 }
 
 void DownloadFlowDialogTest::nextButton_requiresSelectionsPerStep()

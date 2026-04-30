@@ -29,6 +29,17 @@ namespace {
 constexpr auto kLastDownloadDirKey = "download/lastDirectory";
 constexpr int kSourceNameRole = Qt::UserRole;
 constexpr int kSourceUrlRole  = Qt::UserRole + 1;
+constexpr auto kStatusDownloading = "downloading";
+constexpr auto kStatusDownloaded = "downloaded";
+constexpr auto kStatusError = "error";
+
+QString formatSize(qint64 bytes) {
+    if (bytes >= 1024 * 1024)
+        return QStringLiteral("%1 MB").arg(bytes / (1024.0 * 1024), 0, 'f', 1);
+    if (bytes >= 1024)
+        return QStringLiteral("%1 KB").arg(bytes / 1024.0, 0, 'f', 1);
+    return QStringLiteral("%1 bytes").arg(bytes);
+}
 }
 
 DownloadFlowDialog::DownloadFlowDialog(LibraryService *libraryService,
@@ -82,8 +93,6 @@ void DownloadFlowDialog::onDetailsCompleted(quint64 requestId, BookDetails detai
     }
 
     if (!m_hasLanguageStep) {
-        m_languageList->setCurrentRow(0);
-        requestFormatsForSelectedLanguage();
         m_currentStep = 1;
     } else {
         m_currentStep = 0;
@@ -183,12 +192,12 @@ void DownloadFlowDialog::onDownloadProgress(qint64 received, qint64 total)
     if (total > 0) {
         m_progressBar->setRange(0, 100);
         m_progressBar->setValue(static_cast<int>((received * 100) / total));
-        m_progressText->setText(QStringLiteral("%1 / %2 bytes")
-                                    .arg(received)
-                                    .arg(total));
+        m_progressText->setText(QStringLiteral("%1 / %2")
+                                    .arg(formatSize(received))
+                                    .arg(formatSize(total)));
     } else {
         m_progressBar->setRange(0, 0);
-        m_progressText->setText(QStringLiteral("%1 bytes").arg(received));
+        m_progressText->setText(formatSize(received));
     }
 }
 
@@ -210,7 +219,7 @@ void DownloadFlowDialog::onDownloadFinished()
             delete m_outputFile;
             m_outputFile = nullptr;
         }
-        setLibraryStatus(QStringLiteral("error"));
+        setLibraryStatus(kStatusError);
         showErrorState(QStringLiteral("Download failed: %1").arg(err));
         return;
     }
@@ -220,7 +229,7 @@ void DownloadFlowDialog::onDownloadFinished()
             delete m_outputFile;
             m_outputFile = nullptr;
         }
-        setLibraryStatus(QStringLiteral("error"));
+        setLibraryStatus(kStatusError);
         showErrorState(QStringLiteral("Failed to finalize downloaded file."));
         return;
     }
@@ -232,7 +241,7 @@ void DownloadFlowDialog::onDownloadFinished()
     QSettings settings;
     settings.setValue(QString::fromLatin1(kLastDownloadDirKey), info.absolutePath());
 
-    setLibraryStatus(QStringLiteral("downloaded"));
+    setLibraryStatus(kStatusDownloaded);
     m_resultLabel->setText(QStringLiteral("Download complete."));
     m_openFileBtn->setVisible(true);
     m_nextBtn->setText(QStringLiteral("Close"));
@@ -324,7 +333,6 @@ void DownloadFlowDialog::resetState()
     m_hasLanguageStep = false;
     m_currentStep = 0;
     m_targetFilePath.clear();
-    m_lastError.clear();
     m_languageList->clear();
     m_formatList->clear();
     m_sourceList->clear();
@@ -341,6 +349,7 @@ void DownloadFlowDialog::resetState()
     m_nextBtn->setText(QStringLiteral("Next"));
     m_backBtn->setVisible(false);
     disconnect(m_nextBtn, &QPushButton::clicked, this, &QDialog::accept);
+    disconnect(m_nextBtn, &QPushButton::clicked, this, &QDialog::reject);
     connect(m_nextBtn, &QPushButton::clicked, this, &DownloadFlowDialog::onNextOrDownloadClicked,
             Qt::UniqueConnection);
 }
@@ -354,18 +363,30 @@ void DownloadFlowDialog::updateStepUi()
     m_formatList->setVisible(m_currentStep == 1);
     m_sourceList->setVisible(m_currentStep == 2);
 
-    if (m_currentStep == 0) {
-        m_stepLabel->setText(QStringLiteral("Step 1 of 3: Language"));
-        m_nextBtn->setText(QStringLiteral("Next"));
-        m_nextBtn->setEnabled(m_languageList->currentRow() >= 0);
-    } else if (m_currentStep == 1) {
-        m_stepLabel->setText(QStringLiteral("Step 2 of 3: Format"));
-        m_nextBtn->setText(QStringLiteral("Next"));
-        m_nextBtn->setEnabled(m_formatList->currentRow() >= 0);
+    if (m_hasLanguageStep) {
+        if (m_currentStep == 0) {
+            m_stepLabel->setText(QStringLiteral("Step 1 of 3: Language"));
+            m_nextBtn->setText(QStringLiteral("Next"));
+            m_nextBtn->setEnabled(m_languageList->currentRow() >= 0);
+        } else if (m_currentStep == 1) {
+            m_stepLabel->setText(QStringLiteral("Step 2 of 3: Format"));
+            m_nextBtn->setText(QStringLiteral("Next"));
+            m_nextBtn->setEnabled(m_formatList->currentRow() >= 0);
+        } else {
+            m_stepLabel->setText(QStringLiteral("Step 3 of 3: Source"));
+            m_nextBtn->setText(QStringLiteral("Download"));
+            m_nextBtn->setEnabled(m_sourceList->currentRow() >= 0);
+        }
     } else {
-        m_stepLabel->setText(QStringLiteral("Step 3 of 3: Source"));
-        m_nextBtn->setText(QStringLiteral("Download"));
-        m_nextBtn->setEnabled(m_sourceList->currentRow() >= 0);
+        if (m_currentStep == 1) {
+            m_stepLabel->setText(QStringLiteral("Step 1 of 2: Format"));
+            m_nextBtn->setText(QStringLiteral("Next"));
+            m_nextBtn->setEnabled(m_formatList->currentRow() >= 0);
+        } else {
+            m_stepLabel->setText(QStringLiteral("Step 2 of 2: Source"));
+            m_nextBtn->setText(QStringLiteral("Download"));
+            m_nextBtn->setEnabled(m_sourceList->currentRow() >= 0);
+        }
     }
 
     const int minStep = m_hasLanguageStep ? 0 : 1;
@@ -423,6 +444,12 @@ bool DownloadFlowDialog::beginDownload()
     if (source.downloadLink.isEmpty())
         return false;
 
+    QUrl downloadUrl(source.downloadLink);
+    if (!downloadUrl.isValid() || downloadUrl.scheme() != QStringLiteral("https")) {
+        showErrorState(QStringLiteral("Invalid or unsupported download URL."));
+        return false;
+    }
+
     const QString savePath = QFileDialog::getSaveFileName(
         this,
         QStringLiteral("Save file"),
@@ -449,9 +476,11 @@ bool DownloadFlowDialog::beginDownload()
     m_openFileBtn->hide();
     m_resultLabel->clear();
 
-    setLibraryStatus(QStringLiteral("downloading"));
+    setLibraryStatus(kStatusDownloading);
 
-    QNetworkRequest request(QUrl(source.downloadLink));
+    QNetworkRequest request(downloadUrl);
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::NoLessSafeRedirectPolicy);
     m_reply = m_network->get(request);
     connect(m_reply, &QNetworkReply::readyRead, this, &DownloadFlowDialog::onDownloadReadyRead);
     connect(m_reply, &QNetworkReply::downloadProgress, this, &DownloadFlowDialog::onDownloadProgress);
@@ -479,6 +508,8 @@ QString DownloadFlowDialog::sanitizeFileName(const QString &name) const
     QString cleaned = name.trimmed();
     cleaned.replace(QRegularExpression(QStringLiteral(R"([\\/:*?"<>|])")),
                     QStringLiteral("_"));
+    if (cleaned.size() > 200)
+        cleaned = cleaned.left(200);
     if (cleaned.isEmpty())
         cleaned = QStringLiteral("book");
     return cleaned;
@@ -486,7 +517,6 @@ QString DownloadFlowDialog::sanitizeFileName(const QString &name) const
 
 void DownloadFlowDialog::showErrorState(const QString &message)
 {
-    m_lastError = message;
     m_resultLabel->setText(message);
     m_nextBtn->setText(QStringLiteral("Close"));
     m_nextBtn->setEnabled(true);
