@@ -36,6 +36,7 @@ private:
     static constexpr int kCircleDiameter = 20;
     static constexpr int kLabelHeight    = 16;
     static constexpr int kVertPadding    = 6;
+    static constexpr int kStepWidth      = 60;
 };
 
 } // namespace bookhub::gui

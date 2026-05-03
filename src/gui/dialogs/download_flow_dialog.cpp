@@ -192,9 +192,9 @@ void DownloadFlowDialog::onRetryClicked()
     const int retryStep = m_formats.isEmpty() ? 1 : 2;
     m_currentStep = retryStep;
 
+    disconnect(m_nextBtn, &QPushButton::clicked, this, &QDialog::reject);
     connect(m_nextBtn, &QPushButton::clicked, this,
             &DownloadFlowDialog::onNextOrDownloadClicked, Qt::UniqueConnection);
-    disconnect(m_nextBtn, &QPushButton::clicked, this, &QDialog::reject);
 
     m_cancelBtn->setEnabled(true);
     updateStepUi();

@@ -45,7 +45,7 @@ QSize StepIndicatorWidget::sizeHint() const
     const bool hasLabels = !m_labels.isEmpty();
     const int h = kVertPadding + kCircleDiameter + kVertPadding
                 + (hasLabels ? kLabelHeight : 0);
-    return {m_stepCount * 60, h};
+    return {m_stepCount * kStepWidth, h};
 }
 
 QSize StepIndicatorWidget::minimumSizeHint() const
@@ -55,9 +55,6 @@ QSize StepIndicatorWidget::minimumSizeHint() const
 
 void StepIndicatorWidget::paintEvent(QPaintEvent *)
 {
-    if (m_stepCount <= 0)
-        return;
-
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
