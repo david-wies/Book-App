@@ -59,7 +59,13 @@ This upgrades an existing `bookhub.db` to the current schema version. See `src/s
 
 ## Testing & Linting
 
-The test suite uses Qt Test. Ten targets are registered with CTest across `unit`, `integration`, and `gui` categories; the `sanity` label marks the fast-gate subset. Run with `ctest -L sanity` (fast) or `ctest` (full suite) from the build directory. No linter or static analysis is configured.
+The test suite uses Qt Test. Ten targets are registered with CTest across `unit`, `integration`, and `gui` categories; the `sanity` label marks the fast-gate subset. Run with `ctest -L sanity` (fast) or `ctest` (full suite) from the build directory.
+
+**Static analysis:** clang-tidy is used for linting. Run it from the build directory before opening a PR:
+```bash
+run-clang-tidy -p build src/ tests/
+```
+Fix all warnings before creating the PR. Common checks enforced: `const &` on value-by-copy parameters, `qsizetype` for Qt string index returns, `static_cast` for signed/unsigned conversions, and `std::move` on last-use locals passed to `emit`.
 
 ## Architecture
 
@@ -106,7 +112,7 @@ Full ID model: `docs/design/book-identity-model.md`. Schema DDL: `src/shared/dat
 - **Namespaces:** All code lives under `bookhub::`, with sub-namespaces `bookhub::db`, `bookhub::collector`, and `bookhub::gui`.
 - **Shutdown coordination:** Uses `std::atomic_bool` flags (`m_shutdownRequested`, `m_updateInProgress`) and a mix of `Qt::QueuedConnection` / `Qt::DirectConnection` for safe cross-thread teardown.
 - **Comments:** Explain *why*, not *what*. Use tags: `TODO:`, `FIXME:`, `HACK:`, `NOTE:`, `WARNING:`, `PERF:`, `SECURITY:`.
-- **Git workflow:** Every piece of work — feature, bugfix, or chore — gets its own short-lived branch cut from `develop` (e.g. `feature/task-7-search-screen`, `fix/collector-crash`, `chore/update-deps`). Keep branches small and focused: one task per branch. Merge back to `develop` via PR; never commit directly to `develop` or `master`. Both branches are protected and require PRs (0 approvals — bump to 1 in GitHub settings when a second contributor joins). **Before creating a PR, always run `/review` to perform a code review of the branch changes and address any issues found.** The only permitted path into `master` is a PR from `develop` — this is enforced both by the `.githooks/pre-push` hook (local) and GitHub branch protection (server-side). No other branch may target `master` directly.
+- **Git workflow:** Every piece of work — feature, bugfix, or chore — gets its own short-lived branch cut from `develop` (e.g. `feature/task-7-search-screen`, `fix/collector-crash`, `chore/update-deps`). Keep branches small and focused: one task per branch. Merge back to `develop` via PR; never commit directly to `develop` or `master`. Both branches are protected and require PRs (0 approvals — bump to 1 in GitHub settings when a second contributor joins). **Before creating a PR, always run clang-tidy (`run-clang-tidy -p build src/ tests/`) and fix all warnings, then run `/review` to perform a code review of the branch changes and address any issues found.** The only permitted path into `master` is a PR from `develop` — this is enforced both by the `.githooks/pre-push` hook (local) and GitHub branch protection (server-side). No other branch may target `master` directly.
 - **Issue linking:** If a PR resolves a GitHub issue, link the issue in the PR description (e.g. `Closes #42`). Once the PR is merged, post a comment on the issue with a short paragraph explaining what was implemented and a note that the issue is now closed as part of completing the PR, then close the issue with `gh issue close <number>`.
 - **Branch cleanup:** After any PR that is not `develop → master` is merged, delete the source branch — it is no longer needed. Use `gh pr view <number> --json headRefName` to get the branch name, then `git push origin --delete <branch>` (or `gh api` equivalent) to remove it from the remote.
 - **Build artifacts:** The icon is embedded as a Qt resource (`.qrc`). The database is stored in `QStandardPaths::AppDataLocation`. The `build/` directory is git-ignored.

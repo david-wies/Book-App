@@ -44,6 +44,7 @@ set(GUI_SOURCES
     src/gui/widgets/book_card_delegate.cpp
     src/gui/widgets/empty_state_widget.cpp
     src/gui/widgets/search_result_delegate.cpp
+    src/gui/widgets/step_indicator_widget.cpp
     src/gui/query_worker.cpp
 )
 
@@ -131,3 +132,8 @@ add_bookhub_test(test_download_flow_dialog
     tests/gui/test_download_flow_dialog.cpp
 )
 label_bookhub_test(test_download_flow_dialog sanity gui download)
+
+add_bookhub_test(test_step_indicator_widget
+    tests/gui/test_step_indicator_widget.cpp
+)
+label_bookhub_test(test_step_indicator_widget sanity gui widgets)
