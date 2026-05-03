@@ -30,7 +30,7 @@ void BookDiscoveryService::startDiscovery() {
     }
 
     const bool wasIdle = (m_activeFetches == 0);
-    m_activeFetches += m_adapters.size();
+    m_activeFetches += static_cast<int>(m_adapters.size());
     if (wasIdle) {
         emit updateStarted();
     }
@@ -75,7 +75,7 @@ void BookDiscoveryService::onFetchCompleted(bool success, const QString& errorMe
 
 static int idPriority(const QString& bookId)
 {
-    const int colon = bookId.indexOf(':');
+    const qsizetype colon = bookId.indexOf(':');
     const QString prefix = (colon >= 0) ? bookId.left(colon) : bookId;
     if (prefix == "lccn")  return 1;
     if (prefix == "oclc")  return 2;

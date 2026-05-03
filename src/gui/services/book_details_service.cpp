@@ -22,11 +22,11 @@ void BookDetailsService::connectToWorker(QueryWorker *worker)
 
     connect(worker, &QueryWorker::bookDetailsCompleted, this,
             [this](quint64 id, BookDetails details) {
-                emit detailsCompleted(id, details);
+                emit detailsCompleted(id, std::move(details));
             });
     connect(worker, &QueryWorker::formatsForEditionCompleted, this,
             [this](quint64 id, QList<BookFormatEntry> formats) {
-                emit formatsCompleted(id, formats);
+                emit formatsCompleted(id, std::move(formats));
             });
 }
 

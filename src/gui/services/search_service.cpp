@@ -32,7 +32,7 @@ void SearchService::connectToWorker(QueryWorker *worker)
             [this](quint64 id, QList<SearchResult> results) {
                 Q_ASSERT(m_pendingCount > 0);
                 --m_pendingCount;
-                emit searchCompleted(id, results);
+                emit searchCompleted(id, std::move(results));
             });
     connect(worker, &QueryWorker::countCompleted, this,
             [this](quint64 id, int count) {
@@ -44,19 +44,19 @@ void SearchService::connectToWorker(QueryWorker *worker)
             [this](quint64 id, QStringList langs) {
                 Q_ASSERT(m_pendingCount > 0);
                 --m_pendingCount;
-                emit languagesCompleted(id, langs);
+                emit languagesCompleted(id, std::move(langs));
             });
     connect(worker, &QueryWorker::sourcesCompleted, this,
             [this](quint64 id, QStringList srcs) {
                 Q_ASSERT(m_pendingCount > 0);
                 --m_pendingCount;
-                emit sourcesCompleted(id, srcs);
+                emit sourcesCompleted(id, std::move(srcs));
             });
     connect(worker, &QueryWorker::genresCompleted, this,
             [this](quint64 id, QStringList genres) {
                 Q_ASSERT(m_pendingCount > 0);
                 --m_pendingCount;
-                emit genresCompleted(id, genres);
+                emit genresCompleted(id, std::move(genres));
             });
 }
 

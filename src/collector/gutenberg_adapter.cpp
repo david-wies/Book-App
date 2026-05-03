@@ -268,7 +268,7 @@ void GutenbergAdapter::parseSingleRdf(const QByteArray& data, const QString& ent
             // Extract the raw LCCN value and normalize it; store only the digits+alpha, no prefix
             QString lccnNormalized = normalizeLccn(raw);
             // lccnNormalized is "lccn:XYZ" — store just the part after the colon as value
-            int colon = lccnNormalized.indexOf(':');
+            qsizetype colon = lccnNormalized.indexOf(':');
             if (colon >= 0) {
                 book.identifiers.append(BookIdentifier{"lccn", lccnNormalized.mid(colon + 1)});
             }

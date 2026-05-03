@@ -1,4 +1,5 @@
 #include "main_window.h"
+#include "dialogs/download_flow_dialog.h"
 #include "panels/book_details_panel.h"
 #include "query_worker.h"
 #include "screens/explore_screen.h"
@@ -108,6 +109,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
 
   connect(m_bookDetailsPanel, &BookDetailsPanel::dismissed,
           this, &MainWindow::onBookDetailsDismissed);
+  connect(m_bookDetailsPanel, &BookDetailsPanel::downloadRequested,
+          this, &MainWindow::onDownloadRequested);
+
+  m_downloadDialog = new DownloadFlowDialog(m_libraryService, m_queryWorker, this);
 
   // Status bar
   buildStatusBar();
@@ -253,6 +258,10 @@ void MainWindow::onBookDetailsRequested(const QString &bookId) {
 
 void MainWindow::onBookDetailsDismissed() {
   m_bookDetailsPanel->hide();
+}
+
+void MainWindow::onDownloadRequested(const QString &bookId) {
+  m_downloadDialog->startForBook(bookId);
 }
 
 } // namespace bookhub::gui

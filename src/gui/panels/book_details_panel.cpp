@@ -57,7 +57,7 @@ void BookDetailsPanel::loadBook(const QString &bookId)
 // Private slots
 // ---------------------------------------------------------------------------
 
-void BookDetailsPanel::onDetailsCompleted(quint64 requestId, BookDetails details)
+void BookDetailsPanel::onDetailsCompleted(quint64 requestId, const BookDetails &details)
 {
     if (requestId != m_pendingDetailsId)
         return;
@@ -74,7 +74,7 @@ void BookDetailsPanel::onDetailsCompleted(quint64 requestId, BookDetails details
 }
 
 void BookDetailsPanel::onFormatsCompleted(quint64 requestId,
-                                          QList<BookFormatEntry> formats)
+                                          const QList<BookFormatEntry> &formats)
 {
     if (requestId != m_pendingFormatsId)
         return;
@@ -104,7 +104,7 @@ void BookDetailsPanel::onRemoveFromLibraryClicked()
     m_libraryService->requestRemoveBook(m_libraryItemId, m_currentBookId);
 }
 
-void BookDetailsPanel::onAddBookCompleted(quint64 requestId, QString /*bookId*/,
+void BookDetailsPanel::onAddBookCompleted(quint64 requestId, const QString &/*bookId*/,
                                           bool success, int newId)
 {
     if (requestId != m_pendingAddId)
@@ -117,7 +117,7 @@ void BookDetailsPanel::onAddBookCompleted(quint64 requestId, QString /*bookId*/,
     setLibraryButtonState(m_inLibrary);
 }
 
-void BookDetailsPanel::onRemoveBookCompleted(quint64 requestId, QString /*bookId*/, bool success)
+void BookDetailsPanel::onRemoveBookCompleted(quint64 requestId, const QString &/*bookId*/, bool success)
 {
     if (requestId != m_pendingRemoveId)
         return;
@@ -398,7 +398,7 @@ void BookDetailsPanel::buildUi()
 
     m_downloadBtn = new QPushButton(QStringLiteral("↓ Download"), secondaryRow);
     m_downloadBtn->setStyleSheet(secondaryStyle);
-    m_downloadBtn->setToolTip(QStringLiteral("Download — coming soon"));
+    m_downloadBtn->setToolTip(QStringLiteral("Download this book"));
     m_downloadBtn->setEnabled(false); // Task 11
     connect(m_downloadBtn, &QPushButton::clicked, this,
             [this] { emit downloadRequested(m_currentBookId); });
@@ -454,7 +454,7 @@ void BookDetailsPanel::populateDetails(const BookDetails &details)
             m_langCombo->addItem(ed.language);
     }
 
-    const int edCount   = details.editions.size();
+    const qsizetype edCount = details.editions.size();
     const bool multiLang = edCount > 1;
     m_langCombo->setVisible(multiLang);
     m_singleLangLabel->setVisible(!multiLang && edCount == 1);
@@ -479,6 +479,7 @@ void BookDetailsPanel::populateDetails(const BookDetails &details)
     }
 
     setLibraryButtonState(m_inLibrary);
+    m_downloadBtn->setEnabled(false);
 
     // Clear formats; they'll be loaded by the requestFormatsForEdition call
     // that follows immediately in onDetailsCompleted.
@@ -495,6 +496,7 @@ void BookDetailsPanel::populateFormats(const QList<BookFormatEntry> &formats)
     clearFormatsSection();
 
     if (formats.isEmpty()) {
+        m_downloadBtn->setEnabled(false);
         auto *noFmt = new QLabel(
             QStringLiteral("No downloadable formats available yet."),
             m_formatsWidget);
@@ -504,6 +506,8 @@ void BookDetailsPanel::populateFormats(const QList<BookFormatEntry> &formats)
         m_formatsLayout->addWidget(noFmt);
         return;
     }
+
+    m_downloadBtn->setEnabled(true);
 
     for (const auto &fmt : formats) {
         auto *row       = new QWidget(m_formatsWidget);

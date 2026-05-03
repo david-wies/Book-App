@@ -50,7 +50,7 @@ private slots:
     void onDownloadRequested(int libraryItemId, const QString &bookId);
     void onAudiobookRequested(int libraryItemId, const QString &bookId);
     void onRemoveRequested(int libraryItemId, const QString &bookId);
-    void onFetchItemsCompleted(quint64 requestId, QList<bookhub::gui::LibraryItem> items);
+    void onFetchItemsCompleted(quint64 requestId, const QList<bookhub::gui::LibraryItem> &items);
 
 private:
     void init(LibraryService *service);

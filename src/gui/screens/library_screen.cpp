@@ -222,13 +222,13 @@ void LibraryScreen::reload()
     m_pendingFetchId = m_service->requestFetchItems(col);
 }
 
-void LibraryScreen::onFetchItemsCompleted(quint64 requestId, QList<LibraryItem> items)
+void LibraryScreen::onFetchItemsCompleted(quint64 requestId, const QList<LibraryItem> &items)
 {
     if (requestId < m_pendingFetchId)
         return; // stale response — a newer reload() is already in flight
 
     populateModel(items);
-    updateCountLabel(items.size());
+    updateCountLabel(static_cast<int>(items.size()));
     m_stack->setCurrentIndex(items.isEmpty() ? 1 : 0);
 }
 

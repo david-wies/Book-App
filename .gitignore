@@ -29,6 +29,9 @@ reviews/
 Thumbs.db.codex
 claude/
 .claude/
+
+# Qt test artifacts
+Testing/
 # GitHub agent files (local, not for repo)
 .github/agents/
 .github/instructions/

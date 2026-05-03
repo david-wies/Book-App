@@ -12,6 +12,7 @@ class QThread;
 namespace bookhub::gui {
 
 class BookDetailsPanel;
+class DownloadFlowDialog;
 class ExploreScreen;
 class LibraryScreen;
 class LibraryService;
@@ -46,6 +47,7 @@ private slots:
     void onLibraryExploreRequested();
     void onBookDetailsRequested(const QString &bookId);
     void onBookDetailsDismissed();
+    void onDownloadRequested(const QString &bookId);
 
 private:
     friend class ::MainWindowTest;
@@ -66,6 +68,7 @@ private:
     SearchScreen      *m_searchScreen{};
     ExploreScreen     *m_exploreScreen{};
     BookDetailsPanel  *m_bookDetailsPanel{};
+    DownloadFlowDialog *m_downloadDialog{};
 
     // Status bar widgets
     QLabel *m_statusLabel{};

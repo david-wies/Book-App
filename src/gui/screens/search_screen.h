@@ -60,13 +60,13 @@ private slots:
 
     // Async result slots
     void onCountCompleted(quint64 requestId, int count);
-    void onSearchCompleted(quint64 requestId, QList<bookhub::gui::SearchResult> results);
-    void onLoadMoreCompleted(quint64 requestId, QList<bookhub::gui::SearchResult> results);
-    void onAddBookCompleted(quint64 requestId, QString bookId, bool success, int newId);
-    void onRemoveBookCompleted(quint64 requestId, QString bookId, bool success);
-    void onLanguagesCompleted(quint64 requestId, QStringList languages);
-    void onSourcesCompleted(quint64 requestId, QStringList sources);
-    void onGenresCompleted(quint64 requestId, QStringList genres);
+    void onSearchCompleted(quint64 requestId, const QList<bookhub::gui::SearchResult> &results);
+    void onLoadMoreCompleted(quint64 requestId, const QList<bookhub::gui::SearchResult> &results);
+    void onAddBookCompleted(quint64 requestId, const QString &bookId, bool success, int newId);
+    void onRemoveBookCompleted(quint64 requestId, const QString &bookId, bool success);
+    void onLanguagesCompleted(quint64 requestId, const QStringList &languages);
+    void onSourcesCompleted(quint64 requestId, const QStringList &sources);
+    void onGenresCompleted(quint64 requestId, const QStringList &genres);
 
 private:
     void init(QueryWorker *worker);

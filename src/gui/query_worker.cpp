@@ -9,6 +9,8 @@
 #include <QSqlError>
 #include <QDebug>
 
+#include <utility>
+
 namespace bookhub::gui {
 
 QueryWorker::QueryWorker(QObject *parent)
@@ -42,14 +44,14 @@ void QueryWorker::onThreadFinished()
 // Search handlers
 // ---------------------------------------------------------------------------
 
-void QueryWorker::handleSearchRequest(quint64 requestId, SearchParams params,
+void QueryWorker::handleSearchRequest(quint64 requestId, const SearchParams &params,
                                        int offset, int limit)
 {
     emit searchCompleted(requestId,
         internal::runSearch(params, offset, limit, conn()));
 }
 
-void QueryWorker::handleCountRequest(quint64 requestId, SearchParams params)
+void QueryWorker::handleCountRequest(quint64 requestId, const SearchParams &params)
 {
     emit countCompleted(requestId,
         internal::runCount(params, conn()));
@@ -77,13 +79,13 @@ void QueryWorker::handleGenresRequest(quint64 requestId)
 // Library handlers
 // ---------------------------------------------------------------------------
 
-void QueryWorker::handleFetchItemsRequest(quint64 requestId, QString sortColumn)
+void QueryWorker::handleFetchItemsRequest(quint64 requestId, const QString &sortColumn)
 {
     emit fetchItemsCompleted(requestId,
         internal::fetchItems(sortColumn, conn()));
 }
 
-void QueryWorker::handleAddBookRequest(quint64 requestId, QString bookId, int editionId)
+void QueryWorker::handleAddBookRequest(quint64 requestId, const QString &bookId, int editionId)
 {
     const int newId = internal::addBook(bookId, editionId, conn());
     emit addBookCompleted(requestId, bookId, newId > 0, newId);
@@ -92,17 +94,17 @@ void QueryWorker::handleAddBookRequest(quint64 requestId, QString bookId, int ed
 void QueryWorker::handleRemoveBookRequest(quint64 requestId, int libraryItemId, QString bookId)
 {
     const bool ok = internal::removeBook(libraryItemId, conn());
-    emit removeBookCompleted(requestId, bookId, ok);
+    emit removeBookCompleted(requestId, std::move(bookId), ok);
 }
 
-void QueryWorker::handleRemoveBookByBookIdRequest(quint64 requestId, QString bookId)
+void QueryWorker::handleRemoveBookByBookIdRequest(quint64 requestId, const QString &bookId)
 {
     const bool ok = internal::removeBookByBookId(bookId, conn());
     emit removeBookCompleted(requestId, bookId, ok);
 }
 
 void QueryWorker::handleUpdateStatusRequest(quint64 requestId, int libraryItemId,
-                                             QString status)
+                                             const QString &status)
 {
     emit updateStatusCompleted(requestId,
         internal::updateStatus(libraryItemId, status, conn()));
@@ -130,7 +132,7 @@ void QueryWorker::handleCategoriesRequest(quint64 requestId)
         internal::fetchCategories(conn()));
 }
 
-void QueryWorker::handleBooksForGenreRequest(quint64 requestId, QString genre,
+void QueryWorker::handleBooksForGenreRequest(quint64 requestId, const QString &genre,
                                               int offset, int limit)
 {
     emit booksForGenreCompleted(requestId,
@@ -141,7 +143,7 @@ void QueryWorker::handleBooksForGenreRequest(quint64 requestId, QString genre,
 // Book details handlers
 // ---------------------------------------------------------------------------
 
-void QueryWorker::handleBookDetailsRequest(quint64 requestId, QString bookId)
+void QueryWorker::handleBookDetailsRequest(quint64 requestId, const QString &bookId)
 {
     emit bookDetailsCompleted(requestId,
         internal::fetchBookDetails(bookId, conn()));
