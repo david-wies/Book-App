@@ -19,7 +19,6 @@
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QSettings>
-#include <QStackedLayout>
 #include <QUrl>
 #include <QVBoxLayout>
 
@@ -261,7 +260,9 @@ void DownloadFlowDialog::buildUi()
     root->addWidget(m_stepLabel);
 
     auto *stackHost = new QWidget(this);
-    auto *stackLayout = new QStackedLayout(stackHost);
+    auto *stackLayout = new QVBoxLayout(stackHost);
+    stackLayout->setContentsMargins(0, 0, 0, 0);
+    stackLayout->setSpacing(0);
     root->addWidget(stackHost, 1);
 
     m_stepsContainer = new QWidget(stackHost);
@@ -517,6 +518,10 @@ QString DownloadFlowDialog::sanitizeFileName(const QString &name) const
 
 void DownloadFlowDialog::showErrorState(const QString &message)
 {
+    m_stepsContainer->hide();
+    m_progressContainer->show();
+    m_stepLabel->setText(QStringLiteral("Error"));
+    m_backBtn->setVisible(false);
     m_resultLabel->setText(message);
     m_nextBtn->setText(QStringLiteral("Close"));
     m_nextBtn->setEnabled(true);

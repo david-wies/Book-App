@@ -130,4 +130,4 @@ label_bookhub_test(test_book_details_panel sanity gui details)
 add_bookhub_test(test_download_flow_dialog
     tests/gui/test_download_flow_dialog.cpp
 )
-label_bookhub_test(test_download_flow_dialog gui download)
+label_bookhub_test(test_download_flow_dialog sanity gui download)
