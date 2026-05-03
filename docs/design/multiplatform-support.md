@@ -45,18 +45,6 @@ The hardcoded x86_64 `CMAKE_PREFIX_PATH` fallback has been removed. CMake finds 
 3. **Remove hardcoded CMake paths** — Let CMake find Qt6 via standard means
 4. **Consider vcpkg** — For consistent Windows dependency management
 
-## Documentation Updates Required After Implementation
-
-These files contain Linux-specific statements that will become stale once Task 19 changes are applied:
-
-| File | Location | Stale Statement | Replacement |
-|------|----------|-----------------|-------------|
-| `CLAUDE.md` | Two-Thread Model section | "Both threads share a single SQLite database (`bookhub.db`, placed next to the executable)" | Note that the database is stored in `QStandardPaths::AppDataLocation` |
-| `CLAUDE.md` | Key Conventions → Build artifacts | "The icon and database are co-located with the executable via a CMake `POST_BUILD` copy" | Icon is embedded as a Qt resource (`.qrc`); database lives in `AppDataLocation` |
-| `docs/design/test-strategy.md` | Database helpers section (line 156) | "`databaseFilePath()` resolves next to the executable" | Resolves to `QStandardPaths::AppDataLocation` |
-
-**Note:** References to `build/bookhub.db` in `docs/tasks/book-identity-model-implementation.md` are developer migration tooling context and do not need updating — developers still run migrations from the build directory.
-
 ## Future Considerations
 
 - **macOS code signing:** May require entitlements for network access

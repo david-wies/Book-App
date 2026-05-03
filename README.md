@@ -98,6 +98,7 @@ Pull requests targeting `develop` run only the `sanity` tier. Pull requests targ
 ```text
 .
 ├── CMakeLists.txt
+├── LICENSE                      # MIT license
 ├── resources.qrc                # Qt resource manifest (embeds app icon)
 ├── book_reader_icon.jpg         # Application icon (embedded in executable)
 ├── spec/                        # Feature specifications

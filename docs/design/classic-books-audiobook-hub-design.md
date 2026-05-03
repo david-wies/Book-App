@@ -20,19 +20,20 @@
 
 ### 3.1 Overall approach
 
-Build a single native C++ application (one program) utilizing **two separate threads**:
+Build a single native C++ application (one program) utilizing **three separate threads**:
 
-1. **GUI Thread**: Runs the Qt desktop interface (Library, Search, Explore, BookDetailsPanel, Download/Audiobook flows). Reads from the shared SQLite database and handles user interactions.
-2. **Data Collector Thread**: Runs in the background and periodically refreshes book metadata from sources (Gutenberg, Ben-Yehuda, etc.). Updates the SQLite database on a configurable schedule.
+1. **GUI Thread**: Runs the Qt desktop interface (Library, Search, Explore, BookDetailsPanel, Download/Audiobook flows). Handles user interactions.
+2. **Query Thread**: `QueryWorker` executes all SQLite read/write queries asynchronously, keeping the GUI thread non-blocking. Services send requests via Qt signals and receive results back on the GUI thread.
+3. **Data Collector Thread**: Runs in the background and periodically refreshes book metadata from sources (Gutenberg, Ben-Yehuda, etc.). Updates the SQLite database on a configurable schedule.
 
 This single-program architecture keeps the GUI responsive, separates concerns, and enables user-configurable update frequency.
 
 Recommended layers:
 
 - **GUI layer**: Qt Quick or Qt Widgets for responsive user interface
-- **GUI services**: LibraryService, AudiobookService, VoiceService (read-only access to database)
+- **GUI services**: LibraryService, AudiobookService, VoiceService (route queries to QueryWorker)
 - **Data collector**: SourceAdapterService, BookDiscoveryService (fetches and normalizes metadata)
-- **Persistence**: SQLite for metadata and user library, shared between both threads
+- **Persistence**: SQLite for metadata and user library, shared between all three threads via named connections
 - **Source adapters**: pluggable C++ components for Gutenberg, Ben-Yehuda, and future providers
 - **Audio integration**: native or external TTS service for voice preview and generation
 
@@ -244,22 +245,20 @@ For the full ID priority order, resolution algorithm, and adapter responsibiliti
 -- Books table (one row per logical work; language lives in editions)
 -- book_id format: "<type>:<value>" — e.g. "lccn:n78095332", "gutenberg:1342"
 CREATE TABLE IF NOT EXISTS books (
-    book_id          TEXT PRIMARY KEY,
-    title            TEXT NOT NULL,
-    author           TEXT,
-    publish_year     INTEGER,
-    publication_date TEXT,
-    summary          TEXT
+    book_id      TEXT PRIMARY KEY,
+    title        TEXT NOT NULL,
+    author       TEXT,
+    publish_year INTEGER,
+    summary      TEXT
 );
 
 -- All known identifiers for a book (one row per identifier type+value)
 -- Primary deduplication mechanism: query this table before inserting a new book
 CREATE TABLE IF NOT EXISTS book_identifiers (
-    book_id  TEXT NOT NULL,
-    type     TEXT NOT NULL,   -- 'lccn', 'oclc', 'isbn', 'gutenberg', 'archive', 'benyehuda'
-    value    TEXT NOT NULL,
-    PRIMARY KEY (type, value),
-    FOREIGN KEY (book_id) REFERENCES books(book_id) ON DELETE CASCADE
+    book_id TEXT NOT NULL REFERENCES books(book_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    type    TEXT NOT NULL,   -- 'lccn', 'oclc', 'isbn', 'gutenberg', 'archive', 'benyehuda'
+    value   TEXT NOT NULL,
+    UNIQUE(type, value)
 );
 
 -- Editions (one row per language variant of a work)
