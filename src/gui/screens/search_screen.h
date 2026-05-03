@@ -66,7 +66,7 @@ private slots:
     void onRemoveBookCompleted(quint64 requestId, const QString &bookId, bool success);
     void onLanguagesCompleted(quint64 requestId, const QStringList &languages);
     void onSourcesCompleted(quint64 requestId, const QStringList &sources);
-    void onGenresCompleted(quint64 requestId, QStringList genres);
+    void onGenresCompleted(quint64 requestId, const QStringList &genres);
 
 private:
     void init(QueryWorker *worker);

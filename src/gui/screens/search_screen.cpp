@@ -811,7 +811,7 @@ void SearchScreen::onShowMoreGenres()
 // Filter population result slots
 // ---------------------------------------------------------------------------
 
-void SearchScreen::onGenresCompleted(quint64 /*requestId*/, QStringList genres)
+void SearchScreen::onGenresCompleted(quint64 /*requestId*/, const QStringList &genres)
 {
     const QSignalBlocker blocker(m_genreList);
     m_genreList->clear();
