@@ -16,6 +16,7 @@ private slots:
     void setStepCount_clampsCurrentStep();
     void sizeHint_widthScalesWithStepCount();
     void setStepLabels_doesNotCrash();
+    void setStepLabels_fewerLabelsThanSteps_doesNotCrash();
 };
 
 void StepIndicatorWidgetTest::initialState_currentStepIsZero()
@@ -81,6 +82,16 @@ void StepIndicatorWidgetTest::setStepLabels_doesNotCrash()
                      QStringLiteral("Source")});
     // Verify painting does not crash by forcing a paint event.
     w.resize(300, 48);
+    w.show();
+    w.hide();
+}
+
+void StepIndicatorWidgetTest::setStepLabels_fewerLabelsThanSteps_doesNotCrash()
+{
+    StepIndicatorWidget w(4);
+    // Only 2 labels for 4 steps — the label guard must prevent out-of-bounds draw.
+    w.setStepLabels({QStringLiteral("Language"), QStringLiteral("Format")});
+    w.resize(400, 48);
     w.show();
     w.hide();
 }

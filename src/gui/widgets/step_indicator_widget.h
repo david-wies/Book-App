@@ -29,7 +29,7 @@ protected:
     void paintEvent(QPaintEvent *event) override;
 
 private:
-    int         m_stepCount{};
+    int         m_stepCount{1};
     int         m_currentStep{0};
     QStringList m_labels;
 

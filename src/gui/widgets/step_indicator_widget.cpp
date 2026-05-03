@@ -91,7 +91,7 @@ void StepIndicatorWidget::paintEvent(QPaintEvent *)
 
     // Draw circles.
     QFont checkFont = font();
-    checkFont.setPointSize(qMax(7, kCircleDiameter / 2 - 1));
+    checkFont.setPointSize(kCircleDiameter / 2 - 1);
     checkFont.setBold(true);
 
     for (int i = 0; i < m_stepCount; ++i) {
@@ -130,7 +130,7 @@ void StepIndicatorWidget::paintEvent(QPaintEvent *)
         }
 
         // Optional label below circle.
-        if (hasLabels && i < m_labels.size()) {
+        if (hasLabels && i < int(m_labels.size())) {
             const QRect labelRect(cx - 40, labelY, 80, kLabelHeight);
 
             QFont labelFont = font();
@@ -138,7 +138,7 @@ void StepIndicatorWidget::paintEvent(QPaintEvent *)
             p.setFont(labelFont);
             p.setPen(active ? accent : muted);
             p.drawText(labelRect, Qt::AlignHCenter | Qt::AlignTop,
-                       m_labels.at(i));
+                       m_labels[i]);
         }
     }
 }
