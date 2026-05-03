@@ -48,14 +48,14 @@ signals:
     void audiobookRequested(const QString &bookId);
 
 private slots:
-    void onDetailsCompleted(quint64 requestId, bookhub::gui::BookDetails details);
+    void onDetailsCompleted(quint64 requestId, const bookhub::gui::BookDetails &details);
     void onFormatsCompleted(quint64 requestId,
-                            QList<bookhub::gui::BookFormatEntry> formats);
+                            const QList<bookhub::gui::BookFormatEntry> &formats);
     void onLanguageChanged(int index);
     void onAddToLibraryClicked();
     void onRemoveFromLibraryClicked();
-    void onAddBookCompleted(quint64 requestId, QString bookId, bool success, int newId);
-    void onRemoveBookCompleted(quint64 requestId, QString bookId, bool success);
+    void onAddBookCompleted(quint64 requestId, const QString &bookId, bool success, int newId);
+    void onRemoveBookCompleted(quint64 requestId, const QString &bookId, bool success);
     void onToggleSummary();
 
 private:

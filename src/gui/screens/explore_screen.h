@@ -40,12 +40,12 @@ private slots:
     void onLoadMore();
 
     // Async result slots
-    void onTrendingCompleted(quint64 requestId, QList<bookhub::gui::ExploreBook> books);
-    void onNewArrivalsCompleted(quint64 requestId, QList<bookhub::gui::ExploreBook> books);
+    void onTrendingCompleted(quint64 requestId, const QList<bookhub::gui::ExploreBook> &books);
+    void onNewArrivalsCompleted(quint64 requestId, const QList<bookhub::gui::ExploreBook> &books);
     void onCategoriesCompleted(quint64 requestId,
-                               QList<bookhub::gui::ExploreCategory> categories);
+                               const QList<bookhub::gui::ExploreCategory> &categories);
     void onBooksForGenreCompleted(quint64 requestId,
-                                  QList<bookhub::gui::ExploreBook> books);
+                                  const QList<bookhub::gui::ExploreBook> &books);
 
 private:
     // Page builders

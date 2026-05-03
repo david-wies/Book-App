@@ -33,10 +33,10 @@ constexpr auto kStatusDownloaded = "downloaded";
 constexpr auto kStatusError = "error";
 
 QString formatSize(qint64 bytes) {
-    if (bytes >= 1024 * 1024)
-        return QStringLiteral("%1 MB").arg(bytes / (1024.0 * 1024), 0, 'f', 1);
+    if (bytes >= qint64{1024} * 1024)
+        return QStringLiteral("%1 MB").arg(static_cast<double>(bytes) / (1024.0 * 1024), 0, 'f', 1);
     if (bytes >= 1024)
-        return QStringLiteral("%1 KB").arg(bytes / 1024.0, 0, 'f', 1);
+        return QStringLiteral("%1 KB").arg(static_cast<double>(bytes) / 1024.0, 0, 'f', 1);
     return QStringLiteral("%1 bytes").arg(bytes);
 }
 }
@@ -73,7 +73,7 @@ void DownloadFlowDialog::startForBook(const QString &bookId)
     exec();
 }
 
-void DownloadFlowDialog::onDetailsCompleted(quint64 requestId, BookDetails details)
+void DownloadFlowDialog::onDetailsCompleted(quint64 requestId, const BookDetails &details)
 {
     if (requestId != m_pendingDetailsId)
         return;
@@ -103,7 +103,7 @@ void DownloadFlowDialog::onFormatsCompleted(quint64 requestId, QList<BookFormatE
 {
     if (requestId != m_pendingFormatsId)
         return;
-    m_formats = formats;
+    m_formats = std::move(formats);
     populateFormatList();
     if (!m_hasLanguageStep && m_currentStep < 1) {
         m_currentStep = 1;

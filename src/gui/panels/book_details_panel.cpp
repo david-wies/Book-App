@@ -57,7 +57,7 @@ void BookDetailsPanel::loadBook(const QString &bookId)
 // Private slots
 // ---------------------------------------------------------------------------
 
-void BookDetailsPanel::onDetailsCompleted(quint64 requestId, BookDetails details)
+void BookDetailsPanel::onDetailsCompleted(quint64 requestId, const BookDetails &details)
 {
     if (requestId != m_pendingDetailsId)
         return;
@@ -74,7 +74,7 @@ void BookDetailsPanel::onDetailsCompleted(quint64 requestId, BookDetails details
 }
 
 void BookDetailsPanel::onFormatsCompleted(quint64 requestId,
-                                          QList<BookFormatEntry> formats)
+                                          const QList<BookFormatEntry> &formats)
 {
     if (requestId != m_pendingFormatsId)
         return;
@@ -104,7 +104,7 @@ void BookDetailsPanel::onRemoveFromLibraryClicked()
     m_libraryService->requestRemoveBook(m_libraryItemId, m_currentBookId);
 }
 
-void BookDetailsPanel::onAddBookCompleted(quint64 requestId, QString /*bookId*/,
+void BookDetailsPanel::onAddBookCompleted(quint64 requestId, const QString &/*bookId*/,
                                           bool success, int newId)
 {
     if (requestId != m_pendingAddId)
@@ -117,7 +117,7 @@ void BookDetailsPanel::onAddBookCompleted(quint64 requestId, QString /*bookId*/,
     setLibraryButtonState(m_inLibrary);
 }
 
-void BookDetailsPanel::onRemoveBookCompleted(quint64 requestId, QString /*bookId*/, bool success)
+void BookDetailsPanel::onRemoveBookCompleted(quint64 requestId, const QString &/*bookId*/, bool success)
 {
     if (requestId != m_pendingRemoveId)
         return;
@@ -454,7 +454,7 @@ void BookDetailsPanel::populateDetails(const BookDetails &details)
             m_langCombo->addItem(ed.language);
     }
 
-    const int edCount   = details.editions.size();
+    const qsizetype edCount = details.editions.size();
     const bool multiLang = edCount > 1;
     m_langCombo->setVisible(multiLang);
     m_singleLangLabel->setVisible(!multiLang && edCount == 1);

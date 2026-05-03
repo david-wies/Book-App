@@ -659,7 +659,7 @@ void SearchScreen::onCountCompleted(quint64 requestId, int count)
     m_service->requestSearch(m_pendingSearchParams, 0, kPageSize);
 }
 
-void SearchScreen::onSearchCompleted(quint64 requestId, QList<SearchResult> results)
+void SearchScreen::onSearchCompleted(quint64 requestId, const QList<SearchResult> &results)
 {
     if (requestId == m_pendingSearchId) {
         populateModel(results, false);
@@ -669,7 +669,7 @@ void SearchScreen::onSearchCompleted(quint64 requestId, QList<SearchResult> resu
             m_loadMoreBtn->setVisible(false);
         } else {
             setResultsState(1);
-            m_currentOffset = results.size();
+            m_currentOffset = static_cast<int>(results.size());
             m_loadMoreBtn->setVisible(m_currentOffset < m_totalCount);
             m_loadMoreBtn->setEnabled(true);
         }
@@ -681,7 +681,7 @@ void SearchScreen::onSearchCompleted(quint64 requestId, QList<SearchResult> resu
     }
 }
 
-void SearchScreen::onLoadMoreCompleted(quint64 requestId, QList<SearchResult> results)
+void SearchScreen::onLoadMoreCompleted(quint64 requestId, const QList<SearchResult> &results)
 {
     if (requestId < m_pendingLoadMoreId)
         return;
@@ -690,7 +690,7 @@ void SearchScreen::onLoadMoreCompleted(quint64 requestId, QList<SearchResult> re
         return;
 
     populateModel(results, true);
-    m_currentOffset += results.size();
+    m_currentOffset += static_cast<int>(results.size());
     m_loadMoreBtn->setVisible(m_currentOffset < m_totalCount);
     m_loadMoreBtn->setEnabled(true);
 }
@@ -712,7 +712,7 @@ void SearchScreen::onRemoveFromLibrary(const QString &bookId)
     m_libraryService->requestRemoveBookByBookId(bookId);
 }
 
-void SearchScreen::onAddBookCompleted(quint64 /*requestId*/, QString bookId,
+void SearchScreen::onAddBookCompleted(quint64 /*requestId*/, const QString &bookId,
                                        bool success, int /*newId*/)
 {
     if (!success)
@@ -727,7 +727,7 @@ void SearchScreen::onAddBookCompleted(quint64 /*requestId*/, QString bookId,
     }
 }
 
-void SearchScreen::onRemoveBookCompleted(quint64 /*requestId*/, QString bookId, bool success)
+void SearchScreen::onRemoveBookCompleted(quint64 /*requestId*/, const QString &bookId, bool success)
 {
     if (!success)
         return;
@@ -830,7 +830,7 @@ void SearchScreen::onGenresCompleted(quint64 /*requestId*/, QStringList genres)
         m_genreList->setFixedHeight(kGenreCollapsed * rowH);
 }
 
-void SearchScreen::onLanguagesCompleted(quint64 /*requestId*/, QStringList languages)
+void SearchScreen::onLanguagesCompleted(quint64 /*requestId*/, const QStringList &languages)
 {
     const QSignalBlocker blocker(m_langList);
     m_langList->clear();
@@ -842,7 +842,7 @@ void SearchScreen::onLanguagesCompleted(quint64 /*requestId*/, QStringList langu
     }
 }
 
-void SearchScreen::onSourcesCompleted(quint64 /*requestId*/, QStringList sources)
+void SearchScreen::onSourcesCompleted(quint64 /*requestId*/, const QStringList &sources)
 {
     const QSignalBlocker blocker(m_srcList);
     m_srcList->clear();

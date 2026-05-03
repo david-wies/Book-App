@@ -33,28 +33,30 @@ public slots:
     virtual void onThreadFinished();
 
     // Search
-    virtual void handleSearchRequest(quint64 requestId, bookhub::gui::SearchParams params,
+    virtual void handleSearchRequest(quint64 requestId, const bookhub::gui::SearchParams &params,
                                      int offset, int limit);
-    virtual void handleCountRequest(quint64 requestId, bookhub::gui::SearchParams params);
+    virtual void handleCountRequest(quint64 requestId, const bookhub::gui::SearchParams &params);
     virtual void handleLanguagesRequest(quint64 requestId);
     virtual void handleSourcesRequest(quint64 requestId);
     virtual void handleGenresRequest(quint64 requestId);
 
     // Library
-    virtual void handleFetchItemsRequest(quint64 requestId, QString sortColumn);
-    virtual void handleAddBookRequest(quint64 requestId, QString bookId, int editionId);
+    virtual void handleFetchItemsRequest(quint64 requestId, const QString &sortColumn);
+    virtual void handleAddBookRequest(quint64 requestId, const QString &bookId, int editionId);
     virtual void handleRemoveBookRequest(quint64 requestId, int libraryItemId, QString bookId);
-    virtual void handleRemoveBookByBookIdRequest(quint64 requestId, QString bookId);
-    virtual void handleUpdateStatusRequest(quint64 requestId, int libraryItemId, QString status);
+    virtual void handleRemoveBookByBookIdRequest(quint64 requestId, const QString &bookId);
+    virtual void handleUpdateStatusRequest(quint64 requestId, int libraryItemId,
+                                           const QString &status);
 
     // Explore
     virtual void handleTrendingRequest(quint64 requestId);
     virtual void handleNewArrivalsRequest(quint64 requestId);
     virtual void handleCategoriesRequest(quint64 requestId);
-    virtual void handleBooksForGenreRequest(quint64 requestId, QString genre, int offset, int limit);
+    virtual void handleBooksForGenreRequest(quint64 requestId, const QString &genre,
+                                            int offset, int limit);
 
     // Book details
-    virtual void handleBookDetailsRequest(quint64 requestId, QString bookId);
+    virtual void handleBookDetailsRequest(quint64 requestId, const QString &bookId);
     virtual void handleFormatsForEditionRequest(quint64 requestId, int editionId);
 
 signals:

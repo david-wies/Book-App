@@ -28,14 +28,14 @@ public slots:
     void onThreadStarted() override {}
     void onThreadFinished() override {}
 
-    void handleSearchRequest(quint64 requestId, bookhub::gui::SearchParams params,
+    void handleSearchRequest(quint64 requestId, const bookhub::gui::SearchParams &params,
                              int offset, int limit) override
     {
         emit searchCompleted(requestId,
             internal::runSearch(params, offset, limit, QSqlDatabase::defaultConnection));
     }
 
-    void handleCountRequest(quint64 requestId, bookhub::gui::SearchParams params) override
+    void handleCountRequest(quint64 requestId, const bookhub::gui::SearchParams &params) override
     {
         emit countCompleted(requestId,
             internal::runCount(params, QSqlDatabase::defaultConnection));
@@ -59,13 +59,13 @@ public slots:
             internal::fetchGenres(QSqlDatabase::defaultConnection));
     }
 
-    void handleFetchItemsRequest(quint64 requestId, QString sortColumn) override
+    void handleFetchItemsRequest(quint64 requestId, const QString &sortColumn) override
     {
         emit fetchItemsCompleted(requestId,
             internal::fetchItems(sortColumn, QSqlDatabase::defaultConnection));
     }
 
-    void handleAddBookRequest(quint64 requestId, QString bookId, int editionId) override
+    void handleAddBookRequest(quint64 requestId, const QString &bookId, int editionId) override
     {
         const int newId = internal::addBook(bookId, editionId, QSqlDatabase::defaultConnection);
         emit addBookCompleted(requestId, bookId, newId > 0, newId);
@@ -73,18 +73,18 @@ public slots:
 
     void handleRemoveBookRequest(quint64 requestId, int libraryItemId, QString bookId) override
     {
-        emit removeBookCompleted(requestId, bookId,
-            internal::removeBook(libraryItemId, QSqlDatabase::defaultConnection));
+        const bool ok = internal::removeBook(libraryItemId, QSqlDatabase::defaultConnection);
+        emit removeBookCompleted(requestId, std::move(bookId), ok);
     }
 
-    void handleRemoveBookByBookIdRequest(quint64 requestId, QString bookId) override
+    void handleRemoveBookByBookIdRequest(quint64 requestId, const QString &bookId) override
     {
         emit removeBookCompleted(requestId, bookId,
             internal::removeBookByBookId(bookId, QSqlDatabase::defaultConnection));
     }
 
     void handleUpdateStatusRequest(quint64 requestId, int libraryItemId,
-                                   QString status) override
+                                   const QString &status) override
     {
         emit updateStatusCompleted(requestId,
             internal::updateStatus(libraryItemId, status, QSqlDatabase::defaultConnection));
@@ -108,7 +108,7 @@ public slots:
             internal::fetchCategories(QSqlDatabase::defaultConnection));
     }
 
-    void handleBooksForGenreRequest(quint64 requestId, QString genre,
+    void handleBooksForGenreRequest(quint64 requestId, const QString &genre,
                                     int offset, int limit) override
     {
         emit booksForGenreCompleted(requestId,
@@ -116,7 +116,7 @@ public slots:
                                          QSqlDatabase::defaultConnection));
     }
 
-    void handleBookDetailsRequest(quint64 requestId, QString bookId) override
+    void handleBookDetailsRequest(quint64 requestId, const QString &bookId) override
     {
         emit bookDetailsCompleted(requestId,
             internal::fetchBookDetails(bookId, QSqlDatabase::defaultConnection));

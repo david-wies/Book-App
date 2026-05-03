@@ -348,7 +348,7 @@ void ExploreScreen::loadTopLevelData()
 // ---------------------------------------------------------------------------
 
 void ExploreScreen::onTrendingCompleted(quint64 requestId,
-                                         QList<ExploreBook> books)
+                                         const QList<ExploreBook> &books)
 {
     if (requestId < m_pendingTrendingId)
         return;
@@ -360,7 +360,7 @@ void ExploreScreen::onTrendingCompleted(quint64 requestId,
 }
 
 void ExploreScreen::onNewArrivalsCompleted(quint64 requestId,
-                                            QList<ExploreBook> books)
+                                            const QList<ExploreBook> &books)
 {
     if (requestId < m_pendingNewArrivalsId)
         return;
@@ -372,7 +372,7 @@ void ExploreScreen::onNewArrivalsCompleted(quint64 requestId,
 }
 
 void ExploreScreen::onCategoriesCompleted(quint64 requestId,
-                                           QList<ExploreCategory> categories)
+                                           const QList<ExploreCategory> &categories)
 {
     if (requestId < m_pendingCategoriesId)
         return;
@@ -384,7 +384,7 @@ void ExploreScreen::onCategoriesCompleted(quint64 requestId,
 }
 
 void ExploreScreen::onBooksForGenreCompleted(quint64 requestId,
-                                              QList<ExploreBook> books)
+                                              const QList<ExploreBook> &books)
 {
     if (requestId < m_pendingGenreId)
         return;
@@ -413,7 +413,7 @@ void ExploreScreen::onBooksForGenreCompleted(quint64 requestId,
                                             absoluteIdx % kGridColumns);
     }
 
-    m_genreOffset = offset + books.size();
+    m_genreOffset = offset + static_cast<int>(books.size());
     m_loadMoreBtn->setVisible(books.size() == kGenrePageSize);
     m_loadMoreBtn->setEnabled(true);
 }

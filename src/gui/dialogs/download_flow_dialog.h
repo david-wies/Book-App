@@ -28,7 +28,7 @@ public:
     void startForBook(const QString &bookId);
 
 private slots:
-    void onDetailsCompleted(quint64 requestId, bookhub::gui::BookDetails details);
+    void onDetailsCompleted(quint64 requestId, const bookhub::gui::BookDetails &details);
     void onFormatsCompleted(quint64 requestId,
                             QList<bookhub::gui::BookFormatEntry> formats);
     void onLanguageSelectionChanged();
