@@ -5,9 +5,9 @@
 
 namespace bookhub::gui {
 
-// Custom step-progress widget used by DownloadFlowDialog (3 steps) and
-// AudiobookFlowDialog (5 steps). Draws filled/outline circles connected by
-// a horizontal line; completed steps show a checkmark glyph.
+// Draws a row of numbered circles connected by a horizontal line.
+// Completed steps show a green checkmark; the active step is accent-filled;
+// future steps are muted outlines.
 class StepIndicatorWidget : public QWidget {
     Q_OBJECT
 public:

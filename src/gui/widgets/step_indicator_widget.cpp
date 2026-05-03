@@ -6,7 +6,6 @@
 #include <QFont>
 #include <QFontMetrics>
 #include <QPainter>
-#include <QPainterPath>
 #include <QPaintEvent>
 
 namespace bookhub::gui {
@@ -71,7 +70,6 @@ void StepIndicatorWidget::paintEvent(QPaintEvent *)
     const int circleY = kVertPadding + kCircleDiameter / 2;
 
     // Distribute circles evenly across the full width.
-    const int spacing = (m_stepCount > 1) ? (width() / (m_stepCount - 1)) : 0;
     auto circleX = [&](int i) -> int {
         if (m_stepCount == 1)
             return width() / 2;
@@ -88,6 +86,8 @@ void StepIndicatorWidget::paintEvent(QPaintEvent *)
         p.setPen(QPen(completed ? accent : muted, 2));
         p.drawLine(x1, lineY, x2, lineY);
     }
+
+    const int labelY = kVertPadding + kCircleDiameter + 2;
 
     // Draw circles.
     QFont checkFont = font();
@@ -131,7 +131,6 @@ void StepIndicatorWidget::paintEvent(QPaintEvent *)
 
         // Optional label below circle.
         if (hasLabels && i < m_labels.size()) {
-            const int labelY = kVertPadding + kCircleDiameter + 2;
             const QRect labelRect(cx - 40, labelY, 80, kLabelHeight);
 
             QFont labelFont = font();
@@ -142,7 +141,6 @@ void StepIndicatorWidget::paintEvent(QPaintEvent *)
                        m_labels.at(i));
         }
     }
-    Q_UNUSED(spacing)
 }
 
 } // namespace bookhub::gui

@@ -312,8 +312,7 @@ void DownloadFlowDialogTest::retryButton_fallsBackToFormatStep_whenFormatsEmpty(
 
     dialog.showErrorState(QStringLiteral("Simulated pre-format error"));
 
-    // Retry button is hidden when there are no editions/formats to go back to.
-    // In our case editions ARE present so retry should be visible and fall back to step 1.
+    // Editions are present so retry falls back to format step (step 1).
     dialog.onRetryClicked();
 
     QCOMPARE(dialog.m_currentStep, 1); // format step
