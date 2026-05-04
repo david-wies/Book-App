@@ -2,7 +2,7 @@
 # prepare-release.sh — create a clean release branch and open a PR to master.
 #
 # SYNOPSIS
-#   tools/prepare-release.sh <version>
+#   tools/prepare-release.sh [--dry-run] <version>
 #
 # DESCRIPTION
 #   This script automates the develop → master release path. It:
@@ -21,14 +21,20 @@
 #   mechanical preparation so the developer doesn't have to remember which
 #   files to delete.
 #
+# OPTIONS
+#   --dry-run   Print every action that would be taken without creating any
+#               branch, making any commit, pushing to origin, or opening a PR.
+#               Safe to run at any time to preview what would be stripped.
+#
 # REQUIREMENTS
 #   - git
 #   - gh (GitHub CLI), authenticated: gh auth login
 #   - Must be run from the repository root
 #   - STRIP_LIST (.github/release-strip.txt) must be present
 #
-# EXAMPLE
+# EXAMPLES
 #   tools/prepare-release.sh v1.0.0
+#   tools/prepare-release.sh --dry-run v1.0.0
 #
 # AFTER MERGING THE PR
 #   Tag the resulting master commit:
@@ -42,18 +48,51 @@ set -euo pipefail
 
 # ── Argument validation ────────────────────────────────────────────────────
 
-if [[ $# -ne 1 ]]; then
-    echo "Usage: tools/prepare-release.sh <version>" >&2
+DRY_RUN=0
+
+if [[ $# -eq 0 || $# -gt 2 ]]; then
+    echo "Usage: tools/prepare-release.sh [--dry-run] <version>" >&2
     echo "  Example: tools/prepare-release.sh v1.0.0" >&2
+    echo "  Example: tools/prepare-release.sh --dry-run v1.0.0" >&2
     exit 1
 fi
 
-VERSION="$1"
+if [[ "$1" == "--dry-run" ]]; then
+    DRY_RUN=1
+    if [[ $# -ne 2 ]]; then
+        echo "Usage: tools/prepare-release.sh --dry-run <version>" >&2
+        exit 1
+    fi
+    VERSION="$2"
+else
+    VERSION="$1"
+fi
 
 # Require a 'v' prefix so tags are consistent (v1.0.0, v1.2.3-rc1, etc.).
 if [[ ! "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9] ]]; then
     echo "ERROR: version must start with 'v' followed by semver (e.g. v1.0.0)." >&2
     exit 1
+fi
+
+# ── Dry-run helper ────────────────────────────────────────────────────────
+
+# run_or_print <description> <cmd> [args...]
+# In dry-run mode: prints "[DRY RUN] would run: <cmd> [args...]" and returns 0.
+# In live mode:    executes the command normally.
+run_or_print() {
+    local desc="$1"; shift
+    if [[ "${DRY_RUN}" -eq 1 ]]; then
+        echo "[DRY RUN] ${desc}"
+    else
+        "$@"
+    fi
+}
+
+if [[ "${DRY_RUN}" -eq 1 ]]; then
+    echo "╔══════════════════════════════════════════════════════════╗"
+    echo "║  DRY RUN — no branches, commits, or PRs will be created  ║"
+    echo "╚══════════════════════════════════════════════════════════╝"
+    echo ""
 fi
 
 # ── Locate the strip list ──────────────────────────────────────────────────
@@ -75,7 +114,7 @@ if ! command -v gh &>/dev/null; then
     exit 1
 fi
 
-if ! gh auth status &>/dev/null; then
+if [[ "${DRY_RUN}" -eq 0 ]] && ! gh auth status &>/dev/null; then
     echo "ERROR: GitHub CLI is not authenticated. Run: gh auth login" >&2
     exit 1
 fi
@@ -131,7 +170,7 @@ fi
 # ── Create release branch ─────────────────────────────────────────────────
 
 echo "Creating branch '${RELEASE_BRANCH}' from develop (${LOCAL_SHA:0:7})..."
-git checkout -b "${RELEASE_BRANCH}"
+run_or_print "git checkout -b ${RELEASE_BRANCH}" git checkout -b "${RELEASE_BRANCH}"
 
 # ── Strip develop-only files ──────────────────────────────────────────────
 
@@ -166,8 +205,12 @@ while IFS= read -r line || [[ -n "${line}" ]]; do
     # developer state on the release branch.
     if git ls-files --error-unmatch "${path}" &>/dev/null 2>&1 || \
        [[ -n "$(git ls-files "${path}")" ]]; then
-        echo "  Removing: ${path}"
-        git rm -r --quiet "${path}"
+        if [[ "${DRY_RUN}" -eq 1 ]]; then
+            echo "  [DRY RUN] would remove: ${path}"
+        else
+            echo "  Removing: ${path}"
+        fi
+        run_or_print "git rm -r ${path}" git rm -r --quiet "${path}"
         (( REMOVED_COUNT++ )) || true
     else
         echo "  Skipping (not tracked): ${path}"
@@ -179,18 +222,20 @@ done < "${STRIP_LIST}"
 
 if [[ "${REMOVED_COUNT}" -eq 0 ]]; then
     echo "No tracked develop-only files found to remove."
-    echo "Nothing to commit — the release branch is identical to develop."
-    echo ""
-    echo "If this is unexpected, verify .github/release-strip.txt is correct."
-    # Clean up the branch we just created since there's nothing to do.
-    git checkout develop
-    git branch -D "${RELEASE_BRANCH}"
+    if [[ "${DRY_RUN}" -eq 1 ]]; then
+        echo "Dry run complete — nothing would be stripped."
+    else
+        echo "Nothing to commit — the release branch is identical to develop."
+        echo ""
+        echo "If this is unexpected, verify .github/release-strip.txt is correct."
+        git checkout develop
+        git branch -D "${RELEASE_BRANCH}"
+    fi
     exit 0
 fi
 
 echo "Committing removal of ${REMOVED_COUNT} develop-only path(s)..."
-
-git commit -m "$(cat <<EOF
+run_or_print "git commit (release prep)" git commit -m "$(cat <<EOF
 chore: strip develop-only files for release ${VERSION}
 
 Removes internal documentation, design specs, developer tooling, and
@@ -206,14 +251,18 @@ EOF
 # ── Push and open PR ──────────────────────────────────────────────────────
 
 echo "Pushing '${RELEASE_BRANCH}' to origin..."
-git push -u origin "${RELEASE_BRANCH}"
+run_or_print "git push -u origin ${RELEASE_BRANCH}" git push -u origin "${RELEASE_BRANCH}"
 
 echo "Opening PR: ${RELEASE_BRANCH} → master..."
-PR_URL="$(gh pr create \
-    --base master \
-    --head "${RELEASE_BRANCH}" \
-    --title "Release ${VERSION}" \
-    --body "$(cat <<EOF
+if [[ "${DRY_RUN}" -eq 1 ]]; then
+    echo "[DRY RUN] would open PR: ${RELEASE_BRANCH} → master (title: \"Release ${VERSION}\")"
+    PR_URL="(dry run — no PR created)"
+else
+    PR_URL="$(gh pr create \
+        --base master \
+        --head "${RELEASE_BRANCH}" \
+        --title "Release ${VERSION}" \
+        --body "$(cat <<EOF
 ## Release ${VERSION}
 
 This PR merges \`develop\` into \`master\` for the **${VERSION}** release.
@@ -242,25 +291,33 @@ git push origin ${VERSION}
 
 The \`release.yml\` workflow will then build the binary and publish a GitHub Release automatically.
 EOF
+        )"
     )"
-)"
+fi
 
 echo ""
 echo "-----------------------------------------------------------"
-echo "Release branch prepared successfully."
-echo ""
-echo "  Branch : ${RELEASE_BRANCH}"
-echo "  PR     : ${PR_URL}"
-echo ""
-echo "Next steps:"
-echo "  1. Review the PR and confirm the strip list is correct."
-echo "  2. Wait for CI to pass."
-echo "  3. Merge the PR on GitHub."
-echo "  4. Tag the master commit to publish the release:"
-echo "       git fetch origin"
-echo "       git tag -a ${VERSION} origin/master -m \"Release ${VERSION}\""
-echo "       git push origin ${VERSION}"
+if [[ "${DRY_RUN}" -eq 1 ]]; then
+    echo "Dry run complete. ${REMOVED_COUNT} path(s) would be stripped."
+    echo "Run without --dry-run to create the release branch and PR."
+else
+    echo "Release branch prepared successfully."
+    echo ""
+    echo "  Branch : ${RELEASE_BRANCH}"
+    echo "  PR     : ${PR_URL}"
+    echo ""
+    echo "Next steps:"
+    echo "  1. Review the PR and confirm the strip list is correct."
+    echo "  2. Wait for CI to pass."
+    echo "  3. Merge the PR on GitHub."
+    echo "  4. Tag the master commit to publish the release:"
+    echo "       git fetch origin"
+    echo "       git tag -a ${VERSION} origin/master -m \"Release ${VERSION}\""
+    echo "       git push origin ${VERSION}"
+fi
 echo "-----------------------------------------------------------"
 
 # Return to develop so the developer isn't left on the release branch.
-git checkout develop
+if [[ "${DRY_RUN}" -eq 0 ]]; then
+    git checkout develop
+fi
