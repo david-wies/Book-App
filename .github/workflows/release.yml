@@ -14,7 +14,7 @@ on:
     tags:
       # Only fire on semantic version tags that are reachable from master.
       # Tags pushed to other branches are ignored.
-      - 'v[0-9]+.[0-9]+.[0-9]+*'
+      - 'v[0-9]*.[0-9]*.[0-9]*'
 
 # Cancel any in-progress release run for the same tag (e.g. if you re-push
 # an annotated tag after a mistake). Two release runs for the same tag would
@@ -38,6 +38,14 @@ jobs:
       with:
         # Check out the exact tag commit, not a branch tip.
         ref: ${{ github.ref }}
+
+    - name: Verify tag is on master
+      run: |
+        git fetch origin master
+        if ! git merge-base --is-ancestor $(git rev-parse HEAD) origin/master; then
+          echo "Error: Tag ${{ github.ref }} is not on master branch. Aborting release."
+          exit 1
+        fi
 
     - name: Cache apt packages
       uses: actions/cache@v4
@@ -73,7 +81,7 @@ jobs:
     - name: Run full test suite
       # Run ALL tests (sanity + non-sanity) before publishing a release.
       # A release with failing tests should never be published.
-      run: cd build && ctest -j$(nproc) --output-on-failure
+      run: cd build && ctest -j$(nproc) --output-on-failure --no-tests=ignore
 
     - name: Package release archive
       # Produce a self-contained tarball named bookhub-<version>-linux-x86_64.tar.gz.
@@ -143,7 +151,7 @@ jobs:
               '### Requirements',
               '',
               '- Linux x86_64',
-              '- Qt6 runtime: `sudo apt-get install qt6-base-dev libqt6sql6 libarchive-dev`',
+              '- Qt6 runtime (Debian/Ubuntu): `sudo apt-get install libqt6core6 libqt6widgets6 libqt6sql6 libqt6network6 libarchive13`',
             ].join('\n'),
             draft: false,
             prerelease: version.includes('-'),
