@@ -1,0 +1,170 @@
+name: Release
+
+# Triggered when a version tag (e.g. v1.0.0) is pushed to master.
+# The normal workflow is:
+#   1. Run tools/prepare-release.sh v1.0.0  →  opens a clean PR to master
+#   2. Merge the PR on GitHub
+#   3. git fetch origin && git tag -a v1.0.0 origin/master -m "Release v1.0.0"
+#   4. git push origin v1.0.0              →  this workflow fires
+#
+# The workflow builds the binary in Release mode, packages it as a .tar.gz,
+# and publishes a GitHub Release with the archive attached.
+on:
+  push:
+    tags:
+      # Only fire on semantic version tags that are reachable from master.
+      # Tags pushed to other branches are ignored.
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+
+# Cancel any in-progress release run for the same tag (e.g. if you re-push
+# an annotated tag after a mistake). Two release runs for the same tag would
+# both try to create the same GitHub Release and one would fail.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write   # Required to create GitHub Releases and upload assets.
+
+jobs:
+  build-release:
+    name: Build release binary
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+    - name: Checkout tag
+      uses: actions/checkout@v4
+      with:
+        # Check out the exact tag commit, not a branch tip.
+        ref: ${{ github.ref }}
+
+    - name: Cache apt packages
+      uses: actions/cache@v4
+      with:
+        path: /var/cache/apt/archives
+        key: apt-qt6-release-${{ runner.os }}-${{ hashFiles('.github/workflows/release.yml') }}
+
+    - name: Install build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends \
+          build-essential \
+          cmake \
+          qt6-base-dev \
+          libqt6sql6 \
+          libqt6sql6-sqlite \
+          libarchive-dev
+
+    - name: Configure build (Release mode)
+      # Out-of-tree build is required — never cmake from the source root.
+      # Release mode enables full optimisation; strip debug symbols to reduce
+      # binary size for distribution.
+      run: |
+        mkdir -p build
+        cd build
+        cmake .. \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_CXX_FLAGS="-Wall -Wextra"
+
+    - name: Build project
+      run: cd build && make -j$(nproc)
+
+    - name: Run full test suite
+      # Run ALL tests (sanity + non-sanity) before publishing a release.
+      # A release with failing tests should never be published.
+      run: cd build && ctest -j$(nproc) --output-on-failure
+
+    - name: Package release archive
+      # Produce a self-contained tarball named bookhub-<version>-linux-x86_64.tar.gz.
+      # The archive contains only the executable; the user's database is stored
+      # in QStandardPaths::AppDataLocation and the icon is embedded as a Qt resource.
+      run: |
+        VERSION="${{ github.ref_name }}"
+        ARCHIVE_NAME="bookhub-${VERSION}-linux-x86_64"
+        mkdir -p "dist/${ARCHIVE_NAME}"
+        cp build/bookhub "dist/${ARCHIVE_NAME}/bookhub"
+        # Include the licence so redistributors have what they need.
+        cp LICENSE "dist/${ARCHIVE_NAME}/LICENSE"
+        cd dist
+        tar -czf "${ARCHIVE_NAME}.tar.gz" "${ARCHIVE_NAME}/"
+        sha256sum "${ARCHIVE_NAME}.tar.gz" > "${ARCHIVE_NAME}.tar.gz.sha256"
+        echo "ARCHIVE_NAME=${ARCHIVE_NAME}" >> "${GITHUB_ENV}"
+
+    - name: Upload build artifact (CI cache)
+      # Keep a short-lived copy in the Actions artifact store independent of
+      # the GitHub Release, so the binary is accessible even if the release
+      # draft is later deleted.
+      uses: actions/upload-artifact@v4
+      with:
+        name: bookhub-${{ github.ref_name }}-linux-x86_64
+        path: |
+          dist/${{ env.ARCHIVE_NAME }}.tar.gz
+          dist/${{ env.ARCHIVE_NAME }}.tar.gz.sha256
+        retention-days: 90
+
+    - name: Create GitHub Release
+      # Uses the GITHUB_TOKEN (scoped to contents: write above).
+      # The release is created as a draft=false so it is immediately visible.
+      # If you want a manual review step before publishing, change draft to true
+      # and promote it via the GitHub UI.
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const path = require('path');
+
+          const version = context.ref.replace('refs/tags/', '');
+          const archiveName = `${process.env.ARCHIVE_NAME}`;
+          const archivePath = `dist/${archiveName}.tar.gz`;
+          const checksumPath = `dist/${archiveName}.tar.gz.sha256`;
+
+          // Create the release.
+          const release = await github.rest.repos.createRelease({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            tag_name: version,
+            name: `BookHub ${version}`,
+            body: [
+              `## BookHub ${version}`,
+              '',
+              '### Installation',
+              '',
+              '1. Download `' + archiveName + '.tar.gz`',
+              '2. Extract: `tar -xzf ' + archiveName + '.tar.gz`',
+              '3. Run: `./' + archiveName + '/bookhub`',
+              '',
+              '### Checksum',
+              '',
+              '```',
+              fs.readFileSync(checksumPath, 'utf8').trim(),
+              '```',
+              '',
+              '### Requirements',
+              '',
+              '- Linux x86_64',
+              '- Qt6 runtime: `sudo apt-get install qt6-base-dev libqt6sql6 libarchive-dev`',
+            ].join('\n'),
+            draft: false,
+            prerelease: version.includes('-'),
+          });
+
+          // Upload the archive.
+          await github.rest.repos.uploadReleaseAsset({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            release_id: release.data.id,
+            name: `${archiveName}.tar.gz`,
+            data: fs.readFileSync(archivePath),
+          });
+
+          // Upload the checksum.
+          await github.rest.repos.uploadReleaseAsset({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            release_id: release.data.id,
+            name: `${archiveName}.tar.gz.sha256`,
+            data: fs.readFileSync(checksumPath),
+          });
+
+          core.info(`Release published: ${release.data.html_url}`);

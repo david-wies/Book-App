@@ -1,0 +1,42 @@
+# release-strip.txt
+#
+# Canonical list of develop-only paths that are removed from the repository
+# before a release is merged into master.
+#
+# Used by: tools/prepare-release.sh
+# Format:  one path per line, relative to the repo root.
+#          Lines starting with '#' and blank lines are ignored.
+#          Both files and directories are supported.
+#          Trailing slashes on directories are optional — the script
+#          handles both forms.
+#
+# Updating this list:
+#   - Add a path here whenever you add a new develop-only artefact.
+#   - Keep entries sorted alphabetically within each section.
+#   - Do NOT list files that should remain on master (src/, tests/,
+#     CMakeLists.txt, LICENSE, README.md, resources.qrc, etc.).
+
+# ── Internal design & specification documents ──────────────────────────────
+docs/
+spec/
+
+# ── Developer tooling ───────────────────────────────────────────────────────
+tools/
+
+# ── Claude Code configuration (AI assistant context, not end-user facing) ──
+# .claude/ is git-ignored on develop, but listed here as a safety net in case
+# it ever gets tracked accidentally.
+.claude/
+
+# ── Local git hooks (developers configure these on clone; not needed on master) ──
+.githooks/
+
+# ── Developer-facing guidance files ────────────────────────────────────────
+CLAUDE.md
+AGENTS.md
+
+# ── Clang static-analysis config (dev build tooling only) ──────────────────
+.clangd
+
+# ── Temporary / scratch assets used during prototyping ─────────────────────
+book_reader_icon.jpg

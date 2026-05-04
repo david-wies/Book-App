@@ -1,0 +1,32 @@
+# .gitattributes
+#
+# export-ignore: paths listed here are excluded when producing a source archive
+# via `git archive` (e.g. `git archive HEAD -o bookhub.tar.gz`). This mirrors
+# the list in .github/release-strip.txt, which is used by tools/prepare-release.sh
+# to strip these paths from the release branch before merging to master.
+#
+# Keep this list in sync with .github/release-strip.txt.
+# Entries here use gitattributes glob syntax (anchored at the repo root).
+
+# ── Internal design & specification documents ───────────────────────────────
+docs/            export-ignore
+spec/            export-ignore
+
+# ── Developer tooling ────────────────────────────────────────────────────────
+tools/           export-ignore
+
+# ── Claude Code / AI assistant configuration ─────────────────────────────────
+.claude/         export-ignore
+
+# ── Local git hooks ──────────────────────────────────────────────────────────
+.githooks/       export-ignore
+
+# ── Developer-facing guidance files ─────────────────────────────────────────
+CLAUDE.md        export-ignore
+AGENTS.md        export-ignore
+
+# ── Clang static-analysis config ─────────────────────────────────────────────
+.clangd          export-ignore
+
+# ── Temporary / scratch assets ───────────────────────────────────────────────
+book_reader_icon.jpg  export-ignore

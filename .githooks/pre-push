@@ -2,9 +2,13 @@
 # pre-push hook: guards the master branch against unauthorized pushes.
 #
 # Rules enforced locally (mirrors GitHub branch protection):
-#   1. No direct pushes to master from any branch.
-#   2. If the destination is master, the source must be the develop branch.
+#   1. No direct pushes to master from any branch — not even develop or release/*.
+#   2. If the destination is master, the source must be develop or release/vX.Y.Z.
 #      Any other branch (feature/*, fix/*, hotfix/*, etc.) is rejected.
+#
+# The only permitted path into master is via a GitHub PR:
+#   - develop → master  (standard feature merge)
+#   - release/vX.Y.Z → master  (release via tools/prepare-release.sh)
 #
 # NOTE: GitHub branch protection is the authoritative enforcement layer.
 # This hook is a fast-feedback safety net for developers so they learn
@@ -22,6 +26,9 @@ set -euo pipefail
 
 PROTECTED_BRANCH="master"
 ALLOWED_SOURCE="develop"
+# Release branches created by tools/prepare-release.sh (release/vX.Y.Z) are
+# also permitted to target master — but only via PR, never by direct push.
+RELEASE_BRANCH_PREFIX="release/"
 
 if [[ "${SKIP_BRANCH_GUARD:-0}" == "1" ]]; then
     echo "WARNING: SKIP_BRANCH_GUARD is set — branch protection bypassed." >&2
@@ -60,14 +67,27 @@ while IFS=' ' read -r local_ref local_sha remote_ref _remote_sha; do
         echo "    1. Open a pull request from '${ALLOWED_SOURCE}' into '${PROTECTED_BRANCH}'" >&2
         echo "       on GitHub (or via: gh pr create --base ${PROTECTED_BRANCH})." >&2
         echo "    2. Let CI pass, then merge the PR through GitHub." >&2
+    elif [[ "${local_branch}" == ${RELEASE_BRANCH_PREFIX}* ]]; then
+        # Release branch — correct source, but still cannot push directly to master.
+        # The prepare-release.sh workflow pushes release/* to origin/release/* and
+        # opens a PR from there; the merge goes through GitHub, never git push.
+        echo "  You are on a release branch: '${local_branch}'." >&2
+        echo "  Release branches cannot be pushed directly to '${PROTECTED_BRANCH}'." >&2
+        echo "" >&2
+        echo "  Workflow (tools/prepare-release.sh handles this automatically):" >&2
+        echo "    1. Push '${local_branch}' to origin (not to master)." >&2
+        echo "    2. Open a PR from '${local_branch}' into '${PROTECTED_BRANCH}' on GitHub." >&2
+        echo "    3. Let CI pass, then merge the PR through GitHub." >&2
     else
         # Wrong source branch entirely.
         echo "  Source branch: '${local_branch}'" >&2
-        echo "  Only the '${ALLOWED_SOURCE}' branch may be merged into '${PROTECTED_BRANCH}'." >&2
+        echo "  Only '${ALLOWED_SOURCE}' or '${RELEASE_BRANCH_PREFIX}*' branches may" >&2
+        echo "  target '${PROTECTED_BRANCH}' (always via PR, never by direct push)." >&2
         echo "" >&2
         echo "  Workflow:" >&2
         echo "    1. Merge your branch into '${ALLOWED_SOURCE}' first (via PR on GitHub)." >&2
         echo "    2. Then open a PR from '${ALLOWED_SOURCE}' into '${PROTECTED_BRANCH}'." >&2
+        echo "       Or use tools/prepare-release.sh for a versioned release." >&2
     fi
 
     echo "" >&2
