@@ -54,6 +54,12 @@ add_executable(bookhub
     ${COLLECTOR_SOURCES}
     ${GUI_SOURCES}
 )
+set_target_properties(bookhub PROPERTIES
+    MACOSX_BUNDLE TRUE
+    MACOSX_BUNDLE_BUNDLE_NAME "BookHub"
+    MACOSX_BUNDLE_GUI_IDENTIFIER "com.bookhub.app"
+    WIN32_EXECUTABLE TRUE
+)
 target_include_directories(bookhub PRIVATE src)
 target_link_libraries(bookhub PRIVATE Qt6::Widgets Qt6::Network shared LibArchive::LibArchive)
 

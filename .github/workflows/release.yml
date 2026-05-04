@@ -137,13 +137,12 @@ jobs:
       run: |
         VERSION="${{ github.ref_name }}"
         NAME="bookhub-${VERSION}-macos-arm64"
-        mkdir -p "dist/${NAME}"
-        cp build/bookhub "dist/${NAME}/"
-        cp LICENSE "dist/${NAME}/"
-        cd dist
-        tar -czf "${NAME}.tar.gz" "${NAME}/"
+        mkdir -p dist
+        # Bundle Qt frameworks and plugins into the .app, then produce a .dmg.
+        macdeployqt build/bookhub.app -dmg
+        mv build/bookhub.dmg "dist/${NAME}.dmg"
         # macOS ships shasum, not sha256sum.
-        shasum -a 256 "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256"
+        shasum -a 256 "dist/${NAME}.dmg" > "dist/${NAME}.dmg.sha256"
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
@@ -193,7 +192,7 @@ jobs:
               '|----------|------|',
               `| Linux x86_64   | \`bookhub-${version}-linux-x86_64.tar.gz\`  |`,
               `| Windows x86_64 | \`bookhub-${version}-windows-x86_64.zip\`    |`,
-              `| macOS arm64    | \`bookhub-${version}-macos-arm64.tar.gz\`    |`,
+              `| macOS arm64    | \`bookhub-${version}-macos-arm64.dmg\`       |`,
               '',
               '### Installation',
               '',
@@ -209,9 +208,8 @@ jobs:
               `2. Extract the zip and run \`bookhub.exe\`.`,
               '',
               '**macOS (Apple Silicon)**',
-              '1. Install runtime dependencies: `brew install libarchive` and Qt6 (`brew install qt`)',
-              `2. \`tar -xzf bookhub-${version}-macos-arm64.tar.gz\``,
-              `3. \`./bookhub-${version}-macos-arm64/bookhub\``,
+              '1. No additional dependencies — Qt frameworks are bundled.',
+              `2. Mount \`bookhub-${version}-macos-arm64.dmg\` and drag BookHub to Applications.`,
               '',
               '### Checksums (SHA-256)',
               '',
