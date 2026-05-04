@@ -128,6 +128,38 @@ public slots:
             internal::fetchFormatsForEdition(editionId,
                                              QSqlDatabase::defaultConnection));
     }
+
+    void handleListVoicesRequest(quint64 requestId) override
+    {
+        QueryWorker::handleListVoicesRequest(requestId);
+    }
+
+    void handleInsertVoiceRequest(quint64 requestId, const QString &voiceName,
+                                  const QString &voiceType, bool isPreset) override
+    {
+        QueryWorker::handleInsertVoiceRequest(requestId, voiceName, voiceType, isPreset);
+    }
+
+    void handleUpdateVoiceRequest(quint64 requestId, int voiceId,
+                                  const QString &voiceType) override
+    {
+        QueryWorker::handleUpdateVoiceRequest(requestId, voiceId, voiceType);
+    }
+
+    void handleDeleteVoiceRequest(quint64 requestId, int voiceId) override
+    {
+        QueryWorker::handleDeleteVoiceRequest(requestId, voiceId);
+    }
+
+    void handleQueryAudiobookStatusRequest(quint64 requestId, const QString &bookId) override
+    {
+        QueryWorker::handleQueryAudiobookStatusRequest(requestId, bookId);
+    }
+
+    void handleSetAudiobookReadyRequest(quint64 requestId, const QString &bookId) override
+    {
+        QueryWorker::handleSetAudiobookReadyRequest(requestId, bookId);
+    }
 };
 
 } // namespace bookhub::gui

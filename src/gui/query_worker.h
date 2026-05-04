@@ -9,6 +9,7 @@
 #include "services/explore_service.h"
 #include "services/library_service.h"
 #include "services/search_service.h"
+#include "widgets/voice_selector_widget.h"
 
 namespace bookhub::gui {
 
@@ -59,6 +60,17 @@ public slots:
     virtual void handleBookDetailsRequest(quint64 requestId, const QString &bookId);
     virtual void handleFormatsForEditionRequest(quint64 requestId, int editionId);
 
+    // Voice CRUD
+    virtual void handleListVoicesRequest(quint64 requestId);
+    virtual void handleInsertVoiceRequest(quint64 requestId, const QString &voiceName,
+                                          const QString &voiceType, bool isPreset);
+    virtual void handleUpdateVoiceRequest(quint64 requestId, int voiceId, const QString &voiceType);
+    virtual void handleDeleteVoiceRequest(quint64 requestId, int voiceId);
+
+    // Audiobook operations
+    virtual void handleQueryAudiobookStatusRequest(quint64 requestId, const QString &bookId);
+    virtual void handleSetAudiobookReadyRequest(quint64 requestId, const QString &bookId);
+
 signals:
     // Search results
     void searchCompleted(quint64 requestId, QList<bookhub::gui::SearchResult> results);
@@ -83,6 +95,16 @@ signals:
     void bookDetailsCompleted(quint64 requestId, bookhub::gui::BookDetails details);
     void formatsForEditionCompleted(quint64 requestId,
                                     QList<bookhub::gui::BookFormatEntry> formats);
+
+    // Voice results
+    void listVoicesCompleted(quint64 requestId, QList<bookhub::gui::VoiceEntry> voices);
+    void insertVoiceCompleted(quint64 requestId, bool success, int newId);
+    void updateVoiceCompleted(quint64 requestId, bool success);
+    void deleteVoiceCompleted(quint64 requestId, bool success);
+
+    // Audiobook status results
+    void audiobookStatusQueried(quint64 requestId, bool isReady);
+    void audiobookReadySet(quint64 requestId, bool success);
 
 private:
     static constexpr const char *kConnectionName = "gui_query_connection";

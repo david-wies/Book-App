@@ -48,12 +48,20 @@ public:
     quint64 requestRemoveBookByBookId(const QString &bookId);
     quint64 requestUpdateStatus(int libraryItemId, const QString &status);
 
+    // Audiobook operations
+    quint64 requestQueryAudiobookStatus(const QString &bookId);
+    quint64 requestSetAudiobookReady(const QString &bookId);
+
 signals:
     // Result signals — delivered on the GUI thread
     void fetchItemsCompleted(quint64 requestId, QList<bookhub::gui::LibraryItem> items);
     void addBookCompleted(quint64 requestId, QString bookId, bool success, int newId);
     void removeBookCompleted(quint64 requestId, QString bookId, bool success);
     void updateStatusCompleted(quint64 requestId, bool success);
+
+    // Audiobook status signals
+    void audiobookStatusQueried(quint64 requestId, bool isReady);
+    void audiobookConversionCompleted(quint64 requestId, bool success);
 
     // Emitted after any successful write so views can refresh
     void libraryChanged();
@@ -64,6 +72,10 @@ signals:
     void removeBookRequested(quint64 requestId, int libraryItemId, QString bookId);
     void removeBookByBookIdRequested(quint64 requestId, QString bookId);
     void updateStatusRequested(quint64 requestId, int libraryItemId, QString status);
+
+    // Audiobook internal signals
+    void queryAudiobookStatusRequested(quint64 requestId, QString bookId);
+    void setAudiobookReadyRequested(quint64 requestId, QString bookId);
 
 private:
     std::atomic<quint64> m_nextRequestId{1};

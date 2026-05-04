@@ -480,6 +480,7 @@ void BookDetailsPanel::populateDetails(const BookDetails &details)
 
     setLibraryButtonState(m_inLibrary);
     m_downloadBtn->setEnabled(false);
+    m_audiobookBtn->setEnabled(false);
 
     // Clear formats; they'll be loaded by the requestFormatsForEdition call
     // that follows immediately in onDetailsCompleted.
@@ -497,6 +498,7 @@ void BookDetailsPanel::populateFormats(const QList<BookFormatEntry> &formats)
 
     if (formats.isEmpty()) {
         m_downloadBtn->setEnabled(false);
+        m_audiobookBtn->setEnabled(false);
         auto *noFmt = new QLabel(
             QStringLiteral("No downloadable formats available yet."),
             m_formatsWidget);
@@ -508,6 +510,7 @@ void BookDetailsPanel::populateFormats(const QList<BookFormatEntry> &formats)
     }
 
     m_downloadBtn->setEnabled(true);
+    m_audiobookBtn->setEnabled(true);
 
     for (const auto &fmt : formats) {
         auto *row       = new QWidget(m_formatsWidget);

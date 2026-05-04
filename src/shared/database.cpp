@@ -110,6 +110,13 @@ bool createSchema(const QString &connectionName)
             status TEXT,
             FOREIGN KEY (book_id) REFERENCES books(book_id) ON DELETE CASCADE ON UPDATE CASCADE,
             FOREIGN KEY (edition_id) REFERENCES editions(id)
+        ))",
+        R"(CREATE TABLE IF NOT EXISTS voices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            voice_name TEXT NOT NULL UNIQUE,
+            voice_type TEXT NOT NULL,
+            is_preset INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         ))"
     };
 
@@ -216,6 +223,36 @@ bool verifySchemaVersion(const QString &connectionName)
         return true;
     }
 
+    // Migration: version 2 → 3
+    // Adds voices table for preset and custom voice storage
+    if (version == 2) {
+        qDebug() << "Migrating database schema from version 2 to 3...";
+        QStringList migration = {
+            "BEGIN",
+            R"(CREATE TABLE IF NOT EXISTS voices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                voice_name TEXT NOT NULL UNIQUE,
+                voice_type TEXT NOT NULL,
+                is_preset INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            ))",
+            QStringLiteral("PRAGMA user_version = %1").arg(kSchemaVersion),
+            "COMMIT"
+        };
+
+        QSqlQuery mq(db);
+        for (const QString &sql : migration) {
+            if (!mq.exec(sql)) {
+                qCritical() << "Migration v2→v3 failed at:" << sql
+                            << "\nError:" << mq.lastError().text();
+                mq.exec("ROLLBACK");
+                return false;
+            }
+        }
+        qDebug() << "Migration to schema version 3 complete.";
+        return true;
+    }
+
     qCritical("Database schema version mismatch: expected %d, found %d. "
               "Run tools/migrate_db.py to upgrade the database.",
               kSchemaVersion, version);
@@ -270,6 +307,11 @@ bool insertSampleData(const QString &connectionName)
         R"(INSERT OR IGNORE INTO library_items (book_id, edition_id, status) VALUES
             ('lccn:n78095332', 1, 'saved'),
             ('lccn:n79025140', 3, 'downloaded')
+        )",
+        R"(INSERT OR IGNORE INTO voices (voice_name, voice_type, is_preset) VALUES
+            ('Classic Storyteller', 'preset', 1),
+            ('Warm Listener', 'preset', 1),
+            ('Crisp Narrator', 'preset', 1)
         )"
     };
 
