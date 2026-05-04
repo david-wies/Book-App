@@ -15,6 +15,7 @@ private slots:
     void setStepCount_updatesMax();
     void setStepCount_clampsCurrentStep();
     void sizeHint_widthScalesWithStepCount();
+    void sizeHint_heightIncludesLabelRow();
     void setStepLabels_doesNotCrash();
     void setStepLabels_fewerLabelsThanSteps_doesNotCrash();
 };
@@ -72,6 +73,15 @@ void StepIndicatorWidgetTest::sizeHint_widthScalesWithStepCount()
     StepIndicatorWidget w2(2);
     StepIndicatorWidget w5(5);
     QVERIFY(w5.sizeHint().width() > w2.sizeHint().width());
+}
+
+void StepIndicatorWidgetTest::sizeHint_heightIncludesLabelRow()
+{
+    StepIndicatorWidget w(3);
+    const int heightWithout = w.sizeHint().height();
+    w.setStepLabels({QStringLiteral("A"), QStringLiteral("B"), QStringLiteral("C")});
+    QVERIFY(w.sizeHint().height() > heightWithout);
+    QVERIFY(w.minimumHeight() > heightWithout);
 }
 
 void StepIndicatorWidgetTest::setStepLabels_doesNotCrash()

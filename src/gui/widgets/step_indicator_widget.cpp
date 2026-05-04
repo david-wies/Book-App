@@ -37,6 +37,8 @@ void StepIndicatorWidget::setStepCount(int count)
 void StepIndicatorWidget::setStepLabels(const QStringList &labels)
 {
     m_labels = labels;
+    setMinimumHeight(sizeHint().height());
+    updateGeometry();
     update();
 }
 
@@ -61,6 +63,9 @@ void StepIndicatorWidget::paintEvent(QPaintEvent *)
     const QColor accent(ColorAccent);
     const QColor muted(ColorTextMuted);
     const QColor success(ColorSuccess);
+    // NOTE: surfaceColor is used as the text colour drawn on filled circles.
+    // This assumes ColorSurface is a light/white tone (true for the current light theme).
+    // Revisit when dark-mode palette tokens are introduced.
     const QColor surfaceColor(ColorSurface);
 
     const bool hasLabels = !m_labels.isEmpty();
@@ -127,7 +132,7 @@ void StepIndicatorWidget::paintEvent(QPaintEvent *)
         }
 
         // Optional label below circle.
-        if (hasLabels && i < int(m_labels.size())) {
+        if (hasLabels && static_cast<qsizetype>(i) < m_labels.size()) {
             const QRect labelRect(cx - 40, labelY, 80, kLabelHeight);
 
             QFont labelFont = font();

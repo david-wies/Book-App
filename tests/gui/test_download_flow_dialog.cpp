@@ -317,6 +317,7 @@ void DownloadFlowDialogTest::retryButton_fallsBackToFormatStep_whenFormatsEmpty(
 
     QCOMPARE(dialog.m_currentStep, 1); // format step
     QVERIFY(!dialog.m_stepsContainer->isHidden());
+    QVERIFY(dialog.m_retryBtn->isHidden());
 }
 
 } // namespace bookhub::gui
