@@ -1,24 +1,19 @@
 name: Release
 
-# Triggered when a version tag (e.g. v1.0.0) is pushed to master.
-# The normal workflow is:
-#   1. Run tools/prepare-release.sh v1.0.0  →  opens a clean PR to master
+# Triggered when a version tag (e.g. v1.0.0) is pushed.
+# Normal workflow:
+#   1. tools/prepare-release.sh v1.0.0  →  opens a clean PR to master
 #   2. Merge the PR on GitHub
 #   3. git fetch origin && git tag -a v1.0.0 origin/master -m "Release v1.0.0"
-#   4. git push origin v1.0.0              →  this workflow fires
+#   4. git push origin v1.0.0           →  this workflow fires
 #
-# The workflow builds the binary in Release mode, packages it as a .tar.gz,
-# and publishes a GitHub Release with the archive attached.
+# The workflow builds the binary on each supported platform, packages it,
+# and publishes a single GitHub Release with all archives attached.
 on:
   push:
     tags:
-      # Only fire on semantic version tags that are reachable from master.
-      # Tags pushed to other branches are ignored.
       - 'v[0-9]*.[0-9]*.[0-9]*'
 
-# Cancel any in-progress release run for the same tag (e.g. if you re-push
-# an annotated tag after a mistake). Two release runs for the same tag would
-# both try to create the same GitHub Release and one would fail.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
@@ -27,107 +22,136 @@ permissions:
   contents: write   # Required to create GitHub Releases and upload assets.
 
 jobs:
-  build-release:
-    name: Build release binary
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
+  # ── Per-platform build ───────────────────────────────────────────────────
+  build:
+    name: Build (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false   # Publish what built even if one platform fails.
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x86_64
+          - os: windows-latest
+            platform: windows-x86_64
 
     steps:
     - name: Checkout tag
       uses: actions/checkout@v4
       with:
-        # Check out the exact tag commit, not a branch tip.
         ref: ${{ github.ref }}
 
     - name: Verify tag is on master
+      shell: bash
       run: |
         git fetch origin master
-        if ! git merge-base --is-ancestor $(git rev-parse HEAD) origin/master; then
-          echo "Error: Tag ${{ github.ref }} is not on master branch. Aborting release."
+        if ! git merge-base --is-ancestor "$(git rev-parse HEAD)" origin/master; then
+          echo "Error: tag ${{ github.ref_name }} is not reachable from master. Aborting release."
           exit 1
         fi
 
-    - name: Cache apt packages
-      uses: actions/cache@v4
+    - name: Install Qt6
+      uses: jurplel/install-qt-action@v4
       with:
-        path: /var/cache/apt/archives
-        key: apt-qt6-release-${{ runner.os }}-${{ hashFiles('.github/workflows/release.yml') }}
+        version: '6.7.*'
+        cache: true
 
-    - name: Install build dependencies
+    - name: Install build tools and libarchive (Linux)
+      if: runner.os == 'Linux'
       run: |
         sudo apt-get update
         sudo apt-get install -y --no-install-recommends \
           build-essential \
           cmake \
-          qt6-base-dev \
-          libqt6sql6 \
-          libqt6sql6-sqlite \
           libarchive-dev
 
-    - name: Configure build (Release mode)
-      # Out-of-tree build is required — never cmake from the source root.
-      # Release mode enables full optimisation; strip debug symbols to reduce
-      # binary size for distribution.
+    - name: Install libarchive (Windows)
+      if: runner.os == 'Windows'
+      run: vcpkg install libarchive:x64-windows
+
+    - name: Configure (Linux)
+      if: runner.os == 'Linux'
       run: |
-        mkdir -p build
-        cd build
-        cmake .. \
+        cmake -S . -B build \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_CXX_FLAGS="-Wall -Wextra"
 
-    - name: Build project
-      run: cd build && make -j$(nproc)
+    - name: Configure (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        cmake -S . -B build -G Ninja `
+          -DCMAKE_BUILD_TYPE=Release `
+          "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
 
-    - name: Run full test suite
-      # Run ALL tests (sanity + non-sanity) before publishing a release.
-      # A release with failing tests should never be published.
-      run: cd build && ctest -j$(nproc) --output-on-failure --no-tests=ignore
+    - name: Build
+      run: cmake --build build --parallel
 
-    - name: Package release archive
-      # Produce a self-contained tarball named bookhub-<version>-linux-x86_64.tar.gz.
-      # The archive contains only the executable; the user's database is stored
-      # in QStandardPaths::AppDataLocation and the icon is embedded as a Qt resource.
+    - name: Run test suite
+      # --no-tests=ignore: return 0 when no tests are registered yet (ctest
+      # exit 8 would otherwise block every release until tests are wired up).
+      run: ctest --test-dir build --output-on-failure --no-tests=ignore
+
+    - name: Package (Linux)
+      if: runner.os == 'Linux'
       run: |
         VERSION="${{ github.ref_name }}"
-        ARCHIVE_NAME="bookhub-${VERSION}-linux-x86_64"
-        mkdir -p "dist/${ARCHIVE_NAME}"
-        cp build/bookhub "dist/${ARCHIVE_NAME}/bookhub"
-        # Include the licence so redistributors have what they need.
-        cp LICENSE "dist/${ARCHIVE_NAME}/LICENSE"
+        NAME="bookhub-${VERSION}-linux-x86_64"
+        mkdir -p "dist/${NAME}"
+        cp build/bookhub "dist/${NAME}/"
+        cp LICENSE "dist/${NAME}/"
         cd dist
-        tar -czf "${ARCHIVE_NAME}.tar.gz" "${ARCHIVE_NAME}/"
-        sha256sum "${ARCHIVE_NAME}.tar.gz" > "${ARCHIVE_NAME}.tar.gz.sha256"
-        echo "ARCHIVE_NAME=${ARCHIVE_NAME}" >> "${GITHUB_ENV}"
+        tar -czf "${NAME}.tar.gz" "${NAME}/"
+        sha256sum "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256"
 
-    - name: Upload build artifact (CI cache)
-      # Keep a short-lived copy in the Actions artifact store independent of
-      # the GitHub Release, so the binary is accessible even if the release
-      # draft is later deleted.
+    - name: Package (Windows)
+      if: runner.os == 'Windows'
+      shell: bash
+      run: |
+        VERSION="${{ github.ref_name }}"
+        NAME="bookhub-${VERSION}-windows-x86_64"
+        mkdir -p "dist/${NAME}"
+        cp build/bookhub.exe "dist/${NAME}/"
+        cp LICENSE "dist/${NAME}/"
+        # Bundle Qt DLLs and SQL/platform plugins so users need no separate install.
+        windeployqt --release "dist/${NAME}/bookhub.exe"
+        cd dist
+        7z a "${NAME}.zip" "${NAME}/"
+        sha256sum "${NAME}.zip" > "${NAME}.zip.sha256"
+
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: bookhub-${{ github.ref_name }}-linux-x86_64
-        path: |
-          dist/${{ env.ARCHIVE_NAME }}.tar.gz
-          dist/${{ env.ARCHIVE_NAME }}.tar.gz.sha256
+        name: release-${{ matrix.platform }}
+        path: dist/
         retention-days: 90
 
+  # ── Publish GitHub Release ───────────────────────────────────────────────
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Download all platform artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: dist/
+        merge-multiple: true
+
     - name: Create GitHub Release
-      # Uses the GITHUB_TOKEN (scoped to contents: write above).
-      # The release is created as a draft=false so it is immediately visible.
-      # If you want a manual review step before publishing, change draft to true
-      # and promote it via the GitHub UI.
       uses: actions/github-script@v7
       with:
         script: |
           const fs = require('fs');
-          const path = require('path');
 
           const version = context.ref.replace('refs/tags/', '');
-          const archiveName = `${process.env.ARCHIVE_NAME}`;
-          const archivePath = `dist/${archiveName}.tar.gz`;
-          const checksumPath = `dist/${archiveName}.tar.gz.sha256`;
 
-          // Create the release.
+          const checksumFiles = fs.readdirSync('dist/').filter(f => f.endsWith('.sha256'));
+          const checksums = checksumFiles
+            .sort()
+            .map(f => fs.readFileSync(`dist/${f}`, 'utf8').trim())
+            .join('\n');
+
           const release = await github.rest.repos.createRelease({
             owner: context.repo.owner,
             repo: context.repo.repo,
@@ -136,44 +160,46 @@ jobs:
             body: [
               `## BookHub ${version}`,
               '',
+              '### Downloads',
+              '',
+              '| Platform | File |',
+              '|----------|------|',
+              `| Linux x86_64  | \`bookhub-${version}-linux-x86_64.tar.gz\` |`,
+              `| Windows x86_64 | \`bookhub-${version}-windows-x86_64.zip\`  |`,
+              '',
               '### Installation',
               '',
-              '1. Download `' + archiveName + '.tar.gz`',
-              '2. Extract: `tar -xzf ' + archiveName + '.tar.gz`',
-              '3. Run: `./' + archiveName + '/bookhub`',
+              '**Linux**',
+              '1. Install runtime dependencies via your distro\'s package manager:',
+              '   - Qt6 Widgets, Sql, and Network runtime libraries',
+              '   - libarchive (e.g. `libarchive13` on Debian/Ubuntu · `libarchive` on Fedora/Arch)',
+              `2. \`tar -xzf bookhub-${version}-linux-x86_64.tar.gz\``,
+              `3. \`./bookhub-${version}-linux-x86_64/bookhub\``,
               '',
-              '### Checksum',
+              '**Windows**',
+              '1. No additional dependencies — Qt runtime DLLs are bundled.',
+              `2. Extract the zip and run \`bookhub.exe\`.`,
+              '',
+              '### Checksums (SHA-256)',
               '',
               '```',
-              fs.readFileSync(checksumPath, 'utf8').trim(),
+              checksums,
               '```',
-              '',
-              '### Requirements',
-              '',
-              '- Linux x86_64',
-              '- Qt6 Widgets, Sql, and Network runtime libraries (install via your distro\'s package manager)',
-              '- libarchive (e.g. `libarchive13` on Debian/Ubuntu · `libarchive` on Fedora/Arch)',
             ].join('\n'),
             draft: false,
             prerelease: version.includes('-'),
           });
 
-          // Upload the archive.
-          await github.rest.repos.uploadReleaseAsset({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            release_id: release.data.id,
-            name: `${archiveName}.tar.gz`,
-            data: fs.readFileSync(archivePath),
-          });
-
-          // Upload the checksum.
-          await github.rest.repos.uploadReleaseAsset({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            release_id: release.data.id,
-            name: `${archiveName}.tar.gz.sha256`,
-            data: fs.readFileSync(checksumPath),
-          });
+          // Upload every archive and checksum file.
+          const files = fs.readdirSync('dist/').filter(f => fs.statSync(`dist/${f}`).isFile());
+          for (const file of files) {
+            await github.rest.repos.uploadReleaseAsset({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: release.data.id,
+              name: file,
+              data: fs.readFileSync(`dist/${file}`),
+            });
+          }
 
           core.info(`Release published: ${release.data.html_url}`);
