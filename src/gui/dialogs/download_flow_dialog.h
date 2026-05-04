@@ -16,6 +16,7 @@ namespace bookhub::gui {
 
 class LibraryService;
 class QueryWorker;
+class StepIndicatorWidget;
 class DownloadFlowDialogTest;
 
 class DownloadFlowDialog : public QDialog {
@@ -38,6 +39,7 @@ private slots:
     void onNextOrDownloadClicked();
     void onCancelDownloadClicked();
     void onOpenFileClicked();
+    void onRetryClicked();
     void onDownloadReadyRead();
     void onDownloadProgress(qint64 received, qint64 total);
     void onDownloadFinished();
@@ -59,11 +61,11 @@ private:
 
     friend class ::bookhub::gui::DownloadFlowDialogTest;
 
-    LibraryService      *m_libraryService{};
-    BookDetailsService  *m_detailsService{};
+    LibraryService        *m_libraryService{};
+    BookDetailsService    *m_detailsService{};
     QNetworkAccessManager *m_network{};
-    QNetworkReply       *m_reply{};
-    QSaveFile           *m_outputFile{};
+    QNetworkReply         *m_reply{};
+    QSaveFile             *m_outputFile{};
 
     QString m_bookId;
     QString m_bookTitle;
@@ -79,13 +81,14 @@ private:
 
     QString m_targetFilePath;
 
-    QLabel      *m_titleLabel{};
-    QLabel      *m_stepLabel{};
-    QListWidget *m_languageList{};
-    QListWidget *m_formatList{};
-    QListWidget *m_sourceList{};
-    QPushButton *m_backBtn{};
-    QPushButton *m_nextBtn{};
+    QLabel               *m_titleLabel{};
+    QLabel               *m_stepLabel{};
+    StepIndicatorWidget  *m_stepIndicator{};
+    QListWidget          *m_languageList{};
+    QListWidget          *m_formatList{};
+    QListWidget          *m_sourceList{};
+    QPushButton          *m_backBtn{};
+    QPushButton          *m_nextBtn{};
 
     QWidget      *m_stepsContainer{};
     QWidget      *m_progressContainer{};
@@ -95,6 +98,7 @@ private:
     QLabel       *m_resultLabel{};
     QPushButton  *m_cancelBtn{};
     QPushButton  *m_openFileBtn{};
+    QPushButton  *m_retryBtn{};
 };
 
 } // namespace bookhub::gui

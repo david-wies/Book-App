@@ -2,6 +2,7 @@
 
 #include "../query_worker.h"
 #include "../services/library_service.h"
+#include "../widgets/step_indicator_widget.h"
 
 #include <QDesktopServices>
 #include <QDialogButtonBox>
@@ -49,7 +50,7 @@ DownloadFlowDialog::DownloadFlowDialog(LibraryService *libraryService,
 {
     setModal(true);
     setWindowTitle(QStringLiteral("Download"));
-    resize(520, 420);
+    resize(480, 400);
 
     m_network = new QNetworkAccessManager(this);
     m_detailsService = new BookDetailsService(this);
@@ -84,6 +85,16 @@ void DownloadFlowDialog::onDetailsCompleted(quint64 requestId, const BookDetails
     m_hasLanguageStep = m_editions.size() > 1;
     m_titleLabel->setText(QStringLiteral("Download - %1").arg(m_bookTitle));
 
+    if (m_hasLanguageStep) {
+        m_stepIndicator->setStepCount(3);
+        m_stepIndicator->setStepLabels(
+            {QStringLiteral("Language"), QStringLiteral("Format"), QStringLiteral("Source")});
+    } else {
+        m_stepIndicator->setStepCount(2);
+        m_stepIndicator->setStepLabels(
+            {QStringLiteral("Format"), QStringLiteral("Source")});
+    }
+
     populateLanguageList();
 
     if (m_editions.isEmpty()) {
@@ -91,11 +102,7 @@ void DownloadFlowDialog::onDetailsCompleted(quint64 requestId, const BookDetails
         return;
     }
 
-    if (!m_hasLanguageStep) {
-        m_currentStep = 1;
-    } else {
-        m_currentStep = 0;
-    }
+    m_currentStep = m_hasLanguageStep ? 0 : 1;
     updateStepUi();
 }
 
@@ -173,6 +180,24 @@ void DownloadFlowDialog::onOpenFileClicked()
 {
     if (!m_targetFilePath.isEmpty())
         QDesktopServices::openUrl(QUrl::fromLocalFile(m_targetFilePath));
+}
+
+void DownloadFlowDialog::onRetryClicked()
+{
+    m_retryBtn->hide();
+    m_resultLabel->clear();
+
+    // Re-enter at the source step if formats are available; otherwise fall back
+    // to the format step so the user can pick again.
+    const int retryStep = m_formats.isEmpty() ? 1 : 2;
+    m_currentStep = retryStep;
+
+    disconnect(m_nextBtn, &QPushButton::clicked, this, &QDialog::reject);
+    connect(m_nextBtn, &QPushButton::clicked, this,
+            &DownloadFlowDialog::onNextOrDownloadClicked, Qt::UniqueConnection);
+
+    m_cancelBtn->setEnabled(true);
+    updateStepUi();
 }
 
 void DownloadFlowDialog::onDownloadReadyRead()
@@ -256,6 +281,9 @@ void DownloadFlowDialog::buildUi()
     m_titleLabel = new QLabel(this);
     root->addWidget(m_titleLabel);
 
+    m_stepIndicator = new StepIndicatorWidget(3, this);
+    root->addWidget(m_stepIndicator);
+
     m_stepLabel = new QLabel(this);
     root->addWidget(m_stepLabel);
 
@@ -298,11 +326,18 @@ void DownloadFlowDialog::buildUi()
     m_openFileBtn = new QPushButton(QStringLiteral("Open file"), m_progressContainer);
     m_openFileBtn->hide();
     connect(m_openFileBtn, &QPushButton::clicked, this, &DownloadFlowDialog::onOpenFileClicked);
+    m_retryBtn = new QPushButton(QStringLiteral("Retry"), m_progressContainer);
+    m_retryBtn->hide();
+    connect(m_retryBtn, &QPushButton::clicked, this, &DownloadFlowDialog::onRetryClicked);
     progressLayout->addWidget(m_progressBar);
     progressLayout->addWidget(m_progressText);
     progressLayout->addWidget(m_progressPathLabel);
     progressLayout->addWidget(m_resultLabel);
-    progressLayout->addWidget(m_openFileBtn, 0, Qt::AlignLeft);
+    auto *progressActions = new QHBoxLayout();
+    progressActions->addWidget(m_openFileBtn);
+    progressActions->addWidget(m_retryBtn);
+    progressActions->addStretch();
+    progressLayout->addLayout(progressActions);
     progressLayout->addStretch();
 
     stackLayout->addWidget(m_stepsContainer);
@@ -343,9 +378,12 @@ void DownloadFlowDialog::resetState()
     m_progressPathLabel->clear();
     m_resultLabel->clear();
     m_openFileBtn->hide();
+    m_retryBtn->hide();
     m_cancelBtn->setEnabled(true);
     m_stepsContainer->show();
     m_progressContainer->hide();
+    m_stepIndicator->setVisible(true);
+    m_stepIndicator->setCurrentStep(0);
     m_titleLabel->setText(QStringLiteral("Loading..."));
     m_nextBtn->setText(QStringLiteral("Next"));
     m_backBtn->setVisible(false);
@@ -359,32 +397,39 @@ void DownloadFlowDialog::updateStepUi()
 {
     m_stepsContainer->setVisible(true);
     m_progressContainer->setVisible(false);
+    m_stepIndicator->setVisible(true);
 
     m_languageList->setVisible(m_currentStep == 0);
     m_formatList->setVisible(m_currentStep == 1);
     m_sourceList->setVisible(m_currentStep == 2);
 
+    // Map internal step (0=language, 1=format, 2=source) to indicator step
+    // (always 0-indexed from the first visible step).
+    const int indicatorStep = m_hasLanguageStep ? m_currentStep
+                                                : (m_currentStep - 1);
+    m_stepIndicator->setCurrentStep(indicatorStep);
+
     if (m_hasLanguageStep) {
         if (m_currentStep == 0) {
-            m_stepLabel->setText(QStringLiteral("Step 1 of 3: Language"));
+            m_stepLabel->setText(QStringLiteral("Choose language:"));
             m_nextBtn->setText(QStringLiteral("Next"));
             m_nextBtn->setEnabled(m_languageList->currentRow() >= 0);
         } else if (m_currentStep == 1) {
-            m_stepLabel->setText(QStringLiteral("Step 2 of 3: Format"));
+            m_stepLabel->setText(QStringLiteral("Choose format:"));
             m_nextBtn->setText(QStringLiteral("Next"));
             m_nextBtn->setEnabled(m_formatList->currentRow() >= 0);
         } else {
-            m_stepLabel->setText(QStringLiteral("Step 3 of 3: Source"));
+            m_stepLabel->setText(QStringLiteral("Choose source:"));
             m_nextBtn->setText(QStringLiteral("Download"));
             m_nextBtn->setEnabled(m_sourceList->currentRow() >= 0);
         }
     } else {
         if (m_currentStep == 1) {
-            m_stepLabel->setText(QStringLiteral("Step 1 of 2: Format"));
+            m_stepLabel->setText(QStringLiteral("Choose format:"));
             m_nextBtn->setText(QStringLiteral("Next"));
             m_nextBtn->setEnabled(m_formatList->currentRow() >= 0);
         } else {
-            m_stepLabel->setText(QStringLiteral("Step 2 of 2: Source"));
+            m_stepLabel->setText(QStringLiteral("Choose source:"));
             m_nextBtn->setText(QStringLiteral("Download"));
             m_nextBtn->setEnabled(m_sourceList->currentRow() >= 0);
         }
@@ -446,7 +491,9 @@ bool DownloadFlowDialog::beginDownload()
         return false;
 
     QUrl downloadUrl(source.downloadLink);
-    if (!downloadUrl.isValid() || downloadUrl.scheme() != QStringLiteral("https")) {
+    const QString scheme = downloadUrl.scheme();
+    if (!downloadUrl.isValid()
+        || (scheme != QStringLiteral("https") && scheme != QStringLiteral("http"))) {
         showErrorState(QStringLiteral("Invalid or unsupported download URL."));
         return false;
     }
@@ -469,6 +516,7 @@ bool DownloadFlowDialog::beginDownload()
 
     m_stepsContainer->hide();
     m_progressContainer->show();
+    m_stepIndicator->setVisible(false);
     m_stepLabel->setText(QStringLiteral("Downloading..."));
     m_progressPathLabel->setText(QStringLiteral("Saving to: %1").arg(m_targetFilePath));
     m_backBtn->setVisible(false);
@@ -520,9 +568,11 @@ void DownloadFlowDialog::showErrorState(const QString &message)
 {
     m_stepsContainer->hide();
     m_progressContainer->show();
+    m_stepIndicator->setVisible(false);
     m_stepLabel->setText(QStringLiteral("Error"));
     m_backBtn->setVisible(false);
     m_resultLabel->setText(message);
+    m_retryBtn->setVisible(!m_formats.isEmpty() || !m_editions.isEmpty());
     m_nextBtn->setText(QStringLiteral("Close"));
     m_nextBtn->setEnabled(true);
     disconnect(m_nextBtn, &QPushButton::clicked,

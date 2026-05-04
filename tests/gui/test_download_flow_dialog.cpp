@@ -26,6 +26,9 @@ private slots:
     void staleFormatsRequest_isIgnored();
     void emptyEditions_showsErrorState();
     void singleEdition_formatRequestedExactlyOnce();
+    void errorState_showsRetryButton();
+    void retryButton_returnsToSourceStep();
+    void retryButton_fallsBackToFormatStep_whenFormatsEmpty();
 
 private:
     TestQueryWorker *m_worker{};
@@ -58,7 +61,7 @@ void DownloadFlowDialogTest::singleLanguage_startsAtFormatStep()
     dialog.onDetailsCompleted(7, details);
 
     QCOMPARE(dialog.m_currentStep, 1);
-    QCOMPARE(dialog.m_stepLabel->text(), QStringLiteral("Step 1 of 2: Format"));
+    QCOMPARE(dialog.m_stepLabel->text(), QStringLiteral("Choose format:"));
 }
 
 void DownloadFlowDialogTest::nextButton_requiresSelectionsPerStep()
@@ -237,6 +240,84 @@ void DownloadFlowDialogTest::singleEdition_formatRequestedExactlyOnce()
     // Two would mean populateLanguageList's implicit trigger fired AND onDetailsCompleted
     // issued a second explicit request — the double-request bug.
     QCOMPARE(dialog.m_detailsService->peekNextId() - idBefore, quint64{1});
+}
+
+void DownloadFlowDialogTest::errorState_showsRetryButton()
+{
+    DownloadFlowDialog dialog(m_libraryService, m_worker);
+    dialog.m_pendingDetailsId = 5;
+
+    // Seed some data so retry button knows it can go back.
+    BookDetails details;
+    details.editions.append({1, QStringLiteral("en")});
+    dialog.onDetailsCompleted(5, details);
+
+    QList<BookFormatEntry> formats;
+    BookFormatEntry epub;
+    epub.formatType = QStringLiteral("epub");
+    epub.sources.append({QStringLiteral("Gutenberg"), QStringLiteral("https://example.com/book.epub")});
+    formats.append(epub);
+    dialog.m_pendingFormatsId = 6;
+    dialog.onFormatsCompleted(6, formats);
+
+    // Simulate an error state.
+    dialog.showErrorState(QStringLiteral("Download failed: connection refused"));
+
+    QVERIFY(dialog.m_stepsContainer->isHidden());
+    QVERIFY(!dialog.m_progressContainer->isHidden());
+    QCOMPARE(dialog.m_stepLabel->text(), QStringLiteral("Error"));
+    // Retry is visible because m_formats is non-empty.
+    QVERIFY(!dialog.m_retryBtn->isHidden());
+}
+
+void DownloadFlowDialogTest::retryButton_returnsToSourceStep()
+{
+    DownloadFlowDialog dialog(m_libraryService, m_worker);
+    dialog.m_pendingDetailsId = 10;
+
+    BookDetails details;
+    details.editions.append({1, QStringLiteral("en")});
+    dialog.onDetailsCompleted(10, details);
+
+    QList<BookFormatEntry> formats;
+    BookFormatEntry epub;
+    epub.formatType = QStringLiteral("epub");
+    epub.sources.append({QStringLiteral("Gutenberg"), QStringLiteral("https://example.com/book.epub")});
+    formats.append(epub);
+    dialog.m_pendingFormatsId = 11;
+    dialog.onFormatsCompleted(11, formats);
+
+    dialog.showErrorState(QStringLiteral("Simulated error"));
+    dialog.onRetryClicked();
+
+    // Should be back in the wizard at the source step (2) since formats are loaded.
+    QCOMPARE(dialog.m_currentStep, 2);
+    QVERIFY(!dialog.m_stepsContainer->isHidden());
+    QVERIFY(dialog.m_progressContainer->isHidden());
+    QVERIFY(dialog.m_retryBtn->isHidden());
+}
+
+void DownloadFlowDialogTest::retryButton_fallsBackToFormatStep_whenFormatsEmpty()
+{
+    DownloadFlowDialog dialog(m_libraryService, m_worker);
+    dialog.m_pendingDetailsId = 20;
+
+    BookDetails details;
+    details.editions.append({1, QStringLiteral("en")});
+    dialog.onDetailsCompleted(20, details);
+
+    // Do NOT inject formats — simulate a case where the error occurred before formats loaded.
+    // (Force m_formats to empty by not calling onFormatsCompleted.)
+    dialog.m_formats.clear();
+
+    dialog.showErrorState(QStringLiteral("Simulated pre-format error"));
+
+    // Editions are present so retry falls back to format step (step 1).
+    dialog.onRetryClicked();
+
+    QCOMPARE(dialog.m_currentStep, 1); // format step
+    QVERIFY(!dialog.m_stepsContainer->isHidden());
+    QVERIFY(dialog.m_retryBtn->isHidden());
 }
 
 } // namespace bookhub::gui
