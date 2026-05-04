@@ -34,6 +34,8 @@ jobs:
             platform: linux-x86_64
           - os: windows-latest
             platform: windows-x86_64
+          - os: macos-14
+            platform: macos-arm64
 
     steps:
     - name: Checkout tag
@@ -69,6 +71,10 @@ jobs:
       if: runner.os == 'Windows'
       run: vcpkg install libarchive:x64-windows
 
+    - name: Install libarchive (macOS)
+      if: runner.os == 'macOS'
+      run: brew install libarchive
+
     - name: Configure (Linux)
       if: runner.os == 'Linux'
       run: |
@@ -82,6 +88,14 @@ jobs:
         cmake -S . -B build -G Ninja `
           -DCMAKE_BUILD_TYPE=Release `
           "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
+
+    - name: Configure (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        cmake -S . -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_CXX_FLAGS="-Wall -Wextra" \
+          -DCMAKE_PREFIX_PATH="$(brew --prefix libarchive)"
 
     - name: Build
       run: cmake --build build --parallel
@@ -117,6 +131,19 @@ jobs:
         cd dist
         7z a "${NAME}.zip" "${NAME}/"
         sha256sum "${NAME}.zip" > "${NAME}.zip.sha256"
+
+    - name: Package (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        VERSION="${{ github.ref_name }}"
+        NAME="bookhub-${VERSION}-macos-arm64"
+        mkdir -p "dist/${NAME}"
+        cp build/bookhub "dist/${NAME}/"
+        cp LICENSE "dist/${NAME}/"
+        cd dist
+        tar -czf "${NAME}.tar.gz" "${NAME}/"
+        # macOS ships shasum, not sha256sum.
+        shasum -a 256 "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256"
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
@@ -164,8 +191,9 @@ jobs:
               '',
               '| Platform | File |',
               '|----------|------|',
-              `| Linux x86_64  | \`bookhub-${version}-linux-x86_64.tar.gz\` |`,
-              `| Windows x86_64 | \`bookhub-${version}-windows-x86_64.zip\`  |`,
+              `| Linux x86_64   | \`bookhub-${version}-linux-x86_64.tar.gz\`  |`,
+              `| Windows x86_64 | \`bookhub-${version}-windows-x86_64.zip\`    |`,
+              `| macOS arm64    | \`bookhub-${version}-macos-arm64.tar.gz\`    |`,
               '',
               '### Installation',
               '',
@@ -179,6 +207,11 @@ jobs:
               '**Windows**',
               '1. No additional dependencies — Qt runtime DLLs are bundled.',
               `2. Extract the zip and run \`bookhub.exe\`.`,
+              '',
+              '**macOS (Apple Silicon)**',
+              '1. Install runtime dependencies: `brew install libarchive` and Qt6 (`brew install qt`)',
+              `2. \`tar -xzf bookhub-${version}-macos-arm64.tar.gz\``,
+              `3. \`./bookhub-${version}-macos-arm64/bookhub\``,
               '',
               '### Checksums (SHA-256)',
               '',
