@@ -167,6 +167,12 @@ if git ls-remote --exit-code origin "refs/heads/${RELEASE_BRANCH}" &>/dev/null; 
     exit 1
 fi
 
+if git ls-remote --exit-code origin "refs/tags/${VERSION}" &>/dev/null; then
+    echo "ERROR: tag '${VERSION}' already exists on origin." >&2
+    echo "  If you need to re-release, delete the tag first: git push origin --delete ${VERSION}" >&2
+    exit 1
+fi
+
 # ── Create release branch ─────────────────────────────────────────────────
 
 echo "Creating branch '${RELEASE_BRANCH}' from develop (${LOCAL_SHA:0:7})..."
