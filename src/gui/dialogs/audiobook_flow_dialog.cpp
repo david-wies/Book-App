@@ -18,6 +18,7 @@
 #include <QUrl>
 #include <QDir>
 #include <QDebug>
+#include <QDateTime>
 
 namespace bookhub::gui {
 
@@ -231,7 +232,7 @@ void AudiobookFlowDialog::onVoiceSelectionChanged(int voiceId, const QString &vo
     m_selectedVoiceName = voiceName;
 }
 
-void AudiobookFlowDialog::onPreviewRequested(int voiceId, const QString &voiceName)
+void AudiobookFlowDialog::onPreviewRequested([[maybe_unused]] int voiceId, const QString &voiceName)
 {
     // MVP: placeholder for voice preview generation
     // In Phase 3+, generate preview audio via TTS service
@@ -340,13 +341,21 @@ void AudiobookFlowDialog::populateFormatList()
 
 void AudiobookFlowDialog::populateVoiceList()
 {
-    // Load voices from database
-    QList<VoiceEntry> voices;
-    voices.append({1, "Classic Storyteller", true});
-    voices.append({2, "Warm Listener", true});
-    voices.append({3, "Crisp Narrator", true});
-    // In Phase 3+, also load custom voices from DB
-    m_voiceSelector->setVoices(voices);
+    // Request voices from database via query worker
+    if (m_worker) {
+        m_pendingVoicesId = reinterpret_cast<quint64>(this) ^ QDateTime::currentMSecsSinceEpoch();
+        // Use lambda to handle result without adding slot to Q_OBJECT
+        connect(m_worker,
+                QOverload<quint64, QList<VoiceEntry>>::of(&QueryWorker::listVoicesCompleted),
+                this,
+                [this](quint64 requestId, QList<VoiceEntry> voices) {
+                    if (requestId == m_pendingVoicesId && m_voiceSelector) {
+                        m_voiceSelector->setVoices(voices);
+                    }
+                },
+                Qt::UniqueConnection);
+        m_worker->handleListVoicesRequest(m_pendingVoicesId);
+    }
 }
 
 void AudiobookFlowDialog::updateStepUi()

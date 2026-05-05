@@ -265,7 +265,7 @@ void QueryWorker::handleSetAudiobookReadyRequest(quint64 requestId, const QStrin
     ));
     query.addBindValue(bookId);
 
-    bool success = query.exec();
+    bool success = query.exec() && query.numRowsAffected() > 0;
     if (!success) {
         qWarning() << "handleSetAudiobookReadyRequest failed:" << query.lastError().text();
     }

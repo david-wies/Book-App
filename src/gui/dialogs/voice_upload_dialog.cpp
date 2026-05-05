@@ -6,6 +6,8 @@
 #include <QPushButton>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QMessageBox>
+#include <QDateTime>
 
 namespace bookhub::gui {
 
@@ -103,18 +105,33 @@ void VoiceUploadDialog::onChooseFileClicked()
 
 void VoiceUploadDialog::onValidateClicked()
 {
-    if (!m_selectedFile.isEmpty() && !m_voiceNameEdit->text().isEmpty()) {
+    if (!m_selectedFile.isEmpty() && !m_voiceNameEdit->text().isEmpty() && m_isFileValid) {
         accept();
+    } else {
+        QString error;
+        if (m_selectedFile.isEmpty()) {
+            error = "Please select a file";
+        } else if (m_voiceNameEdit->text().isEmpty()) {
+            error = "Please enter a voice name";
+        } else if (!m_isFormatValid) {
+            error = "File format is not supported (use .wav, .mp3, or .flac)";
+        } else if (!m_isDurationValid) {
+            error = "Audio duration must be between 10 and 120 seconds";
+        }
+        if (!error.isEmpty()) {
+            QMessageBox::warning(this, "Validation Failed", error);
+        }
     }
 }
 
 void VoiceUploadDialog::onFileSelected(const QString &filePath)
 {
     m_selectedFile = filePath;
+    m_isFileValid = false;  // Reset until validation completes
     QFileInfo fileInfo(filePath);
     m_fileLabel->setText(fileInfo.fileName());
     validateFile(filePath);
-    m_validateBtn->setEnabled(!m_voiceNameEdit->text().isEmpty());
+    m_validateBtn->setEnabled(!m_voiceNameEdit->text().isEmpty() && m_isFileValid);
 }
 
 void VoiceUploadDialog::validateFile(const QString &filePath)
@@ -123,8 +140,8 @@ void VoiceUploadDialog::validateFile(const QString &filePath)
     QString suffix = fileInfo.suffix().toLower();
 
     // Format validation
-    bool validFormat = (suffix == "wav" || suffix == "mp3" || suffix == "flac");
-    if (validFormat) {
+    m_isFormatValid = (suffix == "wav" || suffix == "mp3" || suffix == "flac");
+    if (m_isFormatValid) {
         m_formatLabel->setText("✓ Format: " + suffix.toUpper() + " (OK)");
         m_formatLabel->setStyleSheet("color: #16A34A; font-size: 11px; font-weight: bold;");
     } else {
@@ -134,7 +151,8 @@ void VoiceUploadDialog::validateFile(const QString &filePath)
 
     // Duration validation (MVP: placeholder)
     int duration = getAudioFileDuration(filePath);
-    if (duration >= 10 && duration <= 120) {
+    m_isDurationValid = (duration >= 10 && duration <= 120);
+    if (m_isDurationValid) {
         m_durationLabel->setText(QString("✓ Duration: %1 s (OK)").arg(duration));
         m_durationLabel->setStyleSheet("color: #16A34A; font-size: 11px; font-weight: bold;");
     } else {
@@ -145,6 +163,9 @@ void VoiceUploadDialog::validateFile(const QString &filePath)
     // Quality: placeholder for MVP
     m_qualityLabel->setText("○ Quality: placeholder for Phase 4");
     m_qualityLabel->setStyleSheet("color: #6B7280; font-size: 11px;");
+    
+    // Update file validity flag
+    m_isFileValid = m_isFormatValid && m_isDurationValid;
 }
 
 int VoiceUploadDialog::getAudioFileDuration(const QString &filePath) const

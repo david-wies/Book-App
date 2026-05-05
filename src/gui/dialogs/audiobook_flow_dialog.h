@@ -71,6 +71,7 @@ private:
 
     quint64 m_pendingDetailsId{0};
     quint64 m_pendingFormatsId{0};
+    quint64 m_pendingVoicesId{0};
 
     int     m_currentStep{0}; // 0=language, 1=format, 2=voice, 3=preview, 4=generate
 

@@ -28,6 +28,10 @@ private:
     int getAudioFileDuration(const QString &filePath) const;
 
     QString m_selectedFile;
+    bool m_isFileValid{false};
+    bool m_isDurationValid{false};
+    bool m_isFormatValid{false};
+    
     QLineEdit *m_fileLabel{};
     QLineEdit *m_voiceNameEdit{};
     QPushButton *m_chooseFileBtn{};
