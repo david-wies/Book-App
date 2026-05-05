@@ -90,12 +90,21 @@ void AudiobookFlowDialog::buildUi()
     m_stepsContainer->addWidget(formatStep);
 
     // Step 3: Voice selection
+    QWidget *voiceStep = new QWidget(this);
+    QVBoxLayout *voiceLayout = new QVBoxLayout(voiceStep);
     m_voiceSelector = new VoiceSelectorWidget(this);
     connect(m_voiceSelector, &VoiceSelectorWidget::voiceSelected,
             this, &AudiobookFlowDialog::onVoiceSelectionChanged);
     connect(m_voiceSelector, &VoiceSelectorWidget::uploadNewVoiceRequested,
             this, &AudiobookFlowDialog::onVoiceUploadRequested);
-    m_stepsContainer->addWidget(m_voiceSelector);
+    voiceLayout->addWidget(m_voiceSelector);
+    // Phase 3: connect to TTSService to generate a 10-second preview clip
+    m_previewVoiceBtn = new QPushButton("▶ Preview selected voice", this);
+    m_previewVoiceBtn->setEnabled(false); // enabled once a voice is selected
+    connect(m_previewVoiceBtn, &QPushButton::clicked,
+            this, &AudiobookFlowDialog::onPreviewVoiceClicked);
+    voiceLayout->addWidget(m_previewVoiceBtn);
+    m_stepsContainer->addWidget(voiceStep);
 
     // Step 4: Preview
     QWidget *previewStep = new QWidget(this);
@@ -128,6 +137,23 @@ void AudiobookFlowDialog::buildUi()
     m_resultLabel = new QLabel(this);
     m_resultLabel->setAlignment(Qt::AlignCenter);
     genLayout->addWidget(m_resultLabel);
+    // Cancel button — visible during generation, hidden once complete (Phase 3)
+    m_cancelGenBtn = new QPushButton("Cancel", this);
+    m_cancelGenBtn->hide();
+    genLayout->addWidget(m_cancelGenBtn, 0, Qt::AlignHCenter);
+    // Post-generation action buttons — hidden until generation completes (Phase 3)
+    QHBoxLayout *postGenLayout = new QHBoxLayout();
+    m_openFileBtn = new QPushButton("Open file", this);
+    m_openFileBtn->hide();
+    connect(m_openFileBtn, &QPushButton::clicked,
+            this, &AudiobookFlowDialog::onOpenFileClicked);
+    m_addToLibBtn = new QPushButton("Add to library", this);
+    m_addToLibBtn->hide();
+    connect(m_addToLibBtn, &QPushButton::clicked,
+            this, &AudiobookFlowDialog::onAddToLibraryClicked);
+    postGenLayout->addWidget(m_openFileBtn);
+    postGenLayout->addWidget(m_addToLibBtn);
+    genLayout->addLayout(postGenLayout);
     genLayout->addStretch();
     m_stepsContainer->addWidget(genStep);
 
@@ -227,6 +253,7 @@ void AudiobookFlowDialog::onVoiceSelectionChanged(int voiceId, const QString &vo
 {
     m_selectedVoiceId = voiceId;
     m_selectedVoiceName = voiceName;
+    m_previewVoiceBtn->setEnabled(voiceId >= 0);
 }
 
 void AudiobookFlowDialog::onVoiceUploadRequested()
@@ -274,11 +301,31 @@ void AudiobookFlowDialog::onGenerationProgress(int percent)
 void AudiobookFlowDialog::onGenerationComplete()
 {
     m_resultLabel->setText("✓ Audiobook ready!");
+    m_progressText->hide();
+    m_cancelGenBtn->hide();
+    m_openFileBtn->show();   // Phase 3: open generated audio file
+    m_addToLibBtn->show();   // Phase 3: explicit user action to mark ready
     m_nextBtn->setText("Close");
     disconnect(m_nextBtn, &QPushButton::clicked,
                this, &AudiobookFlowDialog::onNextOrGenerateClicked);
     connect(m_nextBtn, &QPushButton::clicked, this, &QDialog::accept);
     setLibraryStatus(QStringLiteral("audiobook_ready"));
+}
+
+void AudiobookFlowDialog::onPreviewVoiceClicked()
+{
+    // Phase 3: request a 10-second preview clip from TTSService for m_selectedVoiceName
+}
+
+void AudiobookFlowDialog::onOpenFileClicked()
+{
+    // Phase 3: open generated audio file via QDesktopServices::openUrl()
+}
+
+void AudiobookFlowDialog::onAddToLibraryClicked()
+{
+    setLibraryStatus(QStringLiteral("audiobook_ready"));
+    accept();
 }
 
 void AudiobookFlowDialog::populateLanguageList()

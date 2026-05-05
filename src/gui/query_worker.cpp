@@ -165,18 +165,18 @@ void QueryWorker::handleListVoicesRequest(quint64 requestId)
     emit listVoicesCompleted(requestId, internal::listVoices(conn()));
 }
 
-void QueryWorker::handleInsertVoiceRequest(quint64 requestId, const QString &voiceName,
-                                           const QString &voiceType, bool isPreset)
+void QueryWorker::handleInsertVoiceRequest(quint64 requestId, const QString &name,
+                                           const QString &type, const QString &engine)
 {
     int newId = -1;
-    const bool ok = internal::insertVoice(voiceName, voiceType, isPreset, &newId, conn());
+    const bool ok = internal::insertVoice(name, type, engine, &newId, conn());
     emit insertVoiceCompleted(requestId, ok, newId);
 }
 
 void QueryWorker::handleUpdateVoiceRequest(quint64 requestId, int voiceId,
-                                           const QString &voiceType)
+                                           const QString &engine)
 {
-    emit updateVoiceCompleted(requestId, internal::updateVoice(voiceId, voiceType, conn()));
+    emit updateVoiceCompleted(requestId, internal::updateVoice(voiceId, engine, conn()));
 }
 
 void QueryWorker::handleDeleteVoiceRequest(quint64 requestId, int voiceId)
@@ -215,29 +215,30 @@ QList<VoiceEntry> listVoices(const QString &connectionName)
     QSqlQuery query(QSqlDatabase::database(connectionName));
     QList<VoiceEntry> voices;
     if (!query.exec(QStringLiteral(
-            "SELECT id, voice_name, is_preset FROM voices ORDER BY is_preset DESC, voice_name"))) {
+            "SELECT id, name, (type = 'preset') FROM voices"
+            " ORDER BY (type = 'preset') DESC, name"))) {
         qWarning() << "internal::listVoices failed:" << query.lastError().text();
         return voices;
     }
     while (query.next()) {
         VoiceEntry entry;
-        entry.id      = query.value(0).toInt();
-        entry.name    = query.value(1).toString();
+        entry.id       = query.value(0).toInt();
+        entry.name     = query.value(1).toString();
         entry.isPreset = query.value(2).toInt() != 0;
         voices.append(entry);
     }
     return voices;
 }
 
-bool insertVoice(const QString &voiceName, const QString &voiceType, bool isPreset,
+bool insertVoice(const QString &name, const QString &type, const QString &engine,
                  int *outNewId, const QString &connectionName)
 {
     QSqlQuery query(QSqlDatabase::database(connectionName));
     query.prepare(QStringLiteral(
-        "INSERT INTO voices (voice_name, voice_type, is_preset) VALUES (?, ?, ?)"));
-    query.addBindValue(voiceName);
-    query.addBindValue(voiceType);
-    query.addBindValue(isPreset ? 1 : 0);
+        "INSERT INTO voices (name, type, engine) VALUES (?, ?, ?)"));
+    query.addBindValue(name);
+    query.addBindValue(type);
+    query.addBindValue(engine);
     if (!query.exec()) {
         qWarning() << "internal::insertVoice failed:" << query.lastError().text();
         return false;
@@ -247,11 +248,11 @@ bool insertVoice(const QString &voiceName, const QString &voiceType, bool isPres
     return true;
 }
 
-bool updateVoice(int voiceId, const QString &voiceType, const QString &connectionName)
+bool updateVoice(int voiceId, const QString &engine, const QString &connectionName)
 {
     QSqlQuery query(QSqlDatabase::database(connectionName));
-    query.prepare(QStringLiteral("UPDATE voices SET voice_type = ? WHERE id = ?"));
-    query.addBindValue(voiceType);
+    query.prepare(QStringLiteral("UPDATE voices SET engine = ? WHERE id = ?"));
+    query.addBindValue(engine);
     query.addBindValue(voiceId);
     if (!query.exec()) {
         qWarning() << "internal::updateVoice failed:" << query.lastError().text();

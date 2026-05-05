@@ -135,20 +135,20 @@ public slots:
             internal::listVoices(QSqlDatabase::defaultConnection));
     }
 
-    void handleInsertVoiceRequest(quint64 requestId, const QString &voiceName,
-                                  const QString &voiceType, bool isPreset) override
+    void handleInsertVoiceRequest(quint64 requestId, const QString &name,
+                                  const QString &type, const QString &engine) override
     {
         int newId = -1;
-        const bool ok = internal::insertVoice(voiceName, voiceType, isPreset,
+        const bool ok = internal::insertVoice(name, type, engine,
                                                &newId, QSqlDatabase::defaultConnection);
         emit insertVoiceCompleted(requestId, ok, newId);
     }
 
     void handleUpdateVoiceRequest(quint64 requestId, int voiceId,
-                                  const QString &voiceType) override
+                                  const QString &engine) override
     {
         emit updateVoiceCompleted(requestId,
-            internal::updateVoice(voiceId, voiceType, QSqlDatabase::defaultConnection));
+            internal::updateVoice(voiceId, engine, QSqlDatabase::defaultConnection));
     }
 
     void handleDeleteVoiceRequest(quint64 requestId, int voiceId) override

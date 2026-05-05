@@ -62,9 +62,9 @@ public slots:
 
     // Voice CRUD
     virtual void handleListVoicesRequest(quint64 requestId);
-    virtual void handleInsertVoiceRequest(quint64 requestId, const QString &voiceName,
-                                          const QString &voiceType, bool isPreset);
-    virtual void handleUpdateVoiceRequest(quint64 requestId, int voiceId, const QString &voiceType);
+    virtual void handleInsertVoiceRequest(quint64 requestId, const QString &name,
+                                          const QString &type, const QString &engine);
+    virtual void handleUpdateVoiceRequest(quint64 requestId, int voiceId, const QString &engine);
     virtual void handleDeleteVoiceRequest(quint64 requestId, int voiceId);
 
     // Audiobook operations

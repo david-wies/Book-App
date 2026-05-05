@@ -46,6 +46,9 @@ private slots:
     void onPlayPreview();
     void onGenerationProgress(int percent);
     void onGenerationComplete();
+    void onPreviewVoiceClicked();   // Phase 3: generate 10-second preview via TTSService
+    void onOpenFileClicked();       // Phase 3: open generated file via QDesktopServices
+    void onAddToLibraryClicked();   // Phase 3: update library status to audiobook_ready
 
 private:
     void buildUi();
@@ -91,12 +94,16 @@ private:
     QProgressBar         *m_progressBar{};
     QLabel               *m_progressText{};
     QLabel               *m_resultLabel{};
+    QPushButton          *m_cancelGenBtn{};  // visible during generation
+    QPushButton          *m_openFileBtn{};   // visible after completion
+    QPushButton          *m_addToLibBtn{};   // visible after completion
     QPushButton          *m_backBtn{};
     QPushButton          *m_nextBtn{};
 
     QListWidget *m_languageList{};
     QListWidget *m_formatList{};
     VoiceSelectorWidget   *m_voiceSelector{};
+    QPushButton           *m_previewVoiceBtn{};  // preview selected voice (Phase 3)
     MiniAudioPlayerWidget *m_previewPlayer{};
     QLabel                *m_previewText{};
 

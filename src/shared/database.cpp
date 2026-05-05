@@ -112,11 +112,14 @@ bool createSchema(const QString &connectionName)
             FOREIGN KEY (edition_id) REFERENCES editions(id)
         ))",
         R"(CREATE TABLE IF NOT EXISTS voices (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            voice_name TEXT NOT NULL UNIQUE,
-            voice_type TEXT NOT NULL,
-            is_preset INTEGER DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+            name                 TEXT NOT NULL,
+            type                 TEXT NOT NULL CHECK(type IN ('preset', 'custom')),
+            engine               TEXT NOT NULL CHECK(engine IN ('sherpa_onnx', 'pocket_tts')),
+            model_path           TEXT,
+            config_path          TEXT,
+            reference_audio_path TEXT,
+            created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         ))"
     };
 
@@ -230,11 +233,14 @@ bool verifySchemaVersion(const QString &connectionName)
         QStringList migration = {
             "BEGIN",
             R"(CREATE TABLE IF NOT EXISTS voices (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                voice_name TEXT NOT NULL UNIQUE,
-                voice_type TEXT NOT NULL,
-                is_preset INTEGER DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+                name                 TEXT NOT NULL,
+                type                 TEXT NOT NULL CHECK(type IN ('preset', 'custom')),
+                engine               TEXT NOT NULL CHECK(engine IN ('sherpa_onnx', 'pocket_tts')),
+                model_path           TEXT,
+                config_path          TEXT,
+                reference_audio_path TEXT,
+                created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             ))",
             QStringLiteral("PRAGMA user_version = %1").arg(kSchemaVersion),
             "COMMIT"
@@ -308,10 +314,10 @@ bool insertSampleData(const QString &connectionName)
             ('lccn:n78095332', 1, 'saved'),
             ('lccn:n79025140', 3, 'downloaded')
         )",
-        R"(INSERT OR IGNORE INTO voices (voice_name, voice_type, is_preset) VALUES
-            ('Classic Storyteller', 'preset', 1),
-            ('Warm Listener', 'preset', 1),
-            ('Crisp Narrator', 'preset', 1)
+        R"(INSERT OR IGNORE INTO voices (name, type, engine) VALUES
+            ('Classic Storyteller', 'preset', 'sherpa_onnx'),
+            ('Warm Listener',       'preset', 'sherpa_onnx'),
+            ('Crisp Narrator',      'preset', 'sherpa_onnx')
         )"
     };
 
