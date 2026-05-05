@@ -203,7 +203,7 @@ while IFS= read -r line || [[ -n "${line}" ]]; do
     # Only remove paths that are tracked by git. git-ignored files are
     # irrelevant to the branch and rm-ing them would silently delete local
     # developer state on the release branch.
-    if git ls-files --error-unmatch "${path}" &>/dev/null 2>&1 || \
+    if git ls-files --error-unmatch "${path}" &>/dev/null || \
        [[ -n "$(git ls-files "${path}")" ]]; then
         if [[ "${DRY_RUN}" -eq 1 ]]; then
             echo "  [DRY RUN] would remove: ${path}"
@@ -258,7 +258,7 @@ if [[ "${DRY_RUN}" -eq 1 ]]; then
     echo "[DRY RUN] would open PR: ${RELEASE_BRANCH} → master (title: \"Release ${VERSION}\")"
     PR_URL="(dry run — no PR created)"
 else
-    PR_URL="$(gh pr create \
+    if ! PR_URL="$(gh pr create \
         --base master \
         --head "${RELEASE_BRANCH}" \
         --title "Release ${VERSION}" \
@@ -292,7 +292,14 @@ git push origin ${VERSION}
 The \`release.yml\` workflow will then build the binary and publish a GitHub Release automatically.
 EOF
         )"
-    )"
+    ")"; then
+        echo "" >&2
+        echo "ERROR: 'gh pr create' failed. The branch '${RELEASE_BRANCH}' has already been" >&2
+        echo "pushed. To open the PR manually, run:" >&2
+        echo "" >&2
+        echo "  gh pr create --base master --head ${RELEASE_BRANCH} --title \"Release ${VERSION}\"" >&2
+        exit 1
+    fi
 fi
 
 echo ""
