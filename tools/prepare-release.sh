@@ -69,7 +69,7 @@ else
 fi
 
 # Require a 'v' prefix so tags are consistent (v1.0.0, v1.2.3-rc1, etc.).
-if [[ ! "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9] ]]; then
+if [[ ! "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-].+)?$ ]]; then
     echo "ERROR: version must start with 'v' followed by semver (e.g. v1.0.0)." >&2
     exit 1
 fi
@@ -271,7 +271,7 @@ This PR merges \`develop\` into \`master\` for the **${VERSION}** release.
 
 Develop-only files have been removed from this branch per \`.github/release-strip.txt\`:
 
-$(git diff origin/master...HEAD --name-only --diff-filter=D 2>/dev/null | sed 's/^/- /' || echo "- (see commit for full list)")
+$(git diff HEAD~1..HEAD --name-only --diff-filter=D | sed 's/^/- /')
 
 ### Pre-merge checklist
 
