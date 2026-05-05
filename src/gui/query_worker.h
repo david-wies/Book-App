@@ -9,7 +9,7 @@
 #include "services/explore_service.h"
 #include "services/library_service.h"
 #include "services/search_service.h"
-#include "widgets/voice_selector_widget.h"
+#include "services/tts_types.h"
 
 namespace bookhub::gui {
 

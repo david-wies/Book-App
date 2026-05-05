@@ -2,6 +2,7 @@
 
 #include "../services/book_details_service.h"
 #include <QDialog>
+#include <atomic>
 
 class QLabel;
 class QListWidget;
@@ -17,6 +18,7 @@ class StepIndicatorWidget;
 class VoiceSelectorWidget;
 class MiniAudioPlayerWidget;
 class VoiceUploadDialog;
+class AudiobookFlowDialogTest;
 
 class AudiobookFlowDialog : public QDialog {
     Q_OBJECT
@@ -28,6 +30,9 @@ public:
 
     void startForBook(const QString &bookId);
 
+signals:
+    void listVoicesRequested(quint64 requestId);
+
 private slots:
     void onDetailsCompleted(quint64 requestId, const bookhub::gui::BookDetails &details);
     void onFormatsCompleted(quint64 requestId,
@@ -35,15 +40,12 @@ private slots:
     void onLanguageSelectionChanged();
     void onFormatSelectionChanged();
     void onVoiceSelectionChanged(int voiceId, const QString &voiceName);
-    void onPreviewRequested(int voiceId, const QString &voiceName);
     void onVoiceUploadRequested();
     void onBackClicked();
     void onNextOrGenerateClicked();
     void onPlayPreview();
     void onGenerationProgress(int percent);
     void onGenerationComplete();
-    void onOpenFileClicked();
-    void onAddToLibraryClicked();
 
 private:
     void buildUi();
@@ -52,11 +54,12 @@ private:
     void populateLanguageList();
     void populateFormatList();
     void populateVoiceList();
-    void requestFormatsForSelectedLanguage();
     bool startGeneration();
     void setLibraryStatus(const QString &status);
     BookSourceEntry selectedSource() const;
     void showErrorState(const QString &message);
+
+    friend class ::bookhub::gui::AudiobookFlowDialogTest;
 
     LibraryService        *m_libraryService{};
     BookDetailsService    *m_detailsService{};
@@ -68,6 +71,8 @@ private:
     QList<BookEditionEntry> m_editions;
     QList<BookFormatEntry>  m_formats;
     bool    m_hasLanguageStep{false};
+
+    std::atomic<quint64> m_requestCounter{1};
 
     quint64 m_pendingDetailsId{0};
     quint64 m_pendingFormatsId{0};
@@ -81,22 +86,19 @@ private:
     QString m_selectedVoiceName;
 
     QLabel               *m_titleLabel{};
-    QLabel               *m_stepLabel{};
     StepIndicatorWidget  *m_stepIndicator{};
     QStackedWidget       *m_stepsContainer{};
-    QWidget              *m_progressContainer{};
     QProgressBar         *m_progressBar{};
     QLabel               *m_progressText{};
     QLabel               *m_resultLabel{};
     QPushButton          *m_backBtn{};
     QPushButton          *m_nextBtn{};
 
-    // Step widgets (will be allocated in buildUi)
     QListWidget *m_languageList{};
     QListWidget *m_formatList{};
-    VoiceSelectorWidget *m_voiceSelector{};
+    VoiceSelectorWidget   *m_voiceSelector{};
     MiniAudioPlayerWidget *m_previewPlayer{};
-    QLabel *m_previewText{};
+    QLabel                *m_previewText{};
 
     VoiceUploadDialog *m_uploadDialog{};
 };

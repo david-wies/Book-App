@@ -14,11 +14,6 @@
 #include <QProgressBar>
 #include <QStackedWidget>
 #include <QMessageBox>
-#include <QDesktopServices>
-#include <QUrl>
-#include <QDir>
-#include <QDebug>
-#include <QDateTime>
 
 namespace bookhub::gui {
 
@@ -40,24 +35,37 @@ AudiobookFlowDialog::AudiobookFlowDialog(LibraryService *libraryService,
     connect(m_detailsService, &BookDetailsService::formatsCompleted,
             this, &AudiobookFlowDialog::onFormatsCompleted);
 
+    if (m_worker) {
+        // Route listVoicesRequested through Qt's connection mechanism so the
+        // call is queued when m_worker lives on the query thread.
+        connect(this, &AudiobookFlowDialog::listVoicesRequested,
+                m_worker, &QueryWorker::handleListVoicesRequest);
+
+        connect(m_worker,
+                QOverload<quint64, QList<VoiceEntry>>::of(&QueryWorker::listVoicesCompleted),
+                this,
+                [this](quint64 requestId, const QList<VoiceEntry> &voices) {
+                    if (requestId == m_pendingVoicesId && m_voiceSelector)
+                        m_voiceSelector->setVoices(voices);
+                });
+    }
+
     buildUi();
+    resetState();
 }
 
 void AudiobookFlowDialog::buildUi()
 {
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
 
-    // Title
     m_titleLabel = new QLabel(this);
     m_titleLabel->setStyleSheet("font-weight: bold; font-size: 14px;");
     mainLayout->addWidget(m_titleLabel);
 
-    // Step indicator
     m_stepIndicator = new StepIndicatorWidget(5, this);
     m_stepIndicator->setStepLabels({"Lang", "Format", "Voice", "Preview", "Generate"});
     mainLayout->addWidget(m_stepIndicator);
 
-    // Steps container
     m_stepsContainer = new QStackedWidget(this);
     mainLayout->addWidget(m_stepsContainer);
 
@@ -83,10 +91,8 @@ void AudiobookFlowDialog::buildUi()
 
     // Step 3: Voice selection
     m_voiceSelector = new VoiceSelectorWidget(this);
-    connect(m_voiceSelector, QOverload<int, const QString &>::of(&VoiceSelectorWidget::voiceSelected),
+    connect(m_voiceSelector, &VoiceSelectorWidget::voiceSelected,
             this, &AudiobookFlowDialog::onVoiceSelectionChanged);
-    connect(m_voiceSelector, QOverload<int, const QString &>::of(&VoiceSelectorWidget::voicePreviewRequested),
-            this, &AudiobookFlowDialog::onPreviewRequested);
     connect(m_voiceSelector, &VoiceSelectorWidget::uploadNewVoiceRequested,
             this, &AudiobookFlowDialog::onVoiceUploadRequested);
     m_stepsContainer->addWidget(m_voiceSelector);
@@ -101,12 +107,13 @@ void AudiobookFlowDialog::buildUi()
     m_previewText->setMaximumHeight(80);
     previewLayout->addWidget(m_previewText);
     m_previewPlayer = new MiniAudioPlayerWidget(this);
-    connect(m_previewPlayer, &MiniAudioPlayerWidget::playClicked, this, &AudiobookFlowDialog::onPlayPreview);
+    connect(m_previewPlayer, &MiniAudioPlayerWidget::playClicked,
+            this, &AudiobookFlowDialog::onPlayPreview);
     previewLayout->addWidget(m_previewPlayer);
     previewLayout->addStretch();
     m_stepsContainer->addWidget(previewStep);
 
-    // Step 5: Generation
+    // Step 5: Generation — all progress widgets live here, no double-parenting
     QWidget *genStep = new QWidget(this);
     QVBoxLayout *genLayout = new QVBoxLayout(genStep);
     genLayout->addSpacing(20);
@@ -124,17 +131,7 @@ void AudiobookFlowDialog::buildUi()
     genLayout->addStretch();
     m_stepsContainer->addWidget(genStep);
 
-    // Progress container (shown during generation)
-    m_progressContainer = new QWidget(this);
-    QVBoxLayout *progressLayout = new QVBoxLayout(m_progressContainer);
-    progressLayout->addStretch();
-    progressLayout->addWidget(m_progressBar);
-    progressLayout->addWidget(m_progressText);
-    progressLayout->addWidget(m_resultLabel);
-    progressLayout->addStretch();
-    m_progressContainer->hide();
-
-    // Navigation buttons
+    // Navigation
     QHBoxLayout *navLayout = new QHBoxLayout();
     m_backBtn = new QPushButton("← Back", this);
     m_backBtn->setMaximumWidth(100);
@@ -144,7 +141,8 @@ void AudiobookFlowDialog::buildUi()
 
     m_nextBtn = new QPushButton("Next →", this);
     m_nextBtn->setMaximumWidth(100);
-    connect(m_nextBtn, &QPushButton::clicked, this, &AudiobookFlowDialog::onNextOrGenerateClicked);
+    connect(m_nextBtn, &QPushButton::clicked,
+            this, &AudiobookFlowDialog::onNextOrGenerateClicked);
     navLayout->addWidget(m_nextBtn);
     mainLayout->addLayout(navLayout);
 
@@ -208,7 +206,6 @@ void AudiobookFlowDialog::onLanguageSelectionChanged()
         return;
 
     m_selectedLanguage = item->text();
-    // Find the edition ID for the selected language
     for (const auto &edition : m_editions) {
         if (edition.language == m_selectedLanguage) {
             m_pendingFormatsId = m_detailsService->requestFormatsForEdition(edition.editionId);
@@ -223,7 +220,7 @@ void AudiobookFlowDialog::onFormatSelectionChanged()
     if (!item)
         return;
 
-    m_selectedFormat = item->text();
+    m_selectedFormat = item->text().split(" (")[0]; // strip "(recommended)" suffix
 }
 
 void AudiobookFlowDialog::onVoiceSelectionChanged(int voiceId, const QString &voiceName)
@@ -232,21 +229,11 @@ void AudiobookFlowDialog::onVoiceSelectionChanged(int voiceId, const QString &vo
     m_selectedVoiceName = voiceName;
 }
 
-void AudiobookFlowDialog::onPreviewRequested([[maybe_unused]] int voiceId, const QString &voiceName)
-{
-    // MVP: placeholder for voice preview generation
-    // In Phase 3+, generate preview audio via TTS service
-    qDebug() << "Preview requested for voice:" << voiceName;
-}
-
 void AudiobookFlowDialog::onVoiceUploadRequested()
 {
     m_uploadDialog = new VoiceUploadDialog(this);
-    if (m_uploadDialog->exec() == QDialog::Accepted) {
-        QString voiceName = m_uploadDialog->voiceName();
-        // In a real implementation, save voice to DB and refresh voice list
-        qDebug() << "Voice uploaded:" << voiceName;
-    }
+    if (m_uploadDialog->exec() == QDialog::Accepted)
+        populateVoiceList(); // refresh list after upload (DB insertion deferred to Phase 3)
 }
 
 void AudiobookFlowDialog::onBackClicked()
@@ -263,12 +250,11 @@ void AudiobookFlowDialog::onNextOrGenerateClicked()
         m_currentStep++;
         updateStepUi();
     } else {
-        // Generate audiobook
         if (startGeneration()) {
             m_progressBar->setValue(0);
             m_progressText->setText("Generating audiobook...");
             m_resultLabel->clear();
-            // In Phase 3+, connect to actual TTS service progress
+            // Phase 3+: connect to actual TTS service progress
             onGenerationProgress(100);
             onGenerationComplete();
         }
@@ -277,8 +263,7 @@ void AudiobookFlowDialog::onNextOrGenerateClicked()
 
 void AudiobookFlowDialog::onPlayPreview()
 {
-    // MVP: placeholder for preview playback
-    qDebug() << "Playing preview...";
+    // Phase 3+: generate and play preview audio via TTSService
 }
 
 void AudiobookFlowDialog::onGenerationProgress(int percent)
@@ -290,20 +275,10 @@ void AudiobookFlowDialog::onGenerationComplete()
 {
     m_resultLabel->setText("✓ Audiobook ready!");
     m_nextBtn->setText("Close");
-    m_nextBtn->disconnect();
+    disconnect(m_nextBtn, &QPushButton::clicked,
+               this, &AudiobookFlowDialog::onNextOrGenerateClicked);
     connect(m_nextBtn, &QPushButton::clicked, this, &QDialog::accept);
-}
-
-void AudiobookFlowDialog::onOpenFileClicked()
-{
-    // MVP: placeholder for opening generated file
-    QDesktopServices::openUrl(QUrl::fromLocalFile(QDir::homePath()));
-}
-
-void AudiobookFlowDialog::onAddToLibraryClicked()
-{
-    setLibraryStatus("audiobook_ready");
-    accept();
+    setLibraryStatus(QStringLiteral("audiobook_ready"));
 }
 
 void AudiobookFlowDialog::populateLanguageList()
@@ -313,9 +288,8 @@ void AudiobookFlowDialog::populateLanguageList()
         QListWidgetItem *item = new QListWidgetItem(edition.language);
         m_languageList->addItem(item);
     }
-    if (!m_editions.isEmpty()) {
+    if (!m_editions.isEmpty())
         m_languageList->setCurrentRow(0);
-    }
 }
 
 void AudiobookFlowDialog::populateFormatList()
@@ -323,38 +297,21 @@ void AudiobookFlowDialog::populateFormatList()
     m_formatList->clear();
     for (const auto &format : m_formats) {
         QString label = format.formatType;
-        if (format.formatType == "epub") {
+        if (format.formatType == QLatin1String("epub"))
             label += " (recommended)";
-        }
-        QListWidgetItem *item = new QListWidgetItem(label);
-        m_formatList->addItem(item);
+        m_formatList->addItem(new QListWidgetItem(label));
     }
     if (!m_formats.isEmpty()) {
         m_formatList->setCurrentRow(0);
-        if (m_formats.first().formatType == "epub") {
-            m_selectedFormat = "epub";
-        } else {
-            m_selectedFormat = m_formats.first().formatType;
-        }
+        m_selectedFormat = m_formats.first().formatType;
     }
 }
 
 void AudiobookFlowDialog::populateVoiceList()
 {
-    // Request voices from database via query worker
     if (m_worker) {
-        m_pendingVoicesId = reinterpret_cast<quint64>(this) ^ QDateTime::currentMSecsSinceEpoch();
-        // Use lambda to handle result without adding slot to Q_OBJECT
-        connect(m_worker,
-                QOverload<quint64, QList<VoiceEntry>>::of(&QueryWorker::listVoicesCompleted),
-                this,
-                [this](quint64 requestId, QList<VoiceEntry> voices) {
-                    if (requestId == m_pendingVoicesId && m_voiceSelector) {
-                        m_voiceSelector->setVoices(voices);
-                    }
-                },
-                Qt::UniqueConnection);
-        m_worker->handleListVoicesRequest(m_pendingVoicesId);
+        m_pendingVoicesId = m_requestCounter.fetch_add(1);
+        emit listVoicesRequested(m_pendingVoicesId);
     }
 }
 
@@ -363,22 +320,17 @@ void AudiobookFlowDialog::updateStepUi()
     m_stepIndicator->setCurrentStep(m_currentStep);
     m_stepsContainer->setCurrentIndex(m_currentStep);
 
-    // Update button labels
     m_backBtn->setVisible(m_currentStep > 0);
-    if (m_currentStep == 4) {
-        m_nextBtn->setText("✓ Confirm & Generate");
-    } else {
-        m_nextBtn->setText("Next →");
-    }
+    m_nextBtn->setText(m_currentStep == 4
+        ? QStringLiteral("✓ Confirm & Generate")
+        : QStringLiteral("Next →"));
 
-    // Populate step-specific data
-    if (m_currentStep == 0 && m_hasLanguageStep) {
+    if (m_currentStep == 0 && m_hasLanguageStep)
         populateLanguageList();
-    } else if (m_currentStep == 1) {
+    else if (m_currentStep == 1)
         populateFormatList();
-    } else if (m_currentStep == 2) {
+    else if (m_currentStep == 2)
         populateVoiceList();
-    }
 }
 
 bool AudiobookFlowDialog::startGeneration()
@@ -387,24 +339,19 @@ bool AudiobookFlowDialog::startGeneration()
         showErrorState("Please select language, format, and voice.");
         return false;
     }
-    // MVP: placeholder for actual generation
     return true;
 }
 
-void AudiobookFlowDialog::setLibraryStatus(const QString &status)
+void AudiobookFlowDialog::setLibraryStatus(const QString &)
 {
-    if (m_libraryItemId > 0 && m_libraryService) {
-        // In Phase 3+, call LibraryService to update status in DB
-        qDebug() << "Setting library status to:" << status;
-    }
+    if (m_libraryItemId > 0 && m_libraryService)
+        m_libraryService->requestSetAudiobookReady(m_bookId);
 }
 
 BookSourceEntry AudiobookFlowDialog::selectedSource() const
 {
-    // MVP: return first available source
-    if (!m_formats.isEmpty() && !m_formats.first().sources.isEmpty()) {
+    if (!m_formats.isEmpty() && !m_formats.first().sources.isEmpty())
         return m_formats.first().sources.first();
-    }
     return BookSourceEntry{};
 }
 

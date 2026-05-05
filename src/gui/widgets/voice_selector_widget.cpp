@@ -3,7 +3,6 @@
 #include <QListWidgetItem>
 #include <QPushButton>
 #include <QVBoxLayout>
-#include <QHBoxLayout>
 #include <QLabel>
 
 namespace bookhub::gui {
@@ -18,7 +17,6 @@ void VoiceSelectorWidget::buildUi()
 {
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
 
-    // Preset voices section
     QLabel *presetLabel = new QLabel("Preset voices", this);
     presetLabel->setStyleSheet("QLabel { font-weight: bold; font-size: 12px; margin-top: 8px; }");
     mainLayout->addWidget(presetLabel);
@@ -29,7 +27,6 @@ void VoiceSelectorWidget::buildUi()
     connect(m_presetList, &QListWidget::itemClicked, this, &VoiceSelectorWidget::onVoiceItemClicked);
     mainLayout->addWidget(m_presetList);
 
-    // Custom voices section
     QLabel *customLabel = new QLabel("Custom voices", this);
     customLabel->setStyleSheet("QLabel { font-weight: bold; font-size: 12px; margin-top: 12px; }");
     mainLayout->addWidget(customLabel);
@@ -58,9 +55,8 @@ void VoiceSelectorWidget::setVoices(const QList<VoiceEntry> &voices)
 QString VoiceSelectorWidget::selectedVoiceName() const
 {
     for (const auto &voice : m_voices) {
-        if (voice.id == m_selectedVoiceId) {
+        if (voice.id == m_selectedVoiceId)
             return voice.name;
-        }
     }
     return QString();
 }
@@ -76,26 +72,17 @@ void VoiceSelectorWidget::onVoiceItemClicked()
     if (!senderList)
         senderList = m_presetList;
 
-    // Clear selection on the other list
-    if (senderList == m_presetList) {
+    if (senderList == m_presetList)
         m_customList->clearSelection();
-    } else {
+    else
         m_presetList->clearSelection();
-    }
 
     QListWidgetItem *item = senderList->currentItem();
     if (!item)
         return;
 
     m_selectedVoiceId = item->data(Qt::UserRole).toInt();
-    QString voiceName = item->text().split(" [")[0];
-    emit voiceSelected(m_selectedVoiceId, voiceName);
-}
-
-void VoiceSelectorWidget::onPreviewButtonClicked()
-{
-    // This would be called by a button in the item widget
-    // For now, placeholder
+    emit voiceSelected(m_selectedVoiceId, item->text());
 }
 
 void VoiceSelectorWidget::onUploadClicked()
@@ -109,24 +96,14 @@ void VoiceSelectorWidget::populateVoiceList()
     m_customList->clear();
 
     for (const auto &voice : m_voices) {
-        QString displayText = voice.name + " [▶ Preview]";
-        QListWidgetItem *item = new QListWidgetItem(displayText);
+        QListWidgetItem *item = new QListWidgetItem(voice.name);
         item->setData(Qt::UserRole, voice.id);
 
-        if (voice.isPreset) {
+        if (voice.isPreset)
             m_presetList->addItem(item);
-        } else {
+        else
             m_customList->addItem(item);
-        }
     }
-}
-
-void VoiceSelectorWidget::updatePresetSection()
-{
-}
-
-void VoiceSelectorWidget::updateCustomSection()
-{
 }
 
 } // namespace bookhub::gui

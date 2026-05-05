@@ -131,34 +131,43 @@ public slots:
 
     void handleListVoicesRequest(quint64 requestId) override
     {
-        QueryWorker::handleListVoicesRequest(requestId);
+        emit listVoicesCompleted(requestId,
+            internal::listVoices(QSqlDatabase::defaultConnection));
     }
 
     void handleInsertVoiceRequest(quint64 requestId, const QString &voiceName,
                                   const QString &voiceType, bool isPreset) override
     {
-        QueryWorker::handleInsertVoiceRequest(requestId, voiceName, voiceType, isPreset);
+        int newId = -1;
+        const bool ok = internal::insertVoice(voiceName, voiceType, isPreset,
+                                               &newId, QSqlDatabase::defaultConnection);
+        emit insertVoiceCompleted(requestId, ok, newId);
     }
 
     void handleUpdateVoiceRequest(quint64 requestId, int voiceId,
                                   const QString &voiceType) override
     {
-        QueryWorker::handleUpdateVoiceRequest(requestId, voiceId, voiceType);
+        emit updateVoiceCompleted(requestId,
+            internal::updateVoice(voiceId, voiceType, QSqlDatabase::defaultConnection));
     }
 
     void handleDeleteVoiceRequest(quint64 requestId, int voiceId) override
     {
-        QueryWorker::handleDeleteVoiceRequest(requestId, voiceId);
+        emit deleteVoiceCompleted(requestId,
+            internal::deleteVoice(voiceId, QSqlDatabase::defaultConnection));
     }
 
     void handleQueryAudiobookStatusRequest(quint64 requestId, const QString &bookId) override
     {
-        QueryWorker::handleQueryAudiobookStatusRequest(requestId, bookId);
+        bool isReady = false;
+        internal::queryAudiobookStatus(bookId, isReady, QSqlDatabase::defaultConnection);
+        emit audiobookStatusQueried(requestId, isReady);
     }
 
     void handleSetAudiobookReadyRequest(quint64 requestId, const QString &bookId) override
     {
-        QueryWorker::handleSetAudiobookReadyRequest(requestId, bookId);
+        const bool success = internal::setAudiobookReady(bookId, QSqlDatabase::defaultConnection);
+        emit audiobookReadySet(requestId, success);
     }
 };
 

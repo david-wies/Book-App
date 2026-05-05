@@ -162,77 +162,26 @@ void QueryWorker::handleFormatsForEditionRequest(quint64 requestId, int editionI
 
 void QueryWorker::handleListVoicesRequest(quint64 requestId)
 {
-    QSqlQuery query(QSqlDatabase::database(conn()));
-    const QString sql = QStringLiteral(
-        "SELECT id, voice_name, is_preset FROM voices ORDER BY is_preset DESC, voice_name"
-    );
-
-    QList<VoiceEntry> voices;
-    if (!query.exec(sql)) {
-        qWarning() << "handleListVoicesRequest failed:" << query.lastError().text();
-    } else {
-        while (query.next()) {
-            VoiceEntry entry;
-            entry.id = query.value(0).toInt();
-            entry.name = query.value(1).toString();
-            entry.isPreset = query.value(2).toInt() != 0;
-            voices.append(entry);
-        }
-    }
-    emit listVoicesCompleted(requestId, voices);
+    emit listVoicesCompleted(requestId, internal::listVoices(conn()));
 }
 
 void QueryWorker::handleInsertVoiceRequest(quint64 requestId, const QString &voiceName,
                                            const QString &voiceType, bool isPreset)
 {
-    QSqlQuery query(QSqlDatabase::database(conn()));
-    query.prepare(QStringLiteral(
-        "INSERT INTO voices (voice_name, voice_type, is_preset) VALUES (?, ?, ?)"
-    ));
-    query.addBindValue(voiceName);
-    query.addBindValue(voiceType);
-    query.addBindValue(isPreset ? 1 : 0);
-
-    bool success = query.exec();
     int newId = -1;
-    if (success) {
-        newId = query.lastInsertId().toInt();
-    } else {
-        qWarning() << "handleInsertVoiceRequest failed:" << query.lastError().text();
-    }
-    emit insertVoiceCompleted(requestId, success, newId);
+    const bool ok = internal::insertVoice(voiceName, voiceType, isPreset, &newId, conn());
+    emit insertVoiceCompleted(requestId, ok, newId);
 }
 
 void QueryWorker::handleUpdateVoiceRequest(quint64 requestId, int voiceId,
                                            const QString &voiceType)
 {
-    QSqlQuery query(QSqlDatabase::database(conn()));
-    query.prepare(QStringLiteral(
-        "UPDATE voices SET voice_type = ? WHERE id = ?"
-    ));
-    query.addBindValue(voiceType);
-    query.addBindValue(voiceId);
-
-    bool success = query.exec();
-    if (!success) {
-        qWarning() << "handleUpdateVoiceRequest failed:" << query.lastError().text();
-    }
-    emit updateVoiceCompleted(requestId, success);
+    emit updateVoiceCompleted(requestId, internal::updateVoice(voiceId, voiceType, conn()));
 }
 
 void QueryWorker::handleDeleteVoiceRequest(quint64 requestId, int voiceId)
 {
-    QSqlQuery query(QSqlDatabase::database(conn()));
-    query.prepare(QStringLiteral(
-        "DELETE FROM voices WHERE id = ?"
-    ));
-    query.addBindValue(voiceId);
-
-    bool success = query.exec();
-    if (!success) {
-        qWarning() << "handleDeleteVoiceRequest failed:" << query.lastError().text();
-    }
-    emit deleteVoiceCompleted(requestId, success);
+    emit deleteVoiceCompleted(requestId, internal::deleteVoice(voiceId, conn()));
 }
 
 // ---------------------------------------------------------------------------
@@ -241,35 +190,110 @@ void QueryWorker::handleDeleteVoiceRequest(quint64 requestId, int voiceId)
 
 void QueryWorker::handleQueryAudiobookStatusRequest(quint64 requestId, const QString &bookId)
 {
-    QSqlQuery query(QSqlDatabase::database(conn()));
-    query.prepare(QStringLiteral(
-        "SELECT status FROM library_items WHERE book_id = ? LIMIT 1"
-    ));
-    query.addBindValue(bookId);
-
     bool isReady = false;
-    if (query.exec() && query.next()) {
-        QString status = query.value(0).toString();
-        isReady = (status == QLatin1String("audiobook_ready"));
-    } else {
-        qWarning() << "handleQueryAudiobookStatusRequest failed:" << query.lastError().text();
-    }
+    if (!internal::queryAudiobookStatus(bookId, isReady, conn()))
+        qWarning() << "handleQueryAudiobookStatusRequest failed for book_id:" << bookId;
     emit audiobookStatusQueried(requestId, isReady);
 }
 
 void QueryWorker::handleSetAudiobookReadyRequest(quint64 requestId, const QString &bookId)
 {
-    QSqlQuery query(QSqlDatabase::database(conn()));
-    query.prepare(QStringLiteral(
-        "UPDATE library_items SET status = 'audiobook_ready' WHERE book_id = ?"
-    ));
-    query.addBindValue(bookId);
-
-    bool success = query.exec() && query.numRowsAffected() > 0;
-    if (!success) {
-        qWarning() << "handleSetAudiobookReadyRequest failed:" << query.lastError().text();
-    }
+    const bool success = internal::setAudiobookReady(bookId, conn());
+    if (!success)
+        qWarning() << "handleSetAudiobookReadyRequest: no matching library_items row for book_id:" << bookId;
     emit audiobookReadySet(requestId, success);
 }
+
+// ---------------------------------------------------------------------------
+// Internal free functions — voice and audiobook-status SQL
+// ---------------------------------------------------------------------------
+
+namespace internal {
+
+QList<VoiceEntry> listVoices(const QString &connectionName)
+{
+    QSqlQuery query(QSqlDatabase::database(connectionName));
+    QList<VoiceEntry> voices;
+    if (!query.exec(QStringLiteral(
+            "SELECT id, voice_name, is_preset FROM voices ORDER BY is_preset DESC, voice_name"))) {
+        qWarning() << "internal::listVoices failed:" << query.lastError().text();
+        return voices;
+    }
+    while (query.next()) {
+        VoiceEntry entry;
+        entry.id      = query.value(0).toInt();
+        entry.name    = query.value(1).toString();
+        entry.isPreset = query.value(2).toInt() != 0;
+        voices.append(entry);
+    }
+    return voices;
+}
+
+bool insertVoice(const QString &voiceName, const QString &voiceType, bool isPreset,
+                 int *outNewId, const QString &connectionName)
+{
+    QSqlQuery query(QSqlDatabase::database(connectionName));
+    query.prepare(QStringLiteral(
+        "INSERT INTO voices (voice_name, voice_type, is_preset) VALUES (?, ?, ?)"));
+    query.addBindValue(voiceName);
+    query.addBindValue(voiceType);
+    query.addBindValue(isPreset ? 1 : 0);
+    if (!query.exec()) {
+        qWarning() << "internal::insertVoice failed:" << query.lastError().text();
+        return false;
+    }
+    if (outNewId)
+        *outNewId = query.lastInsertId().toInt();
+    return true;
+}
+
+bool updateVoice(int voiceId, const QString &voiceType, const QString &connectionName)
+{
+    QSqlQuery query(QSqlDatabase::database(connectionName));
+    query.prepare(QStringLiteral("UPDATE voices SET voice_type = ? WHERE id = ?"));
+    query.addBindValue(voiceType);
+    query.addBindValue(voiceId);
+    if (!query.exec()) {
+        qWarning() << "internal::updateVoice failed:" << query.lastError().text();
+        return false;
+    }
+    return true;
+}
+
+bool deleteVoice(int voiceId, const QString &connectionName)
+{
+    QSqlQuery query(QSqlDatabase::database(connectionName));
+    query.prepare(QStringLiteral("DELETE FROM voices WHERE id = ?"));
+    query.addBindValue(voiceId);
+    if (!query.exec()) {
+        qWarning() << "internal::deleteVoice failed:" << query.lastError().text();
+        return false;
+    }
+    return true;
+}
+
+bool queryAudiobookStatus(const QString &bookId, bool &outIsReady, const QString &connectionName)
+{
+    QSqlQuery query(QSqlDatabase::database(connectionName));
+    query.prepare(QStringLiteral(
+        "SELECT status FROM library_items WHERE book_id = ? LIMIT 1"));
+    query.addBindValue(bookId);
+    if (!query.exec())
+        return false;
+    outIsReady = query.next()
+        && (query.value(0).toString() == QLatin1String("audiobook_ready"));
+    return true;
+}
+
+bool setAudiobookReady(const QString &bookId, const QString &connectionName)
+{
+    QSqlQuery query(QSqlDatabase::database(connectionName));
+    query.prepare(QStringLiteral(
+        "UPDATE library_items SET status = 'audiobook_ready' WHERE book_id = ?"));
+    query.addBindValue(bookId);
+    return query.exec() && query.numRowsAffected() > 0;
+}
+
+} // namespace internal
 
 } // namespace bookhub::gui

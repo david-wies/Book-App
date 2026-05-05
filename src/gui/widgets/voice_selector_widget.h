@@ -1,19 +1,12 @@
 #pragma once
 
+#include "../services/tts_types.h"
 #include <QWidget>
-#include <QString>
-#include <QList>
 
 class QListWidget;
 class QPushButton;
 
 namespace bookhub::gui {
-
-struct VoiceEntry {
-    int id;
-    QString name;
-    bool isPreset;
-};
 
 class VoiceSelectorWidget : public QWidget {
     Q_OBJECT
@@ -27,19 +20,15 @@ public:
 
 signals:
     void voiceSelected(int voiceId, const QString &voiceName);
-    void voicePreviewRequested(int voiceId, const QString &voiceName);
     void uploadNewVoiceRequested();
 
 private slots:
     void onVoiceItemClicked();
-    void onPreviewButtonClicked();
     void onUploadClicked();
 
 private:
     void buildUi();
     void populateVoiceList();
-    void updatePresetSection();
-    void updateCustomSection();
 
     QList<VoiceEntry> m_voices;
     int m_selectedVoiceId{-1};

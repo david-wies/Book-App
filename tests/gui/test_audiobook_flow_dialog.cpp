@@ -1,12 +1,12 @@
 #include <QtTest>
 #include <QLabel>
 #include <QListWidget>
+#include <QProgressBar>
 #include <QPushButton>
-#include <QComboBox>
+#include <QSignalSpy>
 
 #include "gui/dialogs/audiobook_flow_dialog.h"
 #include "gui/services/library_service.h"
-#include "gui/widgets/step_indicator_widget.h"
 #include "gui/widgets/voice_selector_widget.h"
 #include "support/test_query_worker.h"
 
@@ -19,35 +19,36 @@ private slots:
     void init();
     void cleanup();
 
-    // Construction and dialog lifecycle
-    void construction_createsDialog();
-    void startForBook_setsBookId();
-    void dialog_initializes_at_step1();
-
-    // Language selection (Step 1)
-    void languageSelection_populatesLanguages();
-    void languageSelection_canSelectLanguage();
-
-    // Format selection (Step 2)
-    void formatSelection_populatesFormats();
-    void formatSelection_selectsFormat();
-
-    // Voice selection (Step 3)
-    void voiceSelection_populatesVoices();
-    void voiceSelection_emitsSignalOnChange();
-    void voiceSelection_supportsPresetAndCustom();
+    // Construction
+    void construction_isModalAtStep0_backHidden();
 
     // Navigation
+    void backNavigation_clampedAtStep0();
     void backNavigation_decrementsStep();
     void nextNavigation_incrementsStep();
-    void nextButton_requiresSelectionsPerStep();
+
+    // Details/formats injection
+    void singleEdition_autoSelectsLanguage();
+    void multipleEditions_requiresLanguageStep();
+    void staleDetailsRequest_isIgnored();
+    void staleFormatsRequest_isIgnored();
+
+    // Format list
+    void populateFormatList_autoSelectsEpub();
+    void populateFormatList_selectsFirstWhenNoEpub();
+
+    // Voice list
+    void voiceSelector_displaysPresetAndCustomSeparately();
+
+    // Generation flow
+    void startGeneration_succeedsWithAllSelections();
+    void onGenerationComplete_updatesCloseButton();
+    void onGenerationComplete_emitsAudiobookReadyRequest();
 
 private:
-    TestQueryWorker *m_worker{};
-    LibraryService  *m_libraryService{};
+    TestQueryWorker     *m_worker{};
+    LibraryService      *m_libraryService{};
     AudiobookFlowDialog *m_dialog{};
-
-    void populateTestData();
 };
 
 void AudiobookFlowDialogTest::init()
@@ -60,111 +61,190 @@ void AudiobookFlowDialogTest::init()
 
 void AudiobookFlowDialogTest::cleanup()
 {
-    delete m_dialog;
-    m_dialog = nullptr;
-    delete m_libraryService;
-    m_libraryService = nullptr;
-    delete m_worker;
-    m_worker = nullptr;
+    delete m_dialog;    m_dialog        = nullptr;
+    delete m_libraryService; m_libraryService = nullptr;
+    delete m_worker;    m_worker         = nullptr;
 }
 
-void AudiobookFlowDialogTest::construction_createsDialog()
+// ---------------------------------------------------------------------------
+
+void AudiobookFlowDialogTest::construction_isModalAtStep0_backHidden()
 {
-    QVERIFY(m_dialog != nullptr);
-    // Dialog should be modal (ApplicationModal by default)
     QVERIFY(m_dialog->windowModality() != Qt::NonModal);
+    QCOMPARE(m_dialog->m_currentStep, 0);
+    QVERIFY(m_dialog->m_backBtn->isHidden());
 }
 
-void AudiobookFlowDialogTest::startForBook_setsBookId()
+void AudiobookFlowDialogTest::backNavigation_clampedAtStep0()
 {
-    const QString bookId = QStringLiteral("gutenberg:1342");
-    m_dialog->startForBook(bookId);
-    // After starting, the dialog should load book details
-    // We can't directly assert the internal state, but we verify no crash
-    QVERIFY(m_dialog != nullptr);
-}
-
-void AudiobookFlowDialogTest::dialog_initializes_at_step1()
-{
-    // Dialog starts at step 1 (language selection)
-    // This is implicitly verified by the dialog being constructible
-    QVERIFY(m_dialog != nullptr);
-}
-
-void AudiobookFlowDialogTest::languageSelection_populatesLanguages()
-{
-    // When startForBook is called, languages should be queried
-    m_dialog->startForBook(QStringLiteral("gutenberg:1342"));
-    // The dialog should have a language list populated
-    // We verify the dialog doesn't crash during language population
-    QVERIFY(m_dialog != nullptr);
-}
-
-void AudiobookFlowDialogTest::languageSelection_canSelectLanguage()
-{
-    m_dialog->startForBook(QStringLiteral("gutenberg:1342"));
-    // Dialog should support language selection without crashing
-    QVERIFY(m_dialog != nullptr);
-}
-
-void AudiobookFlowDialogTest::formatSelection_populatesFormats()
-{
-    m_dialog->startForBook(QStringLiteral("gutenberg:1342"));
-    // After language selection, formats should be populated
-    QVERIFY(m_dialog != nullptr);
-}
-
-void AudiobookFlowDialogTest::formatSelection_selectsFormat()
-{
-    m_dialog->startForBook(QStringLiteral("gutenberg:1342"));
-    // Dialog should support format selection
-    QVERIFY(m_dialog != nullptr);
-}
-
-void AudiobookFlowDialogTest::voiceSelection_populatesVoices()
-{
-    m_dialog->startForBook(QStringLiteral("gutenberg:1342"));
-    // Dialog should query and populate voices
-    QVERIFY(m_dialog != nullptr);
-}
-
-void AudiobookFlowDialogTest::voiceSelection_emitsSignalOnChange()
-{
-    m_dialog->startForBook(QStringLiteral("gutenberg:1342"));
-    // Dialog should emit signal when voice selection changes
-    // This is tested by verifying no crash occurs
-    QVERIFY(m_dialog != nullptr);
-}
-
-void AudiobookFlowDialogTest::voiceSelection_supportsPresetAndCustom()
-{
-    m_dialog->startForBook(QStringLiteral("gutenberg:1342"));
-    // Dialog's VoiceSelectorWidget should display both preset and custom voices
-    QVERIFY(m_dialog != nullptr);
+    m_dialog->onBackClicked();
+    QCOMPARE(m_dialog->m_currentStep, 0);
+    QVERIFY(m_dialog->m_backBtn->isHidden());
 }
 
 void AudiobookFlowDialogTest::backNavigation_decrementsStep()
 {
-    m_dialog->startForBook(QStringLiteral("gutenberg:1342"));
-    // Dialog should support back button without crashing
-    QVERIFY(m_dialog != nullptr);
+    // Two-edition book shows a language step at step 0.
+    m_dialog->m_pendingDetailsId = 1;
+    BookDetails details;
+    details.editions.append({1, QStringLiteral("en")});
+    details.editions.append({2, QStringLiteral("fr")});
+    m_dialog->onDetailsCompleted(1, details);
+    QCOMPARE(m_dialog->m_currentStep, 0);
+    QVERIFY(m_dialog->m_backBtn->isHidden());
+
+    m_dialog->onNextOrGenerateClicked();
+    QCOMPARE(m_dialog->m_currentStep, 1);
+    QVERIFY(!m_dialog->m_backBtn->isHidden());
+
+    m_dialog->onBackClicked();
+    QCOMPARE(m_dialog->m_currentStep, 0);
+    QVERIFY(m_dialog->m_backBtn->isHidden());
 }
 
 void AudiobookFlowDialogTest::nextNavigation_incrementsStep()
 {
-    m_dialog->startForBook(QStringLiteral("gutenberg:1342"));
-    // Dialog should support next button without crashing
-    QVERIFY(m_dialog != nullptr);
+    m_dialog->m_pendingDetailsId = 2;
+    BookDetails details;
+    details.editions.append({1, QStringLiteral("en")});
+    m_dialog->onDetailsCompleted(2, details);
+
+    QList<BookFormatEntry> formats;
+    BookFormatEntry epub; epub.formatType = QStringLiteral("epub");
+    formats.append(epub);
+    m_dialog->m_pendingFormatsId = 3;
+    m_dialog->onFormatsCompleted(3, formats);
+
+    m_dialog->onNextOrGenerateClicked();
+    QCOMPARE(m_dialog->m_currentStep, 1);
+    QVERIFY(!m_dialog->m_backBtn->isHidden());
 }
 
-void AudiobookFlowDialogTest::nextButton_requiresSelectionsPerStep()
+void AudiobookFlowDialogTest::singleEdition_autoSelectsLanguage()
 {
-    m_dialog->startForBook(QStringLiteral("gutenberg:1342"));
-    // Dialog should enforce selection requirements per step
-    QVERIFY(m_dialog != nullptr);
+    m_dialog->m_pendingDetailsId = 5;
+    BookDetails details;
+    details.editions.append({1, QStringLiteral("en")});
+    m_dialog->onDetailsCompleted(5, details);
+
+    QCOMPARE(m_dialog->m_hasLanguageStep, false);
+    QCOMPARE(m_dialog->m_selectedLanguage, QStringLiteral("en"));
+}
+
+void AudiobookFlowDialogTest::multipleEditions_requiresLanguageStep()
+{
+    m_dialog->m_pendingDetailsId = 6;
+    BookDetails details;
+    details.editions.append({1, QStringLiteral("en")});
+    details.editions.append({2, QStringLiteral("fr")});
+    m_dialog->onDetailsCompleted(6, details);
+
+    QCOMPARE(m_dialog->m_hasLanguageStep, true);
+    QCOMPARE(m_dialog->m_languageList->count(), 2);
+}
+
+void AudiobookFlowDialogTest::staleDetailsRequest_isIgnored()
+{
+    m_dialog->m_pendingDetailsId = 7;
+    BookDetails details;
+    details.editions.append({1, QStringLiteral("en")});
+    m_dialog->onDetailsCompleted(6, details); // wrong ID
+    QVERIFY(m_dialog->m_editions.isEmpty());
+}
+
+void AudiobookFlowDialogTest::staleFormatsRequest_isIgnored()
+{
+    m_dialog->m_pendingFormatsId = 9;
+    QList<BookFormatEntry> formats;
+    BookFormatEntry epub; epub.formatType = QStringLiteral("epub");
+    formats.append(epub);
+    m_dialog->onFormatsCompleted(8, formats); // wrong ID
+    QVERIFY(m_dialog->m_formats.isEmpty());
+}
+
+void AudiobookFlowDialogTest::populateFormatList_autoSelectsEpub()
+{
+    QList<BookFormatEntry> formats;
+    BookFormatEntry epub; epub.formatType = QStringLiteral("epub");
+    BookFormatEntry txt;  txt.formatType  = QStringLiteral("txt");
+    formats.append(epub);
+    formats.append(txt);
+
+    m_dialog->m_pendingFormatsId = 4;
+    m_dialog->onFormatsCompleted(4, formats);
+
+    QCOMPARE(m_dialog->m_selectedFormat, QStringLiteral("epub"));
+    QCOMPARE(m_dialog->m_formatList->count(), 2);
+    QVERIFY(m_dialog->m_formatList->item(0)->text().contains(QStringLiteral("recommended")));
+}
+
+void AudiobookFlowDialogTest::populateFormatList_selectsFirstWhenNoEpub()
+{
+    QList<BookFormatEntry> formats;
+    BookFormatEntry txt; txt.formatType = QStringLiteral("txt");
+    BookFormatEntry pdf; pdf.formatType = QStringLiteral("pdf");
+    formats.append(txt);
+    formats.append(pdf);
+
+    m_dialog->m_pendingFormatsId = 5;
+    m_dialog->onFormatsCompleted(5, formats);
+
+    QCOMPARE(m_dialog->m_selectedFormat, QStringLiteral("txt"));
+    QCOMPARE(m_dialog->m_formatList->count(), 2);
+}
+
+void AudiobookFlowDialogTest::voiceSelector_displaysPresetAndCustomSeparately()
+{
+    QList<VoiceEntry> voices;
+    voices.append({1, QStringLiteral("Classic Storyteller"), true});
+    voices.append({2, QStringLiteral("Warm Listener"), true});
+    voices.append({3, QStringLiteral("My Voice"), false});
+
+    m_dialog->m_voiceSelector->setVoices(voices);
+
+    // VoiceSelectorWidget has two QListWidgets: preset list first, custom second.
+    const auto lists = m_dialog->m_voiceSelector->findChildren<QListWidget *>();
+    QCOMPARE(lists.size(), 2);
+    QCOMPARE(lists[0]->count(), 2); // preset
+    QCOMPARE(lists[1]->count(), 1); // custom
+}
+
+void AudiobookFlowDialogTest::startGeneration_succeedsWithAllSelections()
+{
+    m_dialog->m_selectedLanguage  = QStringLiteral("en");
+    m_dialog->m_selectedFormat    = QStringLiteral("epub");
+    m_dialog->m_selectedVoiceId   = 1;
+    m_dialog->m_selectedVoiceName = QStringLiteral("Classic Storyteller");
+    m_dialog->m_currentStep       = 4;
+
+    m_dialog->onNextOrGenerateClicked();
+
+    QCOMPARE(m_dialog->m_progressBar->value(), 100);
+    QCOMPARE(m_dialog->m_nextBtn->text(), QStringLiteral("Close"));
+}
+
+void AudiobookFlowDialogTest::onGenerationComplete_updatesCloseButton()
+{
+    m_dialog->onGenerationComplete();
+
+    QCOMPARE(m_dialog->m_nextBtn->text(), QStringLiteral("Close"));
+    QVERIFY(!m_dialog->m_resultLabel->text().isEmpty());
+}
+
+void AudiobookFlowDialogTest::onGenerationComplete_emitsAudiobookReadyRequest()
+{
+    m_dialog->m_bookId        = QStringLiteral("gutenberg:1342");
+    m_dialog->m_libraryItemId = 1; // non-zero triggers the status update path
+
+    QSignalSpy spy(m_libraryService, &LibraryService::setAudiobookReadyRequested);
+    m_dialog->onGenerationComplete();
+
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.at(0).at(1).toString(), QStringLiteral("gutenberg:1342"));
 }
 
 } // namespace bookhub::gui
 
-QTEST_MAIN(bookhub::gui::AudiobookFlowDialogTest)
+using AudiobookFlowDialogTest = bookhub::gui::AudiobookFlowDialogTest;
+QTEST_MAIN(AudiobookFlowDialogTest)
 #include "test_audiobook_flow_dialog.moc"

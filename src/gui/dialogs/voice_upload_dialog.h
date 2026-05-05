@@ -32,7 +32,7 @@ private:
     bool m_isDurationValid{false};
     bool m_isFormatValid{false};
     
-    QLineEdit *m_fileLabel{};
+    QLineEdit *m_filePathDisplay{};
     QLineEdit *m_voiceNameEdit{};
     QPushButton *m_chooseFileBtn{};
     QPushButton *m_validateBtn{};
