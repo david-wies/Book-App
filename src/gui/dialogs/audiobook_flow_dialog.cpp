@@ -30,6 +30,8 @@ AudiobookFlowDialog::AudiobookFlowDialog(LibraryService *libraryService,
     setMinimumHeight(480);
 
     m_detailsService = new BookDetailsService(this);
+    if (m_worker)
+        m_detailsService->connectToWorker(m_worker);
     connect(m_detailsService, &BookDetailsService::detailsCompleted,
             this, &AudiobookFlowDialog::onDetailsCompleted);
     connect(m_detailsService, &BookDetailsService::formatsCompleted,
@@ -177,7 +179,10 @@ void AudiobookFlowDialog::startForBook(const QString &bookId)
 {
     m_bookId = bookId;
     resetState();
-    m_pendingDetailsId = m_detailsService->requestBookDetails(bookId);
+    // Capture the id before emit so a same-thread (synchronous) reply from the
+    // worker still matches m_pendingDetailsId in the completion slot.
+    m_pendingDetailsId = m_detailsService->peekNextId();
+    m_detailsService->requestBookDetails(bookId);
 }
 
 void AudiobookFlowDialog::resetState()
@@ -226,7 +231,8 @@ void AudiobookFlowDialog::onDetailsCompleted(quint64 requestId,
 
     if (!m_hasLanguageStep && !m_editions.isEmpty()) {
         m_selectedLanguage = m_editions.first().language;
-        m_pendingFormatsId = m_detailsService->requestFormatsForEdition(m_editions.first().editionId);
+        m_pendingFormatsId = m_detailsService->peekNextId();
+        m_detailsService->requestFormatsForEdition(m_editions.first().editionId);
         // Skip the pointless single-language step and open directly on format selection.
         m_currentStep = 1;
         updateStepUi();
@@ -252,10 +258,12 @@ void AudiobookFlowDialog::onLanguageSelectionChanged()
     m_selectedLanguage = item->text();
     for (const auto &edition : m_editions) {
         if (edition.language == m_selectedLanguage) {
-            m_pendingFormatsId = m_detailsService->requestFormatsForEdition(edition.editionId);
+            m_pendingFormatsId = m_detailsService->peekNextId();
+            m_detailsService->requestFormatsForEdition(edition.editionId);
             break;
         }
     }
+    updateNextButtonEnabled();
 }
 
 void AudiobookFlowDialog::onFormatSelectionChanged()
@@ -265,6 +273,7 @@ void AudiobookFlowDialog::onFormatSelectionChanged()
         return;
 
     m_selectedFormat = item->text().split(" (")[0]; // strip "(recommended)" suffix
+    updateNextButtonEnabled();
 }
 
 void AudiobookFlowDialog::onVoiceSelectionChanged(int voiceId, const QString &voiceName)
@@ -275,6 +284,7 @@ void AudiobookFlowDialog::onVoiceSelectionChanged(int voiceId, const QString &vo
     m_previewVoiceLabel->setText(voiceId >= 0
         ? QString("Listening to: %1").arg(voiceName)
         : QStringLiteral("Listening to: —"));
+    updateNextButtonEnabled();
 }
 
 void AudiobookFlowDialog::onVoiceUploadRequested()
@@ -332,7 +342,13 @@ void AudiobookFlowDialog::onGenerationComplete()
     m_progressText->hide();
     m_cancelGenBtn->hide();
     m_openFileBtn->show();   // Phase 3: open generated audio file
-    m_addToLibBtn->show();   // Phase 3: explicit user action to mark ready
+    // Add-to-library only writes a row that already exists; if the book is not
+    // in the library, the SQL UPDATE silently affects 0 rows. Hide the button
+    // in that case so the click cannot misleadingly succeed.
+    if (m_libraryItemId > 0)
+        m_addToLibBtn->show();
+    else
+        m_addToLibBtn->hide();
     m_nextBtn->setText("Close");
     disconnect(m_nextBtn, &QPushButton::clicked,
                this, &AudiobookFlowDialog::onNextOrGenerateClicked);
@@ -409,6 +425,23 @@ void AudiobookFlowDialog::updateStepUi()
         populateFormatList();
     else if (m_currentStep == 2)
         populateVoiceList();
+
+    updateNextButtonEnabled();
+}
+
+void AudiobookFlowDialog::updateNextButtonEnabled()
+{
+    // Each step gates Next on its own selection so the user cannot reach the
+    // generate step with empty fields. Steps 3 (preview) and 4 (generate) need
+    // no extra input — Next is always enabled there.
+    bool enabled = true;
+    switch (m_currentStep) {
+        case 0: enabled = !m_selectedLanguage.isEmpty(); break;
+        case 1: enabled = !m_selectedFormat.isEmpty();   break;
+        case 2: enabled = m_selectedVoiceId >= 0;        break;
+        default: enabled = true;                         break;
+    }
+    m_nextBtn->setEnabled(enabled);
 }
 
 bool AudiobookFlowDialog::startGeneration()

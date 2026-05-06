@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS library_items (
     book_id TEXT NOT NULL UNIQUE,
     edition_id INTEGER,
     added_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    status TEXT,
+    status TEXT CHECK(status IS NULL OR status IN ('saved', 'downloading', 'downloaded', 'converting', 'audiobook_ready', 'error')),
     FOREIGN KEY (book_id) REFERENCES books(book_id) ON DELETE CASCADE ON UPDATE CASCADE,
     FOREIGN KEY (edition_id) REFERENCES editions(id)
 )

@@ -54,6 +54,7 @@ private:
     void buildUi();
     void resetState();
     void updateStepUi();
+    void updateNextButtonEnabled();
     void populateLanguageList();
     void populateFormatList();
     void populateVoiceList();

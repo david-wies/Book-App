@@ -11,6 +11,7 @@
 #include "gui/dialogs/audiobook_flow_dialog.h"
 #include "gui/services/library_service.h"
 #include "gui/widgets/voice_selector_widget.h"
+#include "support/test_database_utils.h"
 #include "support/test_query_worker.h"
 
 namespace bookhub::gui {
@@ -48,6 +49,10 @@ private slots:
     void startGeneration_failsWithMissingSelections();
     void onGenerationComplete_updatesCloseButton();
     void onAddToLibraryClicked_emitsAudiobookReadyRequest();
+
+    // End-to-end: details/formats flow through the real worker chain. Would
+    // regress if the dialog stops calling BookDetailsService::connectToWorker.
+    void startForBook_populatesLanguagesThroughWorkerChain();
 
 private:
     TestQueryWorker     *m_worker{};
@@ -269,6 +274,30 @@ void AudiobookFlowDialogTest::onAddToLibraryClicked_emitsAudiobookReadyRequest()
     m_dialog->onAddToLibraryClicked(); // explicit user action triggers the write
     QCOMPARE(spy.count(), 1);
     QCOMPARE(spy.at(0).at(1).toString(), QStringLiteral("gutenberg:1342"));
+}
+
+void AudiobookFlowDialogTest::startForBook_populatesLanguagesThroughWorkerChain()
+{
+    // Tear down the dialog from init() — we need a fresh one constructed
+    // *after* the default-connection schema is open so its BookDetailsService
+    // can resolve real DB rows through the worker chain.
+    delete m_dialog;
+    m_dialog = nullptr;
+
+    bookhub::tests::TestDatabase testDb;
+    QVERIFY(testDb.open()); // opens default connection
+    QVERIFY(testDb.createSchema());
+    QVERIFY(testDb.insertSampleData());
+
+    AudiobookFlowDialog dialog(m_libraryService, m_worker);
+    dialog.startForBook(QStringLiteral("lccn:n78095332")); // 2 editions in sample data
+
+    // If BookDetailsService is not wired to the worker, the chain produces
+    // nothing and m_editions stays empty. With wiring, the synchronous
+    // TestQueryWorker dispatch fully populates the language list.
+    QCOMPARE(dialog.m_editions.size(), 2);
+    QCOMPARE(dialog.m_languageList->count(), 2);
+    QVERIFY(dialog.m_hasLanguageStep);
 }
 
 } // namespace bookhub::gui

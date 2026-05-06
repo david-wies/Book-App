@@ -107,7 +107,7 @@ bool createSchema(const QString &connectionName)
             book_id TEXT NOT NULL UNIQUE,
             edition_id INTEGER,
             added_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            status TEXT,
+            status TEXT CHECK(status IS NULL OR status IN ('saved', 'downloading', 'downloaded', 'converting', 'audiobook_ready', 'error')),
             FOREIGN KEY (book_id) REFERENCES books(book_id) ON DELETE CASCADE ON UPDATE CASCADE,
             FOREIGN KEY (edition_id) REFERENCES editions(id)
         ))",
@@ -128,6 +128,19 @@ bool createSchema(const QString &connectionName)
             qWarning() << "Failed to create table:" << query.lastError().text() << "\nQuery:" << sql;
             return false;
         }
+    }
+
+    // Seed the three preset voices. These are product baseline data (not dev
+    // sample data), so they live here rather than in insertSampleData so
+    // production Release builds — which skip insertSampleData — still get them.
+    // Idempotent via INSERT OR IGNORE.
+    if (!query.exec(QStringLiteral(
+            "INSERT OR IGNORE INTO voices (name, type, engine) VALUES "
+            "('Classic Storyteller', 'preset', 'sherpa_onnx'),"
+            "('Warm Listener',       'preset', 'sherpa_onnx'),"
+            "('Crisp Narrator',      'preset', 'sherpa_onnx')"))) {
+        qWarning() << "Failed to seed preset voices:" << query.lastError().text();
+        return false;
     }
 
     if (!query.exec(QStringLiteral("PRAGMA user_version = %1").arg(kSchemaVersion))) {
@@ -227,10 +240,16 @@ bool verifySchemaVersion(const QString &connectionName)
     }
 
     // Migration: version 2 → 3
-    // Adds voices table for preset and custom voice storage
+    // Adds voices table for preset and custom voice storage, and a CHECK
+    // constraint on library_items.status so typos cannot silently land bad
+    // data. Preset rows are seeded by createSchema() (which runs immediately
+    // after this returns).
     if (version == 2) {
         qDebug() << "Migrating database schema from version 2 to 3...";
         QStringList migration = {
+            // PRAGMA must run outside a transaction; FK checks are disabled
+            // during the table-recreation dance for library_items.
+            "PRAGMA foreign_keys = OFF",
             "BEGIN",
             R"(CREATE TABLE IF NOT EXISTS voices (
                 id                   INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -242,13 +261,23 @@ bool verifySchemaVersion(const QString &connectionName)
                 reference_audio_path TEXT,
                 created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             ))",
-            R"(INSERT OR IGNORE INTO voices (name, type, engine) VALUES
-                ('Classic Storyteller', 'preset', 'sherpa_onnx'),
-                ('Warm Listener',       'preset', 'sherpa_onnx'),
-                ('Crisp Narrator',      'preset', 'sherpa_onnx')
-            )",
+            // Recreate library_items with CHECK constraint on status.
+            // SQLite does not support ALTER TABLE ADD CONSTRAINT.
+            R"(CREATE TABLE library_items_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_id TEXT NOT NULL UNIQUE,
+                edition_id INTEGER,
+                added_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                status TEXT CHECK(status IS NULL OR status IN ('saved', 'downloading', 'downloaded', 'converting', 'audiobook_ready', 'error')),
+                FOREIGN KEY (book_id) REFERENCES books(book_id) ON DELETE CASCADE ON UPDATE CASCADE,
+                FOREIGN KEY (edition_id) REFERENCES editions(id)
+            ))",
+            "INSERT OR IGNORE INTO library_items_new SELECT * FROM library_items",
+            "DROP TABLE library_items",
+            "ALTER TABLE library_items_new RENAME TO library_items",
             QStringLiteral("PRAGMA user_version = %1").arg(kSchemaVersion),
-            "COMMIT"
+            "COMMIT",
+            "PRAGMA foreign_keys = ON"
         };
 
         QSqlQuery mq(db);
@@ -257,6 +286,7 @@ bool verifySchemaVersion(const QString &connectionName)
                 qCritical() << "Migration v2→v3 failed at:" << sql
                             << "\nError:" << mq.lastError().text();
                 mq.exec("ROLLBACK");
+                mq.exec("PRAGMA foreign_keys = ON");
                 return false;
             }
         }
@@ -318,12 +348,9 @@ bool insertSampleData(const QString &connectionName)
         R"(INSERT OR IGNORE INTO library_items (book_id, edition_id, status) VALUES
             ('lccn:n78095332', 1, 'saved'),
             ('lccn:n79025140', 3, 'downloaded')
-        )",
-        R"(INSERT OR IGNORE INTO voices (name, type, engine) VALUES
-            ('Classic Storyteller', 'preset', 'sherpa_onnx'),
-            ('Warm Listener',       'preset', 'sherpa_onnx'),
-            ('Crisp Narrator',      'preset', 'sherpa_onnx')
         )"
+        // NOTE: preset voices are seeded by createSchema() so they exist in
+        // production builds (which skip insertSampleData under !QT_DEBUG).
     };
 
     for (const QString &sql : inserts) {
