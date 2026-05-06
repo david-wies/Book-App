@@ -170,7 +170,7 @@ void VoiceUploadDialog::validateFile(const QString &filePath)
     // Quality: placeholder for MVP
     m_qualityLabel->setText("○ Quality: placeholder for Phase 4");
     m_qualityLabel->setStyleSheet("color: #6B7280; font-size: 11px;");
-    
+
     // Update file validity flag
     m_isFileValid = m_isFormatValid && m_isDurationValid;
 }

@@ -227,6 +227,9 @@ void AudiobookFlowDialog::onDetailsCompleted(quint64 requestId,
     if (!m_hasLanguageStep && !m_editions.isEmpty()) {
         m_selectedLanguage = m_editions.first().language;
         m_pendingFormatsId = m_detailsService->requestFormatsForEdition(m_editions.first().editionId);
+        // Skip the pointless single-language step and open directly on format selection.
+        m_currentStep = 1;
+        updateStepUi();
     }
 }
 
@@ -278,8 +281,14 @@ void AudiobookFlowDialog::onVoiceUploadRequested()
 {
     delete m_uploadDialog;
     m_uploadDialog = new VoiceUploadDialog(this);
-    if (m_uploadDialog->exec() == QDialog::Accepted)
-        populateVoiceList(); // refresh list after upload (DB insertion deferred to Phase 3)
+    if (m_uploadDialog->exec() == QDialog::Accepted) {
+        // Phase 3: insert into voices table and call populateVoiceList().
+        // For now, acknowledge the submission so the user knows it was received.
+        QMessageBox::information(this, "Voice Registered",
+            QString("\"%1\" has been noted.\n\n"
+                    "Custom voice cloning will be available in a future release.")
+                .arg(m_uploadDialog->voiceName()));
+    }
 }
 
 void AudiobookFlowDialog::onBackClicked()

@@ -70,7 +70,7 @@ void VoiceSelectorWidget::onVoiceItemClicked()
 {
     QListWidget *senderList = qobject_cast<QListWidget *>(sender());
     if (!senderList)
-        senderList = m_presetList;
+        return;
 
     if (senderList == m_presetList)
         m_customList->clearSelection();

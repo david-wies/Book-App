@@ -108,10 +108,12 @@ void AudiobookFlowDialogTest::backNavigation_decrementsStep()
 
 void AudiobookFlowDialogTest::nextNavigation_incrementsStep()
 {
+    // Single-edition book: language auto-selected, dialog opens at step 1 (format).
     m_dialog->m_pendingDetailsId = 2;
     BookDetails details;
     details.editions.append({1, QStringLiteral("en")});
     m_dialog->onDetailsCompleted(2, details);
+    QCOMPARE(m_dialog->m_currentStep, 1); // skipped language step
 
     QList<BookFormatEntry> formats;
     BookFormatEntry epub; epub.formatType = QStringLiteral("epub");
@@ -120,7 +122,7 @@ void AudiobookFlowDialogTest::nextNavigation_incrementsStep()
     m_dialog->onFormatsCompleted(3, formats);
 
     m_dialog->onNextOrGenerateClicked();
-    QCOMPARE(m_dialog->m_currentStep, 1);
+    QCOMPARE(m_dialog->m_currentStep, 2); // advanced to voice selection
     QVERIFY(!m_dialog->m_backBtn->isHidden());
 }
 
@@ -133,6 +135,7 @@ void AudiobookFlowDialogTest::singleEdition_autoSelectsLanguage()
 
     QCOMPARE(m_dialog->m_hasLanguageStep, false);
     QCOMPARE(m_dialog->m_selectedLanguage, QStringLiteral("en"));
+    QCOMPARE(m_dialog->m_currentStep, 1); // dialog skips to format step
 }
 
 void AudiobookFlowDialogTest::multipleEditions_requiresLanguageStep()

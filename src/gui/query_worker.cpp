@@ -4,7 +4,6 @@
 #include "services/explore_service.h"
 #include "services/library_service.h"
 #include "services/search_service.h"
-#include "services/tts_service.h"
 
 #include <QSqlDatabase>
 #include <QSqlError>
@@ -271,7 +270,7 @@ bool deleteVoice(int voiceId, const QString &connectionName)
         qWarning() << "internal::deleteVoice failed:" << query.lastError().text();
         return false;
     }
-    return true;
+    return query.numRowsAffected() > 0;
 }
 
 bool queryAudiobookStatus(const QString &bookId, bool &outIsReady, const QString &connectionName)

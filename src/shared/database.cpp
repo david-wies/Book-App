@@ -242,6 +242,11 @@ bool verifySchemaVersion(const QString &connectionName)
                 reference_audio_path TEXT,
                 created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             ))",
+            R"(INSERT OR IGNORE INTO voices (name, type, engine) VALUES
+                ('Classic Storyteller', 'preset', 'sherpa_onnx'),
+                ('Warm Listener',       'preset', 'sherpa_onnx'),
+                ('Crisp Narrator',      'preset', 'sherpa_onnx')
+            )",
             QStringLiteral("PRAGMA user_version = %1").arg(kSchemaVersion),
             "COMMIT"
         };
