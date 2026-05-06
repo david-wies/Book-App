@@ -16,7 +16,7 @@ on:
 
 concurrency:
   group: release-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write   # Required to create GitHub Releases and upload assets.
@@ -153,9 +153,16 @@ jobs:
         # macdeployqt does not follow non-Qt dylib dependencies, so we copy
         # the Homebrew-installed libarchive dylib and rewrite its load path
         # to the @executable_path-relative Frameworks location.
+        #
+        # Use `otool -L` to get the exact install name embedded in the binary
+        # rather than the Homebrew symlink path — the versioned dylib name
+        # (e.g. libarchive.19.dylib) is what the linker records, not the
+        # unversioned symlink, so install_name_tool -change must match it exactly.
         LIBARCHIVE_LIB="$(brew --prefix libarchive)/lib/libarchive.dylib"
+        LIBARCHIVE_INSTALL_NAME=$(otool -L build/bookhub.app/Contents/MacOS/bookhub \
+            | awk '/libarchive/{print $1; exit}')
         cp "${LIBARCHIVE_LIB}" build/bookhub.app/Contents/Frameworks/
-        install_name_tool -change "${LIBARCHIVE_LIB}" \
+        install_name_tool -change "${LIBARCHIVE_INSTALL_NAME}" \
             "@executable_path/../Frameworks/libarchive.dylib" \
             build/bookhub.app/Contents/MacOS/bookhub
 

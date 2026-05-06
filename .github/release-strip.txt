@@ -23,6 +23,9 @@ spec/
 # ── Developer tooling ───────────────────────────────────────────────────────
 tools/
 
+# ── Release automation support files (used by tools/ only) ─────────────────
+.github/release-strip.txt
+
 # ── Claude Code configuration (AI assistant context, not end-user facing) ──
 # .claude/ is git-ignored on develop, but listed here as a safety net in case
 # it ever gets tracked accidentally.

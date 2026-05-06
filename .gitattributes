@@ -13,7 +13,10 @@ docs/            export-ignore
 spec/            export-ignore
 
 # ── Developer tooling ────────────────────────────────────────────────────────
-tools/           export-ignore
+tools/                        export-ignore
+
+# ── Release automation support files (used by tools/ only) ──────────────────
+.github/release-strip.txt     export-ignore
 
 # ── Claude Code / AI assistant configuration ─────────────────────────────────
 .claude/         export-ignore

@@ -239,9 +239,9 @@ if [[ "${REMOVED_COUNT}" -eq 0 ]]; then
     exit 0
 fi
 
-    # Only evaluate the diff when actually committing (not in dry-run mode).
-    if [[ "${DRY_RUN}" -eq 1 ]]; then
-        COMMIT_BODY="chore: strip develop-only files for release ${VERSION}
+# Only evaluate the diff when actually committing (not in dry-run mode).
+if [[ "${DRY_RUN}" -eq 1 ]]; then
+    COMMIT_BODY="chore: strip develop-only files for release ${VERSION}
 
 Removes internal documentation, design specs, developer tooling, and
 AI assistant configuration files that are not part of the production
@@ -250,8 +250,8 @@ release. These files live on the develop branch and are stripped via
 
 Removed paths:
   (dry run — list omitted)"
-    else
-        COMMIT_BODY="$(cat <<EOF
+else
+    COMMIT_BODY="$(cat <<EOF
 chore: strip develop-only files for release ${VERSION}
 
 Removes internal documentation, design specs, developer tooling, and
@@ -263,10 +263,10 @@ Removed paths:
 $(git diff --cached --name-only --diff-filter=D | sed 's/^/  - /')
 EOF
 )"
-    fi
+fi
 
-    echo "Committing removal of ${REMOVED_COUNT} develop-only path(s)..."
-    run_or_print "git commit (release prep)" git commit -m "${COMMIT_BODY}"
+echo "Committing removal of ${REMOVED_COUNT} develop-only path(s)..."
+run_or_print "git commit (release prep)" git commit -m "${COMMIT_BODY}"
 
 # ── Push and open PR ──────────────────────────────────────────────────────
 
