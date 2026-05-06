@@ -149,16 +149,10 @@ void VoiceUploadDialog::validateFile(const QString &filePath)
         m_formatLabel->setStyleSheet("color: #DC2626; font-size: 11px; font-weight: bold;");
     }
 
-    // Duration validation (MVP: placeholder)
-    int duration = getAudioFileDuration(filePath);
-    m_isDurationValid = (duration >= 10 && duration <= 120);
-    if (m_isDurationValid) {
-        m_durationLabel->setText(QString("✓ Duration: %1 s (OK)").arg(duration));
-        m_durationLabel->setStyleSheet("color: #16A34A; font-size: 11px; font-weight: bold;");
-    } else {
-        m_durationLabel->setText(QString("✗ Duration: %1 s (must be 10–120)").arg(duration));
-        m_durationLabel->setStyleSheet("color: #DC2626; font-size: 11px; font-weight: bold;");
-    }
+    // Duration validation (MVP: not implemented — deferred to Phase 3)
+    m_isDurationValid = true;
+    m_durationLabel->setText("○ Duration: not checked in MVP");
+    m_durationLabel->setStyleSheet("color: #6B7280; font-size: 11px;");
 
     // Quality: placeholder for MVP
     m_qualityLabel->setText("○ Quality: placeholder for Phase 4");

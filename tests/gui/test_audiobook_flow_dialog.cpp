@@ -1,9 +1,12 @@
 #include <QtTest>
+#include <QApplication>
 #include <QLabel>
 #include <QListWidget>
+#include <QMessageBox>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QSignalSpy>
+#include <QTimer>
 
 #include "gui/dialogs/audiobook_flow_dialog.h"
 #include "gui/services/library_service.h"
@@ -42,8 +45,9 @@ private slots:
 
     // Generation flow
     void startGeneration_succeedsWithAllSelections();
+    void startGeneration_failsWithMissingSelections();
     void onGenerationComplete_updatesCloseButton();
-    void onGenerationComplete_emitsAudiobookReadyRequest();
+    void onAddToLibraryClicked_emitsAudiobookReadyRequest();
 
 private:
     TestQueryWorker     *m_worker{};
@@ -164,18 +168,19 @@ void AudiobookFlowDialogTest::staleFormatsRequest_isIgnored()
 
 void AudiobookFlowDialogTest::populateFormatList_autoSelectsEpub()
 {
+    // txt is first so the test verifies epub is preferred, not just "selects first"
     QList<BookFormatEntry> formats;
-    BookFormatEntry epub; epub.formatType = QStringLiteral("epub");
     BookFormatEntry txt;  txt.formatType  = QStringLiteral("txt");
-    formats.append(epub);
+    BookFormatEntry epub; epub.formatType = QStringLiteral("epub");
     formats.append(txt);
+    formats.append(epub);
 
     m_dialog->m_pendingFormatsId = 4;
     m_dialog->onFormatsCompleted(4, formats);
 
     QCOMPARE(m_dialog->m_selectedFormat, QStringLiteral("epub"));
     QCOMPARE(m_dialog->m_formatList->count(), 2);
-    QVERIFY(m_dialog->m_formatList->item(0)->text().contains(QStringLiteral("recommended")));
+    QVERIFY(m_dialog->m_formatList->item(1)->text().contains(QStringLiteral("recommended")));
 }
 
 void AudiobookFlowDialogTest::populateFormatList_selectsFirstWhenNoEpub()
@@ -223,6 +228,24 @@ void AudiobookFlowDialogTest::startGeneration_succeedsWithAllSelections()
     QCOMPARE(m_dialog->m_nextBtn->text(), QStringLiteral("Close"));
 }
 
+void AudiobookFlowDialogTest::startGeneration_failsWithMissingSelections()
+{
+    // Leave language, format, and voice unset so startGeneration() rejects.
+    m_dialog->m_currentStep = 4;
+
+    // Dismiss the warning dialog that showErrorState() will block on.
+    QTimer::singleShot(0, [] {
+        auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget());
+        if (box) box->reject();
+    });
+
+    m_dialog->onNextOrGenerateClicked();
+
+    // Generation was blocked — progress bar stays at 0 and result is empty.
+    QCOMPARE(m_dialog->m_progressBar->value(), 0);
+    QVERIFY(m_dialog->m_resultLabel->text().isEmpty());
+}
+
 void AudiobookFlowDialogTest::onGenerationComplete_updatesCloseButton()
 {
     m_dialog->onGenerationComplete();
@@ -231,14 +254,16 @@ void AudiobookFlowDialogTest::onGenerationComplete_updatesCloseButton()
     QVERIFY(!m_dialog->m_resultLabel->text().isEmpty());
 }
 
-void AudiobookFlowDialogTest::onGenerationComplete_emitsAudiobookReadyRequest()
+void AudiobookFlowDialogTest::onAddToLibraryClicked_emitsAudiobookReadyRequest()
 {
     m_dialog->m_bookId        = QStringLiteral("gutenberg:1342");
     m_dialog->m_libraryItemId = 1; // non-zero triggers the status update path
 
     QSignalSpy spy(m_libraryService, &LibraryService::setAudiobookReadyRequested);
-    m_dialog->onGenerationComplete();
+    m_dialog->onGenerationComplete(); // shows "Add to library" button — no status write
+    QCOMPARE(spy.count(), 0);
 
+    m_dialog->onAddToLibraryClicked(); // explicit user action triggers the write
     QCOMPARE(spy.count(), 1);
     QCOMPARE(spy.at(0).at(1).toString(), QStringLiteral("gutenberg:1342"));
 }

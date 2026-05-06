@@ -58,7 +58,7 @@ private:
     void populateFormatList();
     void populateVoiceList();
     bool startGeneration();
-    void setLibraryStatus(const QString &status);
+    void markAudiobookReady();
     BookSourceEntry selectedSource() const;
     void showErrorState(const QString &message);
 
@@ -104,6 +104,7 @@ private:
     QListWidget *m_formatList{};
     VoiceSelectorWidget   *m_voiceSelector{};
     QPushButton           *m_previewVoiceBtn{};  // preview selected voice (Phase 3)
+    QLabel                *m_previewVoiceLabel{}; // shows selected voice name in step 4
     MiniAudioPlayerWidget *m_previewPlayer{};
     QLabel                *m_previewText{};
 

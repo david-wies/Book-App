@@ -4,6 +4,7 @@
 #include "services/explore_service.h"
 #include "services/library_service.h"
 #include "services/search_service.h"
+#include "services/tts_service.h"
 
 #include <QSqlDatabase>
 #include <QSqlError>

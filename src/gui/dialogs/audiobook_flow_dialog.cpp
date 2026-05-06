@@ -109,8 +109,8 @@ void AudiobookFlowDialog::buildUi()
     // Step 4: Preview
     QWidget *previewStep = new QWidget(this);
     QVBoxLayout *previewLayout = new QVBoxLayout(previewStep);
-    QLabel *previewLabel = new QLabel("Listening to: <voice name>", this);
-    previewLayout->addWidget(previewLabel);
+    m_previewVoiceLabel = new QLabel("Listening to: —", this);
+    previewLayout->addWidget(m_previewVoiceLabel);
     m_previewText = new QLabel(this);
     m_previewText->setWordWrap(true);
     m_previewText->setMaximumHeight(80);
@@ -254,10 +254,14 @@ void AudiobookFlowDialog::onVoiceSelectionChanged(int voiceId, const QString &vo
     m_selectedVoiceId = voiceId;
     m_selectedVoiceName = voiceName;
     m_previewVoiceBtn->setEnabled(voiceId >= 0);
+    m_previewVoiceLabel->setText(voiceId >= 0
+        ? QString("Listening to: %1").arg(voiceName)
+        : QStringLiteral("Listening to: —"));
 }
 
 void AudiobookFlowDialog::onVoiceUploadRequested()
 {
+    delete m_uploadDialog;
     m_uploadDialog = new VoiceUploadDialog(this);
     if (m_uploadDialog->exec() == QDialog::Accepted)
         populateVoiceList(); // refresh list after upload (DB insertion deferred to Phase 3)
@@ -309,7 +313,6 @@ void AudiobookFlowDialog::onGenerationComplete()
     disconnect(m_nextBtn, &QPushButton::clicked,
                this, &AudiobookFlowDialog::onNextOrGenerateClicked);
     connect(m_nextBtn, &QPushButton::clicked, this, &QDialog::accept);
-    setLibraryStatus(QStringLiteral("audiobook_ready"));
 }
 
 void AudiobookFlowDialog::onPreviewVoiceClicked()
@@ -324,7 +327,7 @@ void AudiobookFlowDialog::onOpenFileClicked()
 
 void AudiobookFlowDialog::onAddToLibraryClicked()
 {
-    setLibraryStatus(QStringLiteral("audiobook_ready"));
+    markAudiobookReady();
     accept();
 }
 
@@ -342,15 +345,19 @@ void AudiobookFlowDialog::populateLanguageList()
 void AudiobookFlowDialog::populateFormatList()
 {
     m_formatList->clear();
-    for (const auto &format : m_formats) {
-        QString label = format.formatType;
-        if (format.formatType == QLatin1String("epub"))
+    int epubIndex = -1;
+    for (int i = 0; i < m_formats.size(); ++i) {
+        QString label = m_formats[i].formatType;
+        if (m_formats[i].formatType == QLatin1String("epub")) {
             label += " (recommended)";
+            epubIndex = i;
+        }
         m_formatList->addItem(new QListWidgetItem(label));
     }
     if (!m_formats.isEmpty()) {
-        m_formatList->setCurrentRow(0);
-        m_selectedFormat = m_formats.first().formatType;
+        const int selectRow = (epubIndex >= 0) ? epubIndex : 0;
+        m_formatList->setCurrentRow(selectRow);
+        m_selectedFormat = m_formats[selectRow].formatType;
     }
 }
 
@@ -389,7 +396,7 @@ bool AudiobookFlowDialog::startGeneration()
     return true;
 }
 
-void AudiobookFlowDialog::setLibraryStatus(const QString &)
+void AudiobookFlowDialog::markAudiobookReady()
 {
     if (m_libraryItemId > 0 && m_libraryService)
         m_libraryService->requestSetAudiobookReady(m_bookId);
