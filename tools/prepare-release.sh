@@ -209,8 +209,7 @@ while IFS= read -r line || [[ -n "${line}" ]]; do
     # Only remove paths that are tracked by git. git-ignored files are
     # irrelevant to the branch and rm-ing them would silently delete local
     # developer state on the release branch.
-    if git ls-files --error-unmatch "${path}" &>/dev/null || \
-       [[ -n "$(git ls-files "${path}")" ]]; then
+    if git ls-files --error-unmatch "${path}" &>/dev/null; then
         if [[ "${DRY_RUN}" -eq 1 ]]; then
             echo "  [DRY RUN] would remove: ${path}"
         else
@@ -240,8 +239,19 @@ if [[ "${REMOVED_COUNT}" -eq 0 ]]; then
     exit 0
 fi
 
-echo "Committing removal of ${REMOVED_COUNT} develop-only path(s)..."
-run_or_print "git commit (release prep)" git commit -m "$(cat <<EOF
+    # Only evaluate the diff when actually committing (not in dry-run mode).
+    if [[ "${DRY_RUN}" -eq 1 ]]; then
+        COMMIT_BODY="chore: strip develop-only files for release ${VERSION}
+
+Removes internal documentation, design specs, developer tooling, and
+AI assistant configuration files that are not part of the production
+release. These files live on the develop branch and are stripped via
+.github/release-strip.txt before merging to master.
+
+Removed paths:
+  (dry run — list omitted)"
+    else
+        COMMIT_BODY="$(cat <<EOF
 chore: strip develop-only files for release ${VERSION}
 
 Removes internal documentation, design specs, developer tooling, and
@@ -253,6 +263,10 @@ Removed paths:
 $(git diff --cached --name-only --diff-filter=D | sed 's/^/  - /')
 EOF
 )"
+    fi
+
+    echo "Committing removal of ${REMOVED_COUNT} develop-only path(s)..."
+    run_or_print "git commit (release prep)" git commit -m "${COMMIT_BODY}"
 
 # ── Push and open PR ──────────────────────────────────────────────────────
 
@@ -264,11 +278,7 @@ if [[ "${DRY_RUN}" -eq 1 ]]; then
     echo "[DRY RUN] would open PR: ${RELEASE_BRANCH} → master (title: \"Release ${VERSION}\")"
     PR_URL="(dry run — no PR created)"
 else
-    if ! PR_URL="$(gh pr create \
-        --base master \
-        --head "${RELEASE_BRANCH}" \
-        --title "Release ${VERSION}" \
-        --body "$(cat <<EOF
+    PR_BODY="$(cat <<EOF
 ## Release ${VERSION}
 
 This PR merges \`develop\` into \`master\` for the **${VERSION}** release.
@@ -297,13 +307,18 @@ git push origin ${VERSION}
 
 The \`release.yml\` workflow will then build the binary and publish a GitHub Release automatically.
 EOF
-        )"
-    ")"; then
+)"
+    if ! PR_URL="$(gh pr create \
+        --base master \
+        --head "${RELEASE_BRANCH}" \
+        --title "Release ${VERSION}" \
+        --body "${PR_BODY}")"; then
         echo "" >&2
         echo "ERROR: 'gh pr create' failed. The branch '${RELEASE_BRANCH}' has already been" >&2
         echo "pushed. To open the PR manually, run:" >&2
         echo "" >&2
         echo "  gh pr create --base master --head ${RELEASE_BRANCH} --title \"Release ${VERSION}\"" >&2
+        git checkout develop
         exit 1
     fi
 fi

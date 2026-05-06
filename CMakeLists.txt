@@ -58,8 +58,11 @@ set_target_properties(bookhub PROPERTIES
     MACOSX_BUNDLE TRUE
     MACOSX_BUNDLE_BUNDLE_NAME "BookHub"
     MACOSX_BUNDLE_GUI_IDENTIFIER "com.bookhub.app"
-    WIN32_EXECUTABLE TRUE
 )
+# Only hide console on Windows for Release builds — keeps stderr/stdout visible during development.
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    set_target_properties(bookhub PROPERTIES WIN32_EXECUTABLE TRUE)
+endif()
 target_include_directories(bookhub PRIVATE src)
 target_link_libraries(bookhub PRIVATE Qt6::Widgets Qt6::Network shared LibArchive::LibArchive)
 
