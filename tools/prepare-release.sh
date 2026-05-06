@@ -65,6 +65,10 @@ if [[ "$1" == "--dry-run" ]]; then
     fi
     VERSION="$2"
 else
+    if [[ $# -ne 1 ]]; then
+        echo "Usage: tools/prepare-release.sh [--dry-run] <version>" >&2
+        exit 1
+    fi
     VERSION="$1"
 fi
 

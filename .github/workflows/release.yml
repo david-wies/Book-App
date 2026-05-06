@@ -27,7 +27,7 @@ jobs:
     name: Build (${{ matrix.platform }})
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false   # Publish what built even if one platform fails.
+      fail-fast: false   # Don't cancel other platform builds if one fails — partial results are available in logs.
       matrix:
         include:
           - os: ubuntu-24.04
@@ -230,7 +230,7 @@ jobs:
               '**Linux**',
               '1. Install runtime dependencies via your distro\'s package manager:',
               '   - Qt6 Widgets, Sql, and Network runtime libraries',
-              '   - libarchive (e.g. `libarchive13` on Debian/Ubuntu · `libarchive` on Fedora/Arch)',
+              '   - libarchive runtime library (package name varies by distro — e.g. `libarchive13`, `libarchive`)',
               `2. \`tar -xzf bookhub-${version}-linux-x86_64.tar.gz\``,
               `3. \`./bookhub-${version}-linux-x86_64/bookhub\``,
               '',
