@@ -127,7 +127,7 @@ jobs:
         cp build/bookhub.exe "dist/${NAME}/"
         cp LICENSE "dist/${NAME}/"
         # Bundle Qt DLLs and SQL/platform plugins so users need no separate install.
-        windeployqt --release "dist/${NAME}/bookhub.exe"
+        windeployqt6 --release "dist/${NAME}/bookhub.exe"
         # Copy libarchive and its vcpkg runtime deps (windeployqt does not pick these up).
         cp C:/vcpkg/installed/x64-windows/bin/archive.dll "dist/${NAME}/"
         cp C:/vcpkg/installed/x64-windows/bin/lz4.dll     "dist/${NAME}/" 2>/dev/null || true
@@ -149,22 +149,38 @@ jobs:
         # so we can inject libarchive before sealing the disk image).
         macdeployqt build/bookhub.app
 
-        # Bundle libarchive so the app runs without Homebrew installed.
-        # macdeployqt does not follow non-Qt dylib dependencies, so we copy
-        # the Homebrew-installed libarchive dylib and rewrite its load path
-        # to the @executable_path-relative Frameworks location.
-        #
-        # Use `otool -L` to get the exact install name embedded in the binary
-        # rather than the Homebrew symlink path — the versioned dylib name
-        # (e.g. libarchive.19.dylib) is what the linker records, not the
-        # unversioned symlink, so install_name_tool -change must match it exactly.
-        LIBARCHIVE_LIB="$(brew --prefix libarchive)/lib/libarchive.dylib"
-        LIBARCHIVE_INSTALL_NAME=$(otool -L build/bookhub.app/Contents/MacOS/bookhub \
-            | awk '/libarchive/{print $1; exit}')
-        cp "${LIBARCHIVE_LIB}" build/bookhub.app/Contents/Frameworks/
-        install_name_tool -change "${LIBARCHIVE_INSTALL_NAME}" \
-            "@executable_path/../Frameworks/libarchive.dylib" \
-            build/bookhub.app/Contents/MacOS/bookhub
+        # Bundle libarchive and all its transitive Homebrew dependencies so the
+        # app runs without Homebrew installed on the user's machine.
+        # macdeployqt only rewrites Qt-linked dylibs; we must walk the full dep
+        # graph ourselves. The loop iterates until stable: each pass copies any
+        # newly-discovered Homebrew dylib into Frameworks and rewrites its load
+        # path, then re-scans all bundled dylibs for their own deps (e.g.
+        # libarchive → liblzma, libzstd, liblz4; those are typically leaf nodes).
+        FRAMEWORKS_DIR="build/bookhub.app/Contents/Frameworks"
+        BREW_PREFIX="$(brew --prefix)"
+        APP_BINARY="build/bookhub.app/Contents/MacOS/bookhub"
+
+        changed=1
+        while [[ "${changed}" -eq 1 ]]; do
+            changed=0
+            for lib in "${APP_BINARY}" "${FRAMEWORKS_DIR}"/*.dylib; do
+                [[ -f "${lib}" ]] || continue
+                while IFS= read -r dep; do
+                    [[ "${dep}" == "${BREW_PREFIX}"* ]] || continue
+                    dep_name="$(basename "${dep}")"
+                    dest="${FRAMEWORKS_DIR}/${dep_name}"
+                    if [[ ! -f "${dest}" ]]; then
+                        echo "  Bundling: ${dep_name}"
+                        cp "${dep}" "${dest}"
+                        install_name_tool -id \
+                            "@executable_path/../Frameworks/${dep_name}" "${dest}"
+                        changed=1
+                    fi
+                    install_name_tool -change "${dep}" \
+                        "@executable_path/../Frameworks/${dep_name}" "${lib}"
+                done < <(otool -L "${lib}" 2>/dev/null | tail -n +2 | awk '{print $1}')
+            done
+        done
 
         # Produce the distributable .dmg from the fully-prepared .app.
         hdiutil create -volname "BookHub ${VERSION}" \
@@ -256,14 +272,19 @@ jobs:
           core.info(`Release created (draft): ${release.data.html_url}`);
 
     - name: Upload release assets
-      # Use explicit extension globs — dist/* would expand to include the
-      # intermediate per-platform subdirectories, causing gh to fail when it
-      # tries to upload a directory.
+      # shopt -s nullglob: globs that match nothing expand to an empty array
+      # rather than the literal pattern, so a missing platform archive (e.g. a
+      # failed Windows build with fail-fast: false) is silently skipped instead
+      # of causing `gh` to fail trying to upload a file named "dist/*.zip".
+      # A hard error is raised only if no assets at all were produced.
       run: |
-        gh release upload "${{ github.ref_name }}" \
-          dist/*.tar.gz dist/*.tar.gz.sha256 \
-          dist/*.zip    dist/*.zip.sha256 \
-          dist/*.dmg    dist/*.dmg.sha256
+        shopt -s nullglob
+        assets=(dist/*.tar.gz dist/*.tar.gz.sha256 dist/*.zip dist/*.zip.sha256 dist/*.dmg dist/*.dmg.sha256)
+        if [[ "${#assets[@]}" -eq 0 ]]; then
+          echo "ERROR: no release assets found — all platform builds may have failed." >&2
+          exit 1
+        fi
+        gh release upload "${{ github.ref_name }}" "${assets[@]}"
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
