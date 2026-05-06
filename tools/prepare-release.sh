@@ -213,6 +213,11 @@ while IFS= read -r line || [[ -n "${line}" ]]; do
     # Only remove paths that are tracked by git. git-ignored files are
     # irrelevant to the branch and rm-ing them would silently delete local
     # developer state on the release branch.
+    #
+    # NOTE: `git ls-files --error-unmatch` works for both files and directories.
+    # For a directory (e.g. "docs"), it exits 0 if any tracked file exists under
+    # it and exits non-zero otherwise. This is the behaviour we want — we strip
+    # the directory iff git is tracking something inside it.
     if git ls-files --error-unmatch "${path}" &>/dev/null; then
         if [[ "${DRY_RUN}" -eq 1 ]]; then
             echo "  [DRY RUN] would remove: ${path}"
