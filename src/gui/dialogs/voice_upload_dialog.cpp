@@ -64,6 +64,8 @@ void VoiceUploadDialog::buildUi()
 
     m_voiceNameEdit = new QLineEdit(this);
     m_voiceNameEdit->setPlaceholderText("e.g., My Voice");
+    connect(m_voiceNameEdit, &QLineEdit::textChanged,
+            this, &VoiceUploadDialog::onVoiceNameChanged);
     mainLayout->addWidget(m_voiceNameEdit);
 
     // Validate button
@@ -127,11 +129,22 @@ void VoiceUploadDialog::onValidateClicked()
 void VoiceUploadDialog::onFileSelected(const QString &filePath)
 {
     m_selectedFile = filePath;
-    m_isFileValid = false;  // Reset until validation completes
+    m_isFileValid = false;
     QFileInfo fileInfo(filePath);
     m_filePathDisplay->setText(fileInfo.fileName());
     validateFile(filePath);
-    m_validateBtn->setEnabled(!m_voiceNameEdit->text().isEmpty() && m_isFileValid);
+    updateValidateButton();
+}
+
+void VoiceUploadDialog::onVoiceNameChanged()
+{
+    updateValidateButton();
+}
+
+void VoiceUploadDialog::updateValidateButton()
+{
+    m_validateBtn->setEnabled(!m_selectedFile.isEmpty() && m_isFileValid
+                              && !m_voiceNameEdit->text().isEmpty());
 }
 
 void VoiceUploadDialog::validateFile(const QString &filePath)
@@ -160,14 +173,6 @@ void VoiceUploadDialog::validateFile(const QString &filePath)
     
     // Update file validity flag
     m_isFileValid = m_isFormatValid && m_isDurationValid;
-}
-
-int VoiceUploadDialog::getAudioFileDuration([[maybe_unused]] const QString &filePath) const
-{
-    // Phase 3+: use Qt Multimedia to read actual duration.
-    // Return a value within the accepted range so format-valid files are not
-    // falsely rejected while real duration checking is unavailable.
-    return 60;
 }
 
 } // namespace bookhub::gui

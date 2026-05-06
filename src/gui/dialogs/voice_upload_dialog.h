@@ -21,11 +21,12 @@ private slots:
     void onChooseFileClicked();
     void onValidateClicked();
     void onFileSelected(const QString &filePath);
+    void onVoiceNameChanged();
 
 private:
     void buildUi();
     void validateFile(const QString &filePath);
-    int getAudioFileDuration(const QString &filePath) const;
+    void updateValidateButton();
 
     QString m_selectedFile;
     bool m_isFileValid{false};

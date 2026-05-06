@@ -259,7 +259,7 @@ bool updateVoice(int voiceId, const QString &engine, const QString &connectionNa
         qWarning() << "internal::updateVoice failed:" << query.lastError().text();
         return false;
     }
-    return true;
+    return query.numRowsAffected() > 0;
 }
 
 bool deleteVoice(int voiceId, const QString &connectionName)

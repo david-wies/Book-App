@@ -10,7 +10,7 @@ namespace bookhub::gui {
 struct VoiceEntry {
     int id{-1};
     QString name;
-    bool isPreset; // derived from voices.type == 'preset'
+    bool isPreset{false}; // derived from voices.type == 'preset'
 };
 
 } // namespace bookhub::gui

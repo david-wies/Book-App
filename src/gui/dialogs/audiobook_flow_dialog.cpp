@@ -167,8 +167,6 @@ void AudiobookFlowDialog::buildUi()
 
     m_nextBtn = new QPushButton("Next →", this);
     m_nextBtn->setMaximumWidth(100);
-    connect(m_nextBtn, &QPushButton::clicked,
-            this, &AudiobookFlowDialog::onNextOrGenerateClicked);
     navLayout->addWidget(m_nextBtn);
     mainLayout->addLayout(navLayout);
 
@@ -192,6 +190,23 @@ void AudiobookFlowDialog::resetState()
     m_languageList->clear();
     m_formatList->clear();
     m_voiceSelector->setVoices({});
+
+    // Restore Next button to navigation mode. onGenerationComplete() rewires it
+    // to QDialog::accept; without this reset, reopening the dialog for a second
+    // book leaves every "Next" click accepting the dialog immediately.
+    disconnect(m_nextBtn, &QPushButton::clicked, nullptr, nullptr);
+    connect(m_nextBtn, &QPushButton::clicked,
+            this, &AudiobookFlowDialog::onNextOrGenerateClicked);
+
+    // Reset generation step widgets to their initial state
+    m_progressBar->setValue(0);
+    m_progressText->setText("Estimated time: ~4 minutes");
+    m_progressText->show();
+    m_resultLabel->clear();
+    m_cancelGenBtn->hide();
+    m_openFileBtn->hide();
+    m_addToLibBtn->hide();
+
     updateStepUi();
 }
 
@@ -404,8 +419,10 @@ void AudiobookFlowDialog::markAudiobookReady()
 
 BookSourceEntry AudiobookFlowDialog::selectedSource() const
 {
-    if (!m_formats.isEmpty() && !m_formats.first().sources.isEmpty())
-        return m_formats.first().sources.first();
+    for (const auto &fmt : m_formats) {
+        if (fmt.formatType == m_selectedFormat && !fmt.sources.isEmpty())
+            return fmt.sources.first();
+    }
     return BookSourceEntry{};
 }
 
