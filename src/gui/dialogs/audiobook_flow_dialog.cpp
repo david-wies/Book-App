@@ -139,7 +139,7 @@ void AudiobookFlowDialog::buildUi()
     m_resultLabel = new QLabel(this);
     m_resultLabel->setAlignment(Qt::AlignCenter);
     genLayout->addWidget(m_resultLabel);
-    // Cancel button — visible during generation, hidden once complete (Phase 3)
+    // TODO: Phase 3 — show during async TTS generation; connect to TTSService::cancel().
     m_cancelGenBtn = new QPushButton("Cancel", this);
     m_cancelGenBtn->hide();
     genLayout->addWidget(m_cancelGenBtn, 0, Qt::AlignHCenter);
@@ -368,6 +368,9 @@ void AudiobookFlowDialog::onOpenFileClicked()
 
 void AudiobookFlowDialog::onAddToLibraryClicked()
 {
+    // TODO: Phase 3 — wait for audiobookConversionCompleted signal before
+    // closing so a failed DB write surfaces an error rather than silently
+    // dropping the status update.
     markAudiobookReady();
     accept();
 }

@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """
-migrate_db.py — Migrate bookhub.db from schema version 0 to version 1.
+migrate_db.py — Migrate bookhub.db to the current schema version.
 
 Schema v0: ISBN-keyed books table.
 Schema v1: book_id-keyed books table with book_identifiers for cross-source deduplication.
+Schema v2: Adds download-flow tables and library_items.status values.
+Schema v3: Adds voices table (preset/custom TTS voices) and a CHECK constraint on
+           library_items.status to prevent invalid state values.
 
-All migration steps run inside a single transaction. PRAGMA user_version is set
-outside the transaction (SQLite requirement). On any failure the transaction is
+The v1→v2 migration is handled automatically by the app at startup.
+All other migration steps run inside a single transaction. PRAGMA user_version is
+set outside the transaction (SQLite requirement). On any failure the transaction is
 rolled back and the database is left untouched.
 """
 
@@ -111,6 +115,29 @@ CREATE TABLE IF NOT EXISTS library_items (
 """
 
 # ---------------------------------------------------------------------------
+# New schema DDL (version 3)
+# ---------------------------------------------------------------------------
+
+NEW_VOICES_DDL = """
+CREATE TABLE IF NOT EXISTS voices (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    name                 TEXT NOT NULL UNIQUE,
+    type                 TEXT NOT NULL CHECK(type IN ('preset', 'custom')),
+    engine               TEXT NOT NULL CHECK(engine IN ('sherpa_onnx', 'pocket_tts')),
+    model_path           TEXT,
+    config_path          TEXT,
+    reference_audio_path TEXT,
+    created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+"""
+
+_PRESET_VOICES = [
+    ("Classic Storyteller", "preset", "sherpa_onnx"),
+    ("Warm Listener",       "preset", "sherpa_onnx"),
+    ("Crisp Narrator",      "preset", "sherpa_onnx"),
+]
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -143,6 +170,77 @@ def column_exists(cur: sqlite3.Cursor, table: str, column: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# v2 → v3 migration
+# ---------------------------------------------------------------------------
+
+def _migrate_v2_to_v3(con: sqlite3.Connection, cur: sqlite3.Cursor) -> None:
+    """Migrate an open v2 database to v3 in-place.
+
+    Changes:
+      - Creates the ``voices`` table for preset and custom TTS voices.
+      - Seeds the three built-in preset voices (idempotent via INSERT OR IGNORE).
+      - Recreates ``library_items`` with a CHECK constraint on ``status`` so
+        invalid values are rejected at the DB level.  SQLite does not support
+        ALTER TABLE ADD CONSTRAINT, so the rename-and-copy pattern is used.
+    """
+    print("Migrating schema v2 → v3 ...")
+
+    # PRAGMA must run outside a transaction.
+    con.execute("PRAGMA foreign_keys = OFF")
+    con.execute("BEGIN")
+
+    # Create voices table (safe to re-run; IF NOT EXISTS).
+    con.execute(NEW_VOICES_DDL)
+
+    # Seed preset voices. UNIQUE(name) makes this idempotent.
+    con.executemany(
+        "INSERT OR IGNORE INTO voices (name, type, engine) VALUES (?, ?, ?)",
+        _PRESET_VOICES,
+    )
+    print(f"Seeded {len(_PRESET_VOICES)} preset voices")
+
+    # Recreate library_items with CHECK constraint on status.
+    # INSERT ... SELECT fails loudly if any existing row violates the new
+    # constraint — better than silently discarding data.
+    con.execute("""
+        CREATE TABLE library_items_new (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            book_id    TEXT NOT NULL UNIQUE,
+            edition_id INTEGER,
+            added_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            status TEXT CHECK(status IS NULL OR status IN
+                ('saved', 'downloading', 'downloaded',
+                 'converting', 'audiobook_ready', 'error')),
+            FOREIGN KEY (book_id)    REFERENCES books(book_id)
+                ON DELETE CASCADE ON UPDATE CASCADE,
+            FOREIGN KEY (edition_id) REFERENCES editions(id)
+        )
+    """)
+    cur.execute("SELECT COUNT(*) FROM library_items")
+    item_count = cur.fetchone()[0]
+    con.execute("INSERT INTO library_items_new SELECT * FROM library_items")
+    con.execute("DROP TABLE library_items")
+    con.execute("ALTER TABLE library_items_new RENAME TO library_items")
+    print(f"Migrated {item_count} library_items")
+
+    con.execute("COMMIT")
+    con.execute("PRAGMA foreign_keys = ON")
+
+    try:
+        con.execute("PRAGMA user_version = 3")
+    except Exception as exc:
+        print(
+            f"Error: migration committed but version stamp failed: {exc}\n"
+            "The schema is correct. Run the following to fix the version:\n"
+            "  sqlite3 bookhub.db 'PRAGMA user_version = 3'",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    print("Migration complete. user_version set to 3.")
+
+
+# ---------------------------------------------------------------------------
 # Migration
 # ---------------------------------------------------------------------------
 
@@ -169,8 +267,13 @@ def migrate(db_path: str) -> None:
             con.close()
             return
 
-        if user_version >= 2:
-            print("Already at version 2 (or newer), nothing to do.")
+        if user_version == 2:
+            _migrate_v2_to_v3(con, cur)
+            con.close()
+            return
+
+        if user_version >= 3:
+            print("Already at version 3 (current), nothing to do.")
             con.close()
             return
 
@@ -441,8 +544,9 @@ def main() -> None:
         )
     parser = argparse.ArgumentParser(
         description=(
-            "Migrate bookhub.db from schema version 0 (ISBN-keyed) "
-            "to version 1 (book_id-keyed). "
+            "Migrate bookhub.db to the current schema version (v3). "
+            "Handles v0→v1 (ISBN-keyed to book_id-keyed) and v2→v3 "
+            "(voices table + library_items CHECK constraint). "
             "The v1→v2 migration is handled automatically by the app at startup.\n\n"
             "Platform default paths:\n"
             "  Linux:   ~/.local/share/BookHub/BookHub/bookhub.db\n"
