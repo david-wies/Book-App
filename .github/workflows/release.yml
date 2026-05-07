@@ -208,6 +208,11 @@ jobs:
             done
         done
 
+        # Re-sign the .app after install_name_tool calls invalidated macdeployqt's
+        # ad-hoc signature. On macOS 12+, a broken code signature causes the OS to
+        # kill the process with SIGKILL before it can launch.
+        codesign --force --deep --sign - build/bookhub.app
+
         # Produce the distributable .dmg from the fully-prepared .app.
         hdiutil create -volname "BookHub ${VERSION}" \
             -srcfolder build/bookhub.app \

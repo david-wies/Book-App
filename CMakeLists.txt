@@ -60,9 +60,9 @@ set_target_properties(bookhub PROPERTIES
     MACOSX_BUNDLE_GUI_IDENTIFIER "io.github.david.bookhub"
 )
 # Only hide console on Windows for Release builds — keeps stderr/stdout visible during development.
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    set_target_properties(bookhub PROPERTIES WIN32_EXECUTABLE TRUE)
-endif()
+# Uses a generator expression so this works with both single-config (Ninja/make) and
+# multi-config (Visual Studio) generators, where CMAKE_BUILD_TYPE is not set.
+set_target_properties(bookhub PROPERTIES WIN32_EXECUTABLE $<CONFIG:Release>)
 target_include_directories(bookhub PRIVATE src)
 target_link_libraries(bookhub PRIVATE Qt6::Widgets Qt6::Network shared LibArchive::LibArchive)
 
