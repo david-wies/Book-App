@@ -153,11 +153,22 @@ else
 fi
 
 LOCAL_SHA="$(git rev-parse HEAD)"
-REMOTE_SHA="$(git rev-parse origin/develop)"
 
-if [[ "${LOCAL_SHA}" != "${REMOTE_SHA}" ]]; then
-    echo "ERROR: local develop (${LOCAL_SHA:0:7}) differs from origin/develop (${REMOTE_SHA:0:7})." >&2
-    echo "  Pull the latest changes: git pull --ff-only origin develop" >&2
+# In dry-run mode, origin/develop may not be in the local ref cache (fresh clone,
+# never fetched, etc.). Skip the sync check rather than fail with an unhelpful
+# fatal error from git rev-parse.
+if REMOTE_SHA="$(git rev-parse --verify --quiet origin/develop)"; then
+    if [[ "${LOCAL_SHA}" != "${REMOTE_SHA}" ]]; then
+        echo "ERROR: local develop (${LOCAL_SHA:0:7}) differs from origin/develop (${REMOTE_SHA:0:7})." >&2
+        echo "  Pull the latest changes: git pull --ff-only origin develop" >&2
+        exit 1
+    fi
+elif [[ "${DRY_RUN}" -eq 1 ]]; then
+    echo "  WARNING: origin/develop not in local ref cache — skipping sync check (dry run only)."
+else
+    # Live mode: we just fetched, so origin/develop must exist. If it doesn't,
+    # something is seriously wrong (renamed remote, deleted branch, etc.).
+    echo "ERROR: origin/develop not found after fetch — cannot verify develop is current." >&2
     exit 1
 fi
 
@@ -223,13 +234,13 @@ while IFS= read -r line || [[ -n "${line}" ]]; do
     # For a directory (e.g. "docs"), it exits 0 if any tracked file exists under
     # it and exits non-zero otherwise. This is the behaviour we want — we strip
     # the directory iff git is tracking something inside it.
-    if git ls-files --error-unmatch "${path}" &>/dev/null; then
+    if git ls-files --error-unmatch -- "${path}" &>/dev/null; then
         if [[ "${DRY_RUN}" -eq 1 ]]; then
             echo "  [DRY RUN] would remove: ${path}"
         else
             echo "  Removing: ${path}"
         fi
-        run_or_print "git rm -r ${path}" git rm -r --quiet "${path}"
+        run_or_print "git rm -r ${path}" git rm -r --quiet -- "${path}"
         (( REMOVED_COUNT++ )) || true
     else
         echo "  Skipping (not tracked): ${path}"

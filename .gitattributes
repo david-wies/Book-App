@@ -31,5 +31,8 @@ AGENTS.md        export-ignore
 # ── Clang static-analysis config ─────────────────────────────────────────────
 .clangd          export-ignore
 
+# ── YAML lint config ─────────────────────────────────────────────────────────
+.yamllint        export-ignore
+
 # ── Temporary / scratch assets ───────────────────────────────────────────────
 book_reader_icon.jpg  export-ignore

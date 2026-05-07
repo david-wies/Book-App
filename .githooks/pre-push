@@ -37,7 +37,7 @@ fi
 
 # git passes pushed refs on stdin: <local-ref> <local-sha> <remote-ref> <remote-sha>
 # We iterate every ref being pushed in this single `git push` invocation.
-while IFS=' ' read -r local_ref local_sha remote_ref _remote_sha; do
+while IFS=' ' read -r local_ref _local_sha remote_ref _remote_sha; do
     # Strip refs/heads/ to get the bare branch name on the remote side.
     remote_branch="${remote_ref#refs/heads/}"
 

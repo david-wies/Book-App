@@ -42,6 +42,12 @@ jobs:
       uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       with:
         ref: ${{ github.ref }}
+        # Full history is required so the "Verify tag is on master" step can
+        # walk ancestry between the tag commit and origin/master. With the
+        # default depth=1 shallow clone, git merge-base --is-ancestor would
+        # silently return false whenever the tag is even one commit behind
+        # origin/master HEAD, falsely blocking legitimate releases.
+        fetch-depth: 0
 
     - name: Verify tag is on master
       shell: bash
@@ -278,7 +284,7 @@ jobs:
               '**Linux**',
               '1. Install runtime dependencies via your distro\'s package manager:',
               '   - Qt6 Widgets, Sql, and Network runtime libraries',
-              '   - libarchive runtime library (package name varies by distro — e.g. `libarchive13`, `libarchive`)',
+              '   - libarchive runtime library (package name varies by distro — e.g. `libarchive13t64` on Ubuntu 24.04+, `libarchive13` on Ubuntu 22.04 / Debian 12, `libarchive` on Fedora/Arch)',
               `2. \`tar -xzf bookhub-${version}-linux-x86_64.tar.gz\``,
               `3. \`./bookhub-${version}-linux-x86_64/bookhub\``,
               '',

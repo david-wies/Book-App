@@ -41,5 +41,8 @@ AGENTS.md
 # ── Clang static-analysis config (dev build tooling only) ──────────────────
 .clangd
 
+# ── YAML lint config (dev tooling, not needed on master) ───────────────────
+.yamllint
+
 # ── Temporary / scratch assets used during prototyping ─────────────────────
 book_reader_icon.jpg

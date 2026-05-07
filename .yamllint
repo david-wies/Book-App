@@ -1,0 +1,54 @@
+# yamllint configuration tuned for GitHub Actions workflows.
+#
+# The default ruleset is too strict for Actions YAML (which has its own
+# conventions: 4-space step indentation, the `on:` truthy quirk, and long
+# run/script lines). This config keeps the meaningful checks (syntax, key
+# duplication, real indentation errors) while relaxing the style rules
+# that would otherwise force unidiomatic workflow files.
+#
+# Run with:  yamllint .
+
+extends: default
+
+# Skip generated / non-source YAML so a `cmake ..` doesn't produce lint
+# noise from build/CMakeFiles/CMakeConfigureLog.yaml.
+ignore: |
+  build/
+
+rules:
+  # GitHub Actions uses `on:` as a top-level key, which YAML 1.1 parses as
+  # the boolean true. The Actions parser handles it correctly; silencing
+  # this warning avoids quoting it as `"on":` everywhere.
+  truthy:
+    check-keys: false
+
+  # Allow long lines for run scripts, gh release upload commands, install
+  # action SHA pins, etc. 200 chars is generous but still flags genuinely
+  # runaway content.
+  line-length:
+    max: 200
+    level: warning
+
+  # Document-start marker (`---`) is not required by GitHub Actions and is
+  # uncommon in workflow files in the wild.
+  document-start: disable
+
+  # GitHub Actions workflows commonly mix two valid sequence-indent styles
+  # in the same file: `steps:` items with the dash at the parent's column
+  # (a long-standing Actions convention), and `matrix.include:` items with
+  # the dash indented 2 from the parent (the YAML default). Both are legal
+  # and accepted by the Actions parser; `whatever` permits the mix while
+  # still catching genuine within-sequence misindentation.
+  indentation:
+    indent-sequences: whatever
+
+  # Inline comments (`# v4`) immediately after SHA pins are common and
+  # readable; one space before the `#` is fine.
+  comments:
+    min-spaces-from-content: 1
+
+  # Flow-style arrays are written both as `[a, b]` and `[ a, b ]` in
+  # GitHub Actions workflows. Both are legal; we don't enforce a choice.
+  brackets:
+    min-spaces-inside: 0
+    max-spaces-inside: 1
