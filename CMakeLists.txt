@@ -57,7 +57,7 @@ add_executable(bookhub
 set_target_properties(bookhub PROPERTIES
     MACOSX_BUNDLE TRUE
     MACOSX_BUNDLE_BUNDLE_NAME "BookHub"
-    MACOSX_BUNDLE_GUI_IDENTIFIER "com.bookhub.bookhub"
+    MACOSX_BUNDLE_GUI_IDENTIFIER "io.github.david.bookhub"
 )
 # Only hide console on Windows for Release builds — keeps stderr/stdout visible during development.
 if(CMAKE_BUILD_TYPE STREQUAL "Release")

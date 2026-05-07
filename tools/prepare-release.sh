@@ -285,7 +285,14 @@ run_or_print "git commit (release prep)" git commit -m "${COMMIT_BODY}"
 # ── Push and open PR ──────────────────────────────────────────────────────
 
 echo "Pushing '${RELEASE_BRANCH}' to origin..."
-run_or_print "git push -u origin ${RELEASE_BRANCH}" git push -u origin "${RELEASE_BRANCH}"
+if ! run_or_print "git push -u origin ${RELEASE_BRANCH}" git push -u origin "${RELEASE_BRANCH}"; then
+    echo "" >&2
+    echo "ERROR: 'git push -u origin ${RELEASE_BRANCH}' failed." >&2
+    echo "  Cleaning up: returning to develop and deleting the local release branch." >&2
+    git checkout develop
+    git branch -D "${RELEASE_BRANCH}"
+    exit 1
+fi
 
 echo "Opening PR: ${RELEASE_BRANCH} → master..."
 if [[ "${DRY_RUN}" -eq 1 ]]; then
