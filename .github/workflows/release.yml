@@ -74,6 +74,15 @@ jobs:
       if: runner.os == 'Windows'
       run: vcpkg install libarchive:x64-windows
 
+    - name: Locate vcpkg (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        if (-not $env:VCPKG_ROOT) {
+          $vcpkgRoot = Split-Path (Get-Command vcpkg).Source -Parent
+          "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        }
+
     - name: Install libarchive (macOS)
       if: runner.os == 'macOS'
       run: brew install libarchive
@@ -90,7 +99,7 @@ jobs:
       run: |
         cmake -S . -B build -G Ninja `
           -DCMAKE_BUILD_TYPE=Release `
-          "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
+          "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
 
     - name: Configure (macOS)
       if: runner.os == 'macOS'
@@ -132,11 +141,14 @@ jobs:
         # Bundle Qt DLLs and SQL/platform plugins so users need no separate install.
         windeployqt6 --release "dist/${NAME}/bookhub.exe"
         # Copy libarchive and its vcpkg runtime deps (windeployqt does not pick these up).
-        cp C:/vcpkg/installed/x64-windows/bin/archive.dll "dist/${NAME}/"
-        cp C:/vcpkg/installed/x64-windows/bin/lz4.dll     "dist/${NAME}/" 2>/dev/null || true
-        cp C:/vcpkg/installed/x64-windows/bin/lzma.dll    "dist/${NAME}/" 2>/dev/null || true
-        cp C:/vcpkg/installed/x64-windows/bin/zstd.dll    "dist/${NAME}/" 2>/dev/null || true
-        cp C:/vcpkg/installed/x64-windows/bin/zlib1.dll   "dist/${NAME}/" 2>/dev/null || true
+        : "${VCPKG_ROOT:?VCPKG_ROOT must point to the vcpkg installation root}"
+        VCPKG_ROOT_UNIX="$(cygpath -u "${VCPKG_ROOT}")"
+        VCPKG_BIN="${VCPKG_ROOT_UNIX}/installed/x64-windows/bin"
+        cp "${VCPKG_BIN}/archive.dll" "dist/${NAME}/"
+        cp "${VCPKG_BIN}/lz4.dll"     "dist/${NAME}/" 2>/dev/null || true
+        cp "${VCPKG_BIN}/lzma.dll"    "dist/${NAME}/" 2>/dev/null || true
+        cp "${VCPKG_BIN}/zstd.dll"    "dist/${NAME}/" 2>/dev/null || true
+        cp "${VCPKG_BIN}/zlib1.dll"   "dist/${NAME}/" 2>/dev/null || true
         cd dist
         7z a "${NAME}.zip" "${NAME}/"
         sha256sum "${NAME}.zip" > "${NAME}.zip.sha256"
@@ -215,7 +227,8 @@ jobs:
         merge-multiple: true
 
     - name: Create GitHub Release
-      uses: actions/github-script@v7
+      # Pinned to v7 by SHA because this step runs JavaScript with GITHUB_TOKEN.
+      uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
       with:
         script: |
           const fs = require('fs');
@@ -260,7 +273,8 @@ jobs:
               '**macOS (Apple Silicon)**',
               '1. No additional dependencies — Qt frameworks are bundled.',
               `2. Mount \`bookhub-${version}-macos-arm64.dmg\` and drag BookHub to Applications.`,
-              '3. If macOS blocks the app on first launch, right-click BookHub and choose **Open**, then confirm in the dialog.',
+              '3. This artifact is for Apple Silicon Macs only; Intel macOS builds are not published yet.',
+              '4. If macOS blocks the app on first launch, right-click BookHub and choose **Open**, then confirm in the dialog.',
               '',
               '### Checksums (SHA-256)',
               '',

@@ -136,16 +136,21 @@ fi
 
 # Check for uncommitted changes — a dirty working tree means something was
 # forgotten and the release would capture an incomplete state.
-if ! git diff --quiet HEAD; then
+STATUS_OUTPUT="$(git status --porcelain --untracked-files=no)"
+if [[ -n "${STATUS_OUTPUT}" ]]; then
     echo "ERROR: working tree has uncommitted changes." >&2
     echo "  Commit or stash them before preparing a release." >&2
-    git diff --stat HEAD >&2
+    echo "${STATUS_OUTPUT}" >&2
     exit 1
 fi
 
 # Ensure develop is up to date with origin so we don't release a stale commit.
-echo "Fetching origin to verify develop is current..."
-git fetch origin develop
+if [[ "${DRY_RUN}" -eq 1 ]]; then
+    echo "Dry run: using current origin/develop ref without fetching."
+else
+    echo "Fetching origin to verify develop is current..."
+    git fetch origin develop
+fi
 
 LOCAL_SHA="$(git rev-parse HEAD)"
 REMOTE_SHA="$(git rev-parse origin/develop)"
