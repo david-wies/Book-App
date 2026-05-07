@@ -24,7 +24,12 @@ void VoiceSelectorWidget::buildUi()
     m_presetList = new QListWidget(this);
     m_presetList->setSelectionMode(QAbstractItemView::SingleSelection);
     m_presetList->setMaximumHeight(120);
-    connect(m_presetList, &QListWidget::itemClicked, this, &VoiceSelectorWidget::onVoiceItemClicked);
+    connect(m_presetList, &QListWidget::itemClicked, this,
+            [this](QListWidgetItem *item) {
+                m_customList->clearSelection();
+                m_selectedVoiceId = item->data(Qt::UserRole).toInt();
+                emit voiceSelected(m_selectedVoiceId, item->text());
+            });
     mainLayout->addWidget(m_presetList);
 
     QLabel *customLabel = new QLabel("Custom voices", this);
@@ -34,7 +39,12 @@ void VoiceSelectorWidget::buildUi()
     m_customList = new QListWidget(this);
     m_customList->setSelectionMode(QAbstractItemView::SingleSelection);
     m_customList->setMaximumHeight(100);
-    connect(m_customList, &QListWidget::itemClicked, this, &VoiceSelectorWidget::onVoiceItemClicked);
+    connect(m_customList, &QListWidget::itemClicked, this,
+            [this](QListWidgetItem *item) {
+                m_presetList->clearSelection();
+                m_selectedVoiceId = item->data(Qt::UserRole).toInt();
+                emit voiceSelected(m_selectedVoiceId, item->text());
+            });
     mainLayout->addWidget(m_customList);
 
     m_uploadBtn = new QPushButton("+ Upload new voice sample", this);
@@ -64,25 +74,6 @@ QString VoiceSelectorWidget::selectedVoiceName() const
 int VoiceSelectorWidget::selectedVoiceId() const
 {
     return m_selectedVoiceId;
-}
-
-void VoiceSelectorWidget::onVoiceItemClicked()
-{
-    QListWidget *senderList = qobject_cast<QListWidget *>(sender());
-    if (!senderList)
-        return;
-
-    if (senderList == m_presetList)
-        m_customList->clearSelection();
-    else
-        m_presetList->clearSelection();
-
-    QListWidgetItem *item = senderList->currentItem();
-    if (!item)
-        return;
-
-    m_selectedVoiceId = item->data(Qt::UserRole).toInt();
-    emit voiceSelected(m_selectedVoiceId, item->text());
 }
 
 void VoiceSelectorWidget::onUploadClicked()

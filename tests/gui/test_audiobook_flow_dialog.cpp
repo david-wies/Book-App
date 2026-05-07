@@ -50,6 +50,12 @@ private slots:
     void onGenerationComplete_updatesCloseButton();
     void onAddToLibraryClicked_emitsAudiobookReadyRequest();
 
+    // Dialog reuse: Next button must return to navigation mode after generation.
+    void resetState_rewiresToNextFromClose_afterGeneration();
+
+    // Generation complete with book not in library: "Add to library" stays hidden.
+    void onGenerationComplete_hidesAddToLibBtn_whenNotInLibrary();
+
     // End-to-end: details/formats flow through the real worker chain. Would
     // regress if the dialog stops calling BookDetailsService::connectToWorker.
     void startForBook_populatesLanguagesThroughWorkerChain();
@@ -274,6 +280,41 @@ void AudiobookFlowDialogTest::onAddToLibraryClicked_emitsAudiobookReadyRequest()
     m_dialog->onAddToLibraryClicked(); // explicit user action triggers the write
     QCOMPARE(spy.count(), 1);
     QCOMPARE(spy.at(0).at(1).toString(), QStringLiteral("gutenberg:1342"));
+}
+
+void AudiobookFlowDialogTest::resetState_rewiresToNextFromClose_afterGeneration()
+{
+    // Drive to completion — onGenerationComplete() rewires Next to accept().
+    m_dialog->m_selectedLanguage  = QStringLiteral("en");
+    m_dialog->m_selectedFormat    = QStringLiteral("epub");
+    m_dialog->m_selectedVoiceId   = 1;
+    m_dialog->m_selectedVoiceName = QStringLiteral("Classic Storyteller");
+    m_dialog->m_currentStep       = 4;
+    m_dialog->onNextOrGenerateClicked();
+    QCOMPARE(m_dialog->m_nextBtn->text(), QStringLiteral("Close"));
+
+    // Reopen for a second book — resetState() must rewire Next back to navigation.
+    m_dialog->resetState();
+    QCOMPARE(m_dialog->m_nextBtn->text(), QStringLiteral("Next →"));
+    QCOMPARE(m_dialog->m_currentStep, 0);
+
+    // Verify the step actually advances on click rather than accepting the dialog.
+    m_dialog->m_selectedLanguage = QStringLiteral("en");
+    m_dialog->m_hasLanguageStep  = true;
+    m_dialog->updateStepUi();
+    m_dialog->onNextOrGenerateClicked();
+    QCOMPARE(m_dialog->m_currentStep, 1);
+}
+
+void AudiobookFlowDialogTest::onGenerationComplete_hidesAddToLibBtn_whenNotInLibrary()
+{
+    m_dialog->m_libraryItemId = 0; // book not in the user's library
+    m_dialog->onGenerationComplete();
+
+    QVERIFY(m_dialog->m_addToLibBtn->isHidden());
+    // Open-file and result label are still shown regardless of library membership.
+    QVERIFY(!m_dialog->m_openFileBtn->isHidden());
+    QVERIFY(!m_dialog->m_resultLabel->text().isEmpty());
 }
 
 void AudiobookFlowDialogTest::startForBook_populatesLanguagesThroughWorkerChain()

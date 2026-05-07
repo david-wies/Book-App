@@ -23,7 +23,6 @@ signals:
     void uploadNewVoiceRequested();
 
 private slots:
-    void onVoiceItemClicked();
     void onUploadClicked();
 
 private:

@@ -18,7 +18,7 @@ namespace bookhub::gui {
 class TTSService : public QObject {
     Q_OBJECT
 public:
-    explicit TTSService(QObject *parent = nullptr);
+    explicit TTSService(QObject *parent = nullptr) : QObject(parent) {}
     virtual ~TTSService() = default;
 
     // Generate preview audio snippet for a voice (non-blocking)

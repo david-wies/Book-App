@@ -193,6 +193,9 @@ void AudiobookFlowDialog::resetState()
     m_selectedFormat.clear();
     m_selectedVoiceId = -1;
     m_selectedVoiceName.clear();
+    m_pendingDetailsId = 0;
+    m_pendingFormatsId = 0;
+    m_pendingVoicesId  = 0;
     m_languageList->clear();
     m_formatList->clear();
     m_voiceSelector->setVoices({});
@@ -228,7 +231,8 @@ void AudiobookFlowDialog::onDetailsCompleted(quint64 requestId,
     m_titleLabel->setText(QString("Convert to Audiobook — %1").arg(m_bookTitle));
 
     m_hasLanguageStep = m_editions.size() > 1;
-    populateLanguageList();
+    if (m_hasLanguageStep)
+        populateLanguageList();
 
     if (!m_hasLanguageStep && !m_editions.isEmpty()) {
         m_selectedLanguage = m_editions.first().language;
@@ -290,15 +294,14 @@ void AudiobookFlowDialog::onVoiceSelectionChanged(int voiceId, const QString &vo
 
 void AudiobookFlowDialog::onVoiceUploadRequested()
 {
-    delete m_uploadDialog;
-    m_uploadDialog = new VoiceUploadDialog(this);
-    if (m_uploadDialog->exec() == QDialog::Accepted) {
+    VoiceUploadDialog uploadDialog(this);
+    if (uploadDialog.exec() == QDialog::Accepted) {
         // Phase 3: insert into voices table and call populateVoiceList().
         // For now, acknowledge the submission so the user knows it was received.
         QMessageBox::information(this, "Voice Registered",
             QString("\"%1\" has been noted.\n\n"
                     "Custom voice cloning will be available in a future release.")
-                .arg(m_uploadDialog->voiceName()));
+                .arg(uploadDialog.voiceName()));
     }
 }
 

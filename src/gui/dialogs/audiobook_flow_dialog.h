@@ -107,8 +107,6 @@ private:
     QLabel                *m_previewVoiceLabel{}; // shows selected voice name in step 4
     MiniAudioPlayerWidget *m_previewPlayer{};
     QLabel                *m_previewText{};
-
-    VoiceUploadDialog *m_uploadDialog{};
 };
 
 } // namespace bookhub::gui
