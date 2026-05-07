@@ -113,7 +113,7 @@ bool createSchema(const QString &connectionName)
         ))",
         R"(CREATE TABLE IF NOT EXISTS voices (
             id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-            name                 TEXT NOT NULL,
+            name                 TEXT NOT NULL UNIQUE,
             type                 TEXT NOT NULL CHECK(type IN ('preset', 'custom')),
             engine               TEXT NOT NULL CHECK(engine IN ('sherpa_onnx', 'pocket_tts')),
             model_path           TEXT,
@@ -133,7 +133,7 @@ bool createSchema(const QString &connectionName)
     // Seed the three preset voices. These are product baseline data (not dev
     // sample data), so they live here rather than in insertSampleData so
     // production Release builds — which skip insertSampleData — still get them.
-    // Idempotent via INSERT OR IGNORE.
+    // UNIQUE(name) on the voices table makes this genuinely idempotent.
     if (!query.exec(QStringLiteral(
             "INSERT OR IGNORE INTO voices (name, type, engine) VALUES "
             "('Classic Storyteller', 'preset', 'sherpa_onnx'),"
@@ -241,9 +241,7 @@ bool verifySchemaVersion(const QString &connectionName)
 
     // Migration: version 2 → 3
     // Adds voices table for preset and custom voice storage, and a CHECK
-    // constraint on library_items.status so typos cannot silently land bad
-    // data. Preset rows are seeded by createSchema() (which runs immediately
-    // after this returns).
+    // constraint on library_items.status so typos cannot silently land bad data.
     if (version == 2) {
         qDebug() << "Migrating database schema from version 2 to 3...";
         QStringList migration = {
@@ -253,7 +251,7 @@ bool verifySchemaVersion(const QString &connectionName)
             "BEGIN",
             R"(CREATE TABLE IF NOT EXISTS voices (
                 id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-                name                 TEXT NOT NULL,
+                name                 TEXT NOT NULL UNIQUE,
                 type                 TEXT NOT NULL CHECK(type IN ('preset', 'custom')),
                 engine               TEXT NOT NULL CHECK(engine IN ('sherpa_onnx', 'pocket_tts')),
                 model_path           TEXT,
@@ -261,6 +259,12 @@ bool verifySchemaVersion(const QString &connectionName)
                 reference_audio_path TEXT,
                 created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             ))",
+            // Seed preset voices here so users upgrading from v2 get them
+            // immediately, without waiting for another createSchema() call.
+            QStringLiteral("INSERT OR IGNORE INTO voices (name, type, engine) VALUES "
+                           "('Classic Storyteller', 'preset', 'sherpa_onnx'),"
+                           "('Warm Listener',       'preset', 'sherpa_onnx'),"
+                           "('Crisp Narrator',      'preset', 'sherpa_onnx')"),
             // Recreate library_items with CHECK constraint on status.
             // SQLite does not support ALTER TABLE ADD CONSTRAINT.
             R"(CREATE TABLE library_items_new (
@@ -272,7 +276,9 @@ bool verifySchemaVersion(const QString &connectionName)
                 FOREIGN KEY (book_id) REFERENCES books(book_id) ON DELETE CASCADE ON UPDATE CASCADE,
                 FOREIGN KEY (edition_id) REFERENCES editions(id)
             ))",
-            "INSERT OR IGNORE INTO library_items_new SELECT * FROM library_items",
+            // Fail loudly if any existing status value violates the new constraint
+            // rather than silently discarding rows.
+            "INSERT INTO library_items_new SELECT * FROM library_items",
             "DROP TABLE library_items",
             "ALTER TABLE library_items_new RENAME TO library_items",
             QStringLiteral("PRAGMA user_version = %1").arg(kSchemaVersion),

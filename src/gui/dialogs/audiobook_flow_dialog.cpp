@@ -44,7 +44,7 @@ AudiobookFlowDialog::AudiobookFlowDialog(LibraryService *libraryService,
                 m_worker, &QueryWorker::handleListVoicesRequest);
 
         connect(m_worker,
-                QOverload<quint64, QList<VoiceEntry>>::of(&QueryWorker::listVoicesCompleted),
+                &QueryWorker::listVoicesCompleted,
                 this,
                 [this](quint64 requestId, const QList<VoiceEntry> &voices) {
                     if (requestId == m_pendingVoicesId && m_voiceSelector)
@@ -188,6 +188,7 @@ void AudiobookFlowDialog::startForBook(const QString &bookId)
 void AudiobookFlowDialog::resetState()
 {
     m_currentStep = 0;
+    m_hasLanguageStep = false;
     m_selectedLanguage.clear();
     m_selectedFormat.clear();
     m_selectedVoiceId = -1;
@@ -272,7 +273,7 @@ void AudiobookFlowDialog::onFormatSelectionChanged()
     if (!item)
         return;
 
-    m_selectedFormat = item->text().split(" (")[0]; // strip "(recommended)" suffix
+    m_selectedFormat = item->data(Qt::UserRole).toString();
     updateNextButtonEnabled();
 }
 
@@ -387,12 +388,15 @@ void AudiobookFlowDialog::populateFormatList()
     m_formatList->clear();
     int epubIndex = -1;
     for (int i = 0; i < m_formats.size(); ++i) {
-        QString label = m_formats[i].formatType;
-        if (m_formats[i].formatType == QLatin1String("epub")) {
+        const QString &type = m_formats[i].formatType;
+        QString label = type;
+        if (type == QLatin1String("epub")) {
             label += " (recommended)";
             epubIndex = i;
         }
-        m_formatList->addItem(new QListWidgetItem(label));
+        auto *item = new QListWidgetItem(label);
+        item->setData(Qt::UserRole, type);
+        m_formatList->addItem(item);
     }
     if (!m_formats.isEmpty()) {
         const int selectRow = (epubIndex >= 0) ? epubIndex : 0;
@@ -404,7 +408,7 @@ void AudiobookFlowDialog::populateFormatList()
 void AudiobookFlowDialog::populateVoiceList()
 {
     if (m_worker) {
-        m_pendingVoicesId = m_requestCounter.fetch_add(1);
+        m_pendingVoicesId = m_requestCounter++;
         emit listVoicesRequested(m_pendingVoicesId);
     }
 }

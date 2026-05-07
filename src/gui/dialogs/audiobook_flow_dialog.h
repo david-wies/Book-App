@@ -2,7 +2,6 @@
 
 #include "../services/book_details_service.h"
 #include <QDialog>
-#include <atomic>
 
 class QLabel;
 class QListWidget;
@@ -76,7 +75,7 @@ private:
     QList<BookFormatEntry>  m_formats;
     bool    m_hasLanguageStep{false};
 
-    std::atomic<quint64> m_requestCounter{1};
+    quint64 m_requestCounter{1};
 
     quint64 m_pendingDetailsId{0};
     quint64 m_pendingFormatsId{0};
