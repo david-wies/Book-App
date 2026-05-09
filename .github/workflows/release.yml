@@ -132,6 +132,7 @@ jobs:
     - name: Run test suite
       # --no-tests=ignore: return 0 when no tests are registered yet (ctest
       # exit 8 would otherwise block every release until tests are wired up).
+      # TODO: remove --no-tests=ignore once the test suite is fully wired into the release build.
       run: ctest --test-dir build --output-on-failure --no-tests=ignore
 
     - name: Package (Linux)
