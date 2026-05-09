@@ -1,0 +1,337 @@
+name: Release
+
+# Triggered when a version tag (e.g. v1.0.0) is pushed.
+# Normal workflow:
+#   1. tools/prepare-release.sh v1.0.0  →  opens a clean PR to master
+#   2. Merge the PR on GitHub
+#   3. git fetch origin && git tag -a v1.0.0 origin/master -m "Release v1.0.0"
+#   4. git push origin v1.0.0           →  this workflow fires
+#
+# The workflow builds the binary on each supported platform, packages it,
+# and publishes a single GitHub Release with all archives attached.
+on:
+  push:
+    tags:
+      - 'v[0-9]*.[0-9]*.[0-9]*'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # Required to create GitHub Releases and upload assets.
+
+jobs:
+  # ── Per-platform build ───────────────────────────────────────────────────
+  build:
+    name: Build (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false   # Don't cancel other platform builds if one fails — partial results are available in logs.
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x86_64
+          - os: windows-2022
+            platform: windows-x86_64
+          - os: macos-14
+            platform: macos-arm64
+
+    steps:
+    - name: Checkout tag
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      with:
+        ref: ${{ github.ref }}
+        # Full history is required so the "Verify tag is on master" step can
+        # walk ancestry between the tag commit and origin/master. With the
+        # default depth=1 shallow clone, git merge-base --is-ancestor would
+        # silently return false whenever the tag is even one commit behind
+        # origin/master HEAD, falsely blocking legitimate releases.
+        fetch-depth: 0
+
+    - name: Verify tag is on master
+      shell: bash
+      run: |
+        git fetch origin master
+        if ! git merge-base --is-ancestor "$(git rev-parse HEAD)" origin/master; then
+          echo "Error: tag ${{ github.ref_name }} is not reachable from master. Aborting release."
+          exit 1
+        fi
+
+    - name: Install Qt6
+      # Pinned to v4.3.1 by SHA: this action injects the Qt bin dir into PATH
+      # (used implicitly by the windeployqt6 step). A version-tag float would
+      # let an upstream change silently break Windows packaging.
+      # Qt Widgets, Network, and SQL are part of the standard Qt6 distribution
+      # and are included in the default install; no extra `modules:` needed.
+      uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4.3.1
+      with:
+        version: '6.7.*'
+        cache: true
+
+    - name: Enable vcpkg binary cache (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        # vcpkg's x-gha backend reads ACTIONS_CACHE_URL and ACTIONS_RUNTIME_TOKEN
+        # (both injected automatically by the GitHub Actions runner) to store and
+        # reuse compiled binary packages across runs, saving several minutes per build.
+        "VCPKG_BINARY_SOURCES=clear;x-gha,readwrite" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+    - name: Install build tools and libarchive (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends \
+          build-essential \
+          cmake \
+          libarchive-dev
+
+    - name: Install libarchive (Windows)
+      if: runner.os == 'Windows'
+      run: vcpkg install libarchive:x64-windows
+
+    - name: Locate vcpkg (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        if (-not $env:VCPKG_ROOT) {
+          $vcpkgRoot = Split-Path (Get-Command vcpkg).Source -Parent
+          "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        }
+
+    - name: Install libarchive (macOS)
+      if: runner.os == 'macOS'
+      run: brew install libarchive
+
+    - name: Configure (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        cmake -S . -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_CXX_FLAGS="-Wall -Wextra"
+
+    - name: Configure (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        cmake -S . -B build -G Ninja `
+          -DCMAKE_BUILD_TYPE=Release `
+          "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+
+    - name: Configure (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        cmake -S . -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_CXX_FLAGS="-Wall -Wextra" \
+          -DCMAKE_PREFIX_PATH="$(brew --prefix libarchive)"
+
+    - name: Build
+      run: cmake --build build --parallel
+
+    - name: Run test suite
+      # --no-tests=ignore: return 0 when no tests are registered yet (ctest
+      # exit 8 would otherwise block every release until tests are wired up).
+      # TODO: remove --no-tests=ignore once the test suite is fully wired into the release build.
+      run: ctest --test-dir build --output-on-failure --no-tests=ignore
+
+    - name: Package (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        VERSION="${{ github.ref_name }}"
+        NAME="bookhub-${VERSION}-linux-x86_64"
+        mkdir -p "dist/${NAME}"
+        cp build/bookhub "dist/${NAME}/"
+        cp LICENSE "dist/${NAME}/"
+        cd dist
+        tar -czf "${NAME}.tar.gz" "${NAME}/"
+        sha256sum "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256"
+
+    - name: Package (Windows)
+      if: runner.os == 'Windows'
+      shell: bash
+      run: |
+        VERSION="${{ github.ref_name }}"
+        NAME="bookhub-${VERSION}-windows-x86_64"
+        mkdir -p "dist/${NAME}"
+        cp build/bookhub.exe "dist/${NAME}/"
+        cp LICENSE "dist/${NAME}/"
+        # Bundle Qt DLLs and SQL/platform plugins so users need no separate install.
+        windeployqt6 --release "dist/${NAME}/bookhub.exe"
+        # Copy libarchive and its vcpkg runtime deps (windeployqt does not pick these up).
+        : "${VCPKG_ROOT:?VCPKG_ROOT must point to the vcpkg installation root}"
+        VCPKG_ROOT_UNIX="$(cygpath -u "${VCPKG_ROOT}")"
+        VCPKG_BIN="${VCPKG_ROOT_UNIX}/installed/x64-windows/bin"
+        cp "${VCPKG_BIN}/archive.dll" "dist/${NAME}/"
+        cp "${VCPKG_BIN}/lz4.dll"     "dist/${NAME}/" 2>/dev/null || true
+        cp "${VCPKG_BIN}/lzma.dll"    "dist/${NAME}/" 2>/dev/null || true
+        cp "${VCPKG_BIN}/zstd.dll"    "dist/${NAME}/" 2>/dev/null || true
+        cp "${VCPKG_BIN}/zlib1.dll"   "dist/${NAME}/" 2>/dev/null || true
+        cd dist
+        7z a "${NAME}.zip" "${NAME}/"
+        sha256sum "${NAME}.zip" > "${NAME}.zip.sha256"
+
+    - name: Package (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        VERSION="${{ github.ref_name }}"
+        NAME="bookhub-${VERSION}-macos-arm64"
+        mkdir -p dist
+
+        # Bundle Qt frameworks and plugins into the .app first (without -dmg,
+        # so we can inject libarchive before sealing the disk image).
+        macdeployqt build/bookhub.app
+
+        # Bundle libarchive and all its transitive Homebrew dependencies so the
+        # app runs without Homebrew installed on the user's machine.
+        # macdeployqt only rewrites Qt-linked dylibs; we must walk the full dep
+        # graph ourselves. The loop iterates until stable: each pass copies any
+        # newly-discovered Homebrew dylib into Frameworks and rewrites its load
+        # path, then re-scans all bundled dylibs for their own deps (e.g.
+        # libarchive → liblzma, libzstd, liblz4; those are typically leaf nodes).
+        FRAMEWORKS_DIR="build/bookhub.app/Contents/Frameworks"
+        BREW_PREFIX="$(brew --prefix)"
+        APP_BINARY="build/bookhub.app/Contents/MacOS/bookhub"
+
+        changed=1
+        while [[ "${changed}" -eq 1 ]]; do
+            changed=0
+            for lib in "${APP_BINARY}" "${FRAMEWORKS_DIR}"/*.dylib; do
+                [[ -f "${lib}" ]] || continue
+                while IFS= read -r dep; do
+                    [[ "${dep}" == "${BREW_PREFIX}"* ]] || continue
+                    dep_name="$(basename "${dep}")"
+                    dest="${FRAMEWORKS_DIR}/${dep_name}"
+                    if [[ ! -f "${dest}" ]]; then
+                        echo "  Bundling: ${dep_name}"
+                        cp "${dep}" "${dest}"
+                        install_name_tool -id \
+                            "@executable_path/../Frameworks/${dep_name}" "${dest}"
+                        changed=1
+                    fi
+                    install_name_tool -change "${dep}" \
+                        "@executable_path/../Frameworks/${dep_name}" "${lib}"
+                done < <(otool -L "${lib}" 2>/dev/null | tail -n +2 | awk '{print $1}')
+            done
+        done
+
+        # Re-sign the .app after install_name_tool calls invalidated macdeployqt's
+        # ad-hoc signature. On macOS 12+, a broken code signature causes the OS to
+        # kill the process with SIGKILL before it can launch.
+        codesign --force --deep --sign - build/bookhub.app
+
+        # Produce the distributable .dmg from the fully-prepared .app.
+        hdiutil create -volname "BookHub ${VERSION}" \
+            -srcfolder build/bookhub.app \
+            -ov -format UDZO \
+            "dist/${NAME}.dmg"
+
+        # macOS ships shasum, not sha256sum.
+        shasum -a 256 "dist/${NAME}.dmg" > "dist/${NAME}.dmg.sha256"
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      with:
+        name: release-${{ matrix.platform }}
+        path: dist/
+        retention-days: 90
+
+  # ── Publish GitHub Release ───────────────────────────────────────────────
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-24.04
+
+    steps:
+    - name: Download all platform artifacts
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      with:
+        path: dist/
+        merge-multiple: true
+
+    - name: Create GitHub Release
+      # Pinned to v7 by SHA because this step runs JavaScript with GITHUB_TOKEN.
+      uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+      with:
+        script: |
+          const fs = require('fs');
+
+          const version = context.ref.replace('refs/tags/', '');
+
+          const checksumFiles = fs.readdirSync('dist/').filter(f => f.endsWith('.sha256'));
+          const checksums = checksumFiles
+            .sort()
+            .map(f => fs.readFileSync(`dist/${f}`, 'utf8').trim())
+            .join('\n');
+
+          const release = await github.rest.repos.createRelease({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            tag_name: version,
+            name: `BookHub ${version}`,
+            body: [
+              `## BookHub ${version}`,
+              '',
+              '### Downloads',
+              '',
+              '| Platform | File |',
+              '|----------|------|',
+              `| Linux x86_64   | \`bookhub-${version}-linux-x86_64.tar.gz\`  |`,
+              `| Windows x86_64 | \`bookhub-${version}-windows-x86_64.zip\`    |`,
+              `| macOS arm64    | \`bookhub-${version}-macos-arm64.dmg\`       |`,
+              '',
+              '### Installation',
+              '',
+              '**Linux**',
+              '1. Install runtime dependencies via your distro\'s package manager:',
+              '   - Qt6 Widgets, Sql, and Network runtime libraries',
+              '   - libarchive runtime library (package name varies by distro — e.g. `libarchive13t64` on Ubuntu 24.04+, `libarchive13` on Ubuntu 22.04 / Debian 12, `libarchive` on Fedora/Arch)',
+              `2. \`tar -xzf bookhub-${version}-linux-x86_64.tar.gz\``,
+              `3. \`./bookhub-${version}-linux-x86_64/bookhub\``,
+              '',
+              '**Windows**',
+              '1. No additional dependencies — Qt runtime DLLs are bundled.',
+              `2. Extract the zip and run \`bookhub.exe\`.`,
+              '',
+              '**macOS (Apple Silicon)**',
+              '1. No additional dependencies — Qt frameworks are bundled.',
+              `2. Mount \`bookhub-${version}-macos-arm64.dmg\` and drag BookHub to Applications.`,
+              '3. This artifact is for Apple Silicon Macs only; Intel macOS builds are not published yet.',
+              '4. If macOS blocks the app on first launch, right-click BookHub and choose **Open**, then confirm in the dialog.',
+              '',
+              '### Checksums (SHA-256)',
+              '',
+              '```',
+              checksums,
+              '```',
+            ].join('\n'),
+            draft: true,   // Keep draft until assets are uploaded; published in final step.
+            prerelease: version.includes('-'),
+          });
+
+          core.info(`Release created (draft): ${release.data.html_url}`);
+
+    - name: Upload release assets
+      # shopt -s nullglob: globs that match nothing expand to an empty array
+      # rather than the literal pattern, so a missing platform archive (e.g. a
+      # failed Windows build with fail-fast: false) is silently skipped instead
+      # of causing `gh` to fail trying to upload a file named "dist/*.zip".
+      # A hard error is raised only if no assets at all were produced.
+      run: |
+        shopt -s nullglob
+        assets=(dist/*.tar.gz dist/*.tar.gz.sha256 dist/*.zip dist/*.zip.sha256 dist/*.dmg dist/*.dmg.sha256)
+        if [[ "${#assets[@]}" -eq 0 ]]; then
+          echo "ERROR: no release assets found — all platform builds may have failed." >&2
+          exit 1
+        fi
+        gh release upload "${{ github.ref_name }}" "${assets[@]}"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Publish release
+      # Remove draft flag only after all assets have been successfully uploaded.
+      # This prevents a partially-populated release from being visible to users
+      # if the upload step fails.
+      run: gh release edit "${{ github.ref_name }}" --draft=false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

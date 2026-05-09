@@ -54,6 +54,18 @@ add_executable(bookhub
     ${COLLECTOR_SOURCES}
     ${GUI_SOURCES}
 )
+# macOS-specific: creates a .app bundle for packaging. Ignored on Linux and Windows.
+if(APPLE)
+    set_target_properties(bookhub PROPERTIES
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_BUNDLE_NAME "BookHub"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "io.github.david.bookhub"
+    )
+endif()
+# Only hide console on Windows for Release builds — keeps stderr/stdout visible during development.
+# Uses a generator expression so this works with both single-config (Ninja/make) and
+# multi-config (Visual Studio) generators, where CMAKE_BUILD_TYPE is not set.
+set_target_properties(bookhub PROPERTIES WIN32_EXECUTABLE $<CONFIG:Release>)
 target_include_directories(bookhub PRIVATE src)
 target_link_libraries(bookhub PRIVATE Qt6::Widgets Qt6::Network shared LibArchive::LibArchive)
 
