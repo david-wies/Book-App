@@ -406,8 +406,8 @@ void BookDetailsPanel::buildUi()
 
     m_audiobookBtn = new QPushButton(QStringLiteral("♪ Audiobook"), secondaryRow);
     m_audiobookBtn->setStyleSheet(secondaryStyle);
-    m_audiobookBtn->setToolTip(QStringLiteral("Audiobook conversion — coming soon"));
-    m_audiobookBtn->setEnabled(false); // Task 12
+    m_audiobookBtn->setToolTip(QStringLiteral("Convert this book to an audiobook"));
+    m_audiobookBtn->setEnabled(false);
     connect(m_audiobookBtn, &QPushButton::clicked, this,
             [this] { emit audiobookRequested(m_currentBookId); });
     secondaryLayout->addWidget(m_audiobookBtn);

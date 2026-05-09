@@ -19,7 +19,8 @@ class TTSService : public QObject {
     Q_OBJECT
 public:
     explicit TTSService(QObject *parent = nullptr) : QObject(parent) {}
-    virtual ~TTSService() = default;
+    // Defined out-of-line in tts_service.cpp so the vtable has a single anchor.
+    ~TTSService() override;
 
     // Generate preview audio snippet for a voice (non-blocking)
     // Emits previewGenerated(voiceId, audioData) on completion

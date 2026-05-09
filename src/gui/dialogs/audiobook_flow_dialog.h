@@ -35,7 +35,7 @@ signals:
 private slots:
     void onDetailsCompleted(quint64 requestId, const bookhub::gui::BookDetails &details);
     void onFormatsCompleted(quint64 requestId,
-                            QList<bookhub::gui::BookFormatEntry> formats);
+                            const QList<bookhub::gui::BookFormatEntry> &formats);
     void onLanguageSelectionChanged();
     void onFormatSelectionChanged();
     void onVoiceSelectionChanged(int voiceId, const QString &voiceName);
@@ -80,6 +80,9 @@ private:
     quint64 m_pendingDetailsId{0};
     quint64 m_pendingFormatsId{0};
     quint64 m_pendingVoicesId{0};
+    // Set once voices have been loaded so back/forward navigation through
+    // step 2 doesn't re-fire the query and clobber the user's selection.
+    bool    m_voicesLoaded{false};
 
     int     m_currentStep{0}; // 0=language, 1=format, 2=voice, 3=preview, 4=generate
 

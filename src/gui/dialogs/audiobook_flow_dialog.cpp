@@ -47,8 +47,10 @@ AudiobookFlowDialog::AudiobookFlowDialog(LibraryService *libraryService,
                 &QueryWorker::listVoicesCompleted,
                 this,
                 [this](quint64 requestId, const QList<VoiceEntry> &voices) {
-                    if (requestId == m_pendingVoicesId && m_voiceSelector)
+                    if (requestId == m_pendingVoicesId && m_voiceSelector) {
                         m_voiceSelector->setVoices(voices);
+                        m_voicesLoaded = true;
+                    }
                 });
     }
 
@@ -196,6 +198,7 @@ void AudiobookFlowDialog::resetState()
     m_pendingDetailsId = 0;
     m_pendingFormatsId = 0;
     m_pendingVoicesId  = 0;
+    m_voicesLoaded     = false;
     m_languageList->clear();
     m_formatList->clear();
     m_voiceSelector->setVoices({});
@@ -245,7 +248,7 @@ void AudiobookFlowDialog::onDetailsCompleted(quint64 requestId,
 }
 
 void AudiobookFlowDialog::onFormatsCompleted(quint64 requestId,
-                                              QList<BookFormatEntry> formats)
+                                              const QList<BookFormatEntry> &formats)
 {
     if (requestId != m_pendingFormatsId)
         return;
@@ -413,7 +416,9 @@ void AudiobookFlowDialog::populateFormatList()
 
 void AudiobookFlowDialog::populateVoiceList()
 {
-    if (m_worker) {
+    // Voices are global, not per-book — load once per dialog session so
+    // navigating back/forward through step 2 doesn't reset the selection.
+    if (m_worker && !m_voicesLoaded) {
         m_pendingVoicesId = m_requestCounter++;
         emit listVoicesRequested(m_pendingVoicesId);
     }

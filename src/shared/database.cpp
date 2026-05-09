@@ -220,7 +220,10 @@ bool verifySchemaVersion(const QString &connectionName)
             "INSERT OR IGNORE INTO library_items_new SELECT * FROM library_items",
             "DROP TABLE library_items",
             "ALTER TABLE library_items_new RENAME TO library_items",
-            QStringLiteral("PRAGMA user_version = %1").arg(kSchemaVersion),
+            // Stamp the version this migration produces, not kSchemaVersion —
+            // otherwise bumping the schema later (e.g. v3, v4, …) would cause a
+            // v1 DB to skip every intermediate migration step.
+            QStringLiteral("PRAGMA user_version = 2"),
             "COMMIT",
             "PRAGMA foreign_keys = ON"
         };
@@ -236,7 +239,9 @@ bool verifySchemaVersion(const QString &connectionName)
             }
         }
         qDebug() << "Migration to schema version 2 complete.";
-        return true;
+        // Chain into the next migration so a v1 DB lands at the current
+        // schema version in a single startup.
+        return verifySchemaVersion(connectionName);
     }
 
     // Migration: version 2 → 3
@@ -281,7 +286,9 @@ bool verifySchemaVersion(const QString &connectionName)
             "INSERT INTO library_items_new SELECT * FROM library_items",
             "DROP TABLE library_items",
             "ALTER TABLE library_items_new RENAME TO library_items",
-            QStringLiteral("PRAGMA user_version = %1").arg(kSchemaVersion),
+            // Hard-code the version this migration produces so a future v3→v4
+            // migration is not silently skipped by a stale kSchemaVersion stamp.
+            QStringLiteral("PRAGMA user_version = 3"),
             "COMMIT",
             "PRAGMA foreign_keys = ON"
         };
@@ -297,7 +304,9 @@ bool verifySchemaVersion(const QString &connectionName)
             }
         }
         qDebug() << "Migration to schema version 3 complete.";
-        return true;
+        // Chain into any future migration so a single startup advances the DB
+        // all the way to kSchemaVersion. Today this just returns true.
+        return verifySchemaVersion(connectionName);
     }
 
     qCritical("Database schema version mismatch: expected %d, found %d. "
