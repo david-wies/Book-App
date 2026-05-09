@@ -6,8 +6,6 @@
 #include <QPushButton>
 #include <QFileDialog>
 #include <QFileInfo>
-#include <QMessageBox>
-#include <QDateTime>
 
 namespace bookhub::gui {
 
@@ -107,23 +105,8 @@ void VoiceUploadDialog::onChooseFileClicked()
 
 void VoiceUploadDialog::onValidateClicked()
 {
-    if (!m_selectedFile.isEmpty() && !m_voiceNameEdit->text().isEmpty() && m_isFileValid) {
-        accept();
-    } else {
-        QString error;
-        if (m_selectedFile.isEmpty()) {
-            error = "Please select a file";
-        } else if (m_voiceNameEdit->text().isEmpty()) {
-            error = "Please enter a voice name";
-        } else if (!m_isFormatValid) {
-            error = "File format is not supported (use .wav, .mp3, or .flac)";
-        } else if (!m_isDurationValid) {
-            error = "Audio duration must be between 10 and 120 seconds";
-        }
-        if (!error.isEmpty()) {
-            QMessageBox::warning(this, "Validation Failed", error);
-        }
-    }
+    // Button is only enabled when file is valid and name is non-empty (updateValidateButton).
+    accept();
 }
 
 void VoiceUploadDialog::onFileSelected(const QString &filePath)

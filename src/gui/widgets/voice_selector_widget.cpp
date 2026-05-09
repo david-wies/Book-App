@@ -24,11 +24,12 @@ void VoiceSelectorWidget::buildUi()
     m_presetList = new QListWidget(this);
     m_presetList->setSelectionMode(QAbstractItemView::SingleSelection);
     m_presetList->setMaximumHeight(120);
-    connect(m_presetList, &QListWidget::itemClicked, this,
-            [this](QListWidgetItem *item) {
+    connect(m_presetList, &QListWidget::currentItemChanged, this,
+            [this](QListWidgetItem *current, QListWidgetItem *) {
+                if (!current) return;
                 m_customList->clearSelection();
-                m_selectedVoiceId = item->data(Qt::UserRole).toInt();
-                emit voiceSelected(m_selectedVoiceId, item->text());
+                m_selectedVoiceId = current->data(Qt::UserRole).toInt();
+                emit voiceSelected(m_selectedVoiceId, current->text());
             });
     mainLayout->addWidget(m_presetList);
 
@@ -39,11 +40,12 @@ void VoiceSelectorWidget::buildUi()
     m_customList = new QListWidget(this);
     m_customList->setSelectionMode(QAbstractItemView::SingleSelection);
     m_customList->setMaximumHeight(100);
-    connect(m_customList, &QListWidget::itemClicked, this,
-            [this](QListWidgetItem *item) {
+    connect(m_customList, &QListWidget::currentItemChanged, this,
+            [this](QListWidgetItem *current, QListWidgetItem *) {
+                if (!current) return;
                 m_presetList->clearSelection();
-                m_selectedVoiceId = item->data(Qt::UserRole).toInt();
-                emit voiceSelected(m_selectedVoiceId, item->text());
+                m_selectedVoiceId = current->data(Qt::UserRole).toInt();
+                emit voiceSelected(m_selectedVoiceId, current->text());
             });
     mainLayout->addWidget(m_customList);
 
@@ -58,6 +60,7 @@ void VoiceSelectorWidget::buildUi()
 
 void VoiceSelectorWidget::setVoices(const QList<VoiceEntry> &voices)
 {
+    m_selectedVoiceId = -1;
     m_voices = voices;
     populateVoiceList();
 }
