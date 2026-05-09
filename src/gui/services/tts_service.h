@@ -71,7 +71,7 @@ private:
     static void appendUInt32LE(QByteArray &data, quint32 value);
 
     QTimer *m_generationTimer{};
-    int *m_generationProgress{};
+    int m_generationStep{0};
 };
 
 } // namespace bookhub::gui

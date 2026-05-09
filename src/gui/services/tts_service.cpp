@@ -37,21 +37,19 @@ void NativeTTSService::generateAudiobook(int voiceId, const QString &voiceName, 
         ? QStringLiteral("BookHub audiobook generated with %1.").arg(voiceName)
         : text;
 
-    m_generationProgress = new int(0);
+    m_generationStep = 0;
     m_generationTimer = new QTimer(this);
     m_generationTimer->setInterval(35);
     connect(m_generationTimer, &QTimer::timeout, this, [this, script, profile, outputPath] {
-        *m_generationProgress += 10;
-        emit generationProgress(std::min(*m_generationProgress, 90));
+        m_generationStep += 10;
+        emit generationProgress(std::min(m_generationStep, 90));
 
-        if (*m_generationProgress < 100)
+        if (m_generationStep < 100)
             return;
 
         m_generationTimer->stop();
         m_generationTimer->deleteLater();
         m_generationTimer = nullptr;
-        delete m_generationProgress;
-        m_generationProgress = nullptr;
 
         QSaveFile file(outputPath);
         const int duration = std::clamp(static_cast<int>(script.size()) * 65, 7000, 45000);
@@ -73,8 +71,7 @@ void NativeTTSService::cancel()
         m_generationTimer->deleteLater();
         m_generationTimer = nullptr;
     }
-    delete m_generationProgress;
-    m_generationProgress = nullptr;
+    m_generationStep = 0;
 }
 
 NativeTTSService::VoiceProfile NativeTTSService::profileForVoice(int voiceId,

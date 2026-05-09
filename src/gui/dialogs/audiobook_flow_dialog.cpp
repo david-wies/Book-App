@@ -157,13 +157,12 @@ void AudiobookFlowDialog::buildUi()
     m_resultLabel = new QLabel(this);
     m_resultLabel->setAlignment(Qt::AlignCenter);
     genLayout->addWidget(m_resultLabel);
-    // TODO: Phase 3 — show during async TTS generation; connect to TTSService::cancel().
     m_cancelGenBtn = new QPushButton("Cancel", this);
     m_cancelGenBtn->hide();
     connect(m_cancelGenBtn, &QPushButton::clicked,
             this, &AudiobookFlowDialog::onCancelGenerationClicked);
     genLayout->addWidget(m_cancelGenBtn, 0, Qt::AlignHCenter);
-    // Post-generation action buttons — hidden until generation completes (Phase 3)
+    // Post-generation action buttons — hidden until generation completes
     QHBoxLayout *postGenLayout = new QHBoxLayout();
     m_openFileBtn = new QPushButton("Open file", this);
     m_openFileBtn->hide();

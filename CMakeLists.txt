@@ -49,6 +49,9 @@ set(GUI_SOURCES
     src/gui/query_worker.cpp
 )
 
+# OBJECT libraries share compiled .o files across targets without re-invoking the compiler.
+# STATIC libraries cannot be used here: Qt AUTOMOC + STATIC omits the moc_compilation unit
+# from the link, leaving Q_OBJECT vtables/staticMetaObjects undefined at link time.
 add_library(bookhub_collector OBJECT ${COLLECTOR_SOURCES})
 target_include_directories(bookhub_collector PUBLIC src)
 target_link_libraries(bookhub_collector PUBLIC Qt6::Widgets Qt6::Network shared LibArchive::LibArchive)

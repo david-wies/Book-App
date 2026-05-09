@@ -50,9 +50,9 @@ private slots:
     void onGenerationComplete();
     void onPreviewGenerated(int voiceId, const QByteArray &audioData);
     void onGenerationFinished(bool success, const QString &outputPath);
-    void onPreviewVoiceClicked();   // Phase 3: generate 10-second preview via TTSService
-    void onOpenFileClicked();       // Phase 3: open generated file via QDesktopServices
-    void onAddToLibraryClicked();   // Phase 3: update library status to audiobook_ready
+    void onPreviewVoiceClicked();
+    void onOpenFileClicked();
+    void onAddToLibraryClicked();
     void onCancelGenerationClicked();
 
 private:
