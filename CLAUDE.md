@@ -148,8 +148,8 @@ Project-specific slash commands live in `.claude/commands/`:
 
 ### Current Status
 
-Tasks 1–12, 16, 19 complete: project scaffolding, SQLite schema, single-executable build, background collector with Gutenberg adapter, application icon, Library screen, Search screen, Explore screen, BookDetailsPanel, add/remove from library, download flow, audiobook conversion flow (UI scaffold — TTS generation deferred to Task 13), UI polish, multiplatform support.
+Tasks 1–13, 16, 19 complete: project scaffolding, SQLite schema, single-executable build, background collector with Gutenberg adapter, application icon, Library screen, Search screen, Explore screen, BookDetailsPanel, add/remove from library, download flow, audiobook conversion flow with TTS integration (NativeTTSService — WAV synthesis for preset voices), UI polish, multiplatform support.
 
 Task 15 in progress: source adapter extensibility refactor.
 
-Tasks 13–14, 17–18 not started: TTS integration, custom voice upload, packaging, and tooltip polish.
+Tasks 14, 17–18 not started: custom voice upload, packaging, and tooltip polish.
