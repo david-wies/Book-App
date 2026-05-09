@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../services/book_details_service.h"
+#include <QByteArray>
 #include <QDialog>
 
 class QLabel;
@@ -13,6 +14,7 @@ namespace bookhub::gui {
 
 class LibraryService;
 class QueryWorker;
+class TTSService;
 class StepIndicatorWidget;
 class VoiceSelectorWidget;
 class MiniAudioPlayerWidget;
@@ -25,7 +27,8 @@ class AudiobookFlowDialog : public QDialog {
 public:
     explicit AudiobookFlowDialog(LibraryService *libraryService,
                                  QueryWorker    *worker,
-                                 QWidget        *parent = nullptr);
+                                 QWidget        *parent = nullptr,
+                                 TTSService     *ttsService = nullptr);
 
     void startForBook(const QString &bookId);
 
@@ -45,9 +48,12 @@ private slots:
     void onPlayPreview();
     void onGenerationProgress(int percent);
     void onGenerationComplete();
+    void onPreviewGenerated(int voiceId, const QByteArray &audioData);
+    void onGenerationFinished(bool success, const QString &outputPath);
     void onPreviewVoiceClicked();   // Phase 3: generate 10-second preview via TTSService
     void onOpenFileClicked();       // Phase 3: open generated file via QDesktopServices
     void onAddToLibraryClicked();   // Phase 3: update library status to audiobook_ready
+    void onCancelGenerationClicked();
 
 private:
     void buildUi();
@@ -60,6 +66,10 @@ private:
     bool startGeneration();
     void markAudiobookReady();
     BookSourceEntry selectedSource() const;
+    bool isTextCompatibleFormat(const QString &formatType) const;
+    QString previewScript() const;
+    QString generationScript() const;
+    QString defaultOutputPath() const;
     void showErrorState(const QString &message);
 
     friend class ::bookhub::gui::AudiobookFlowDialogTest;
@@ -67,6 +77,7 @@ private:
     LibraryService        *m_libraryService{};
     BookDetailsService    *m_detailsService{};
     QueryWorker           *m_worker{};
+    TTSService            *m_ttsService{};
 
     QString m_bookId;
     QString m_bookTitle;
@@ -90,6 +101,8 @@ private:
     QString m_selectedFormat;
     int     m_selectedVoiceId{-1};
     QString m_selectedVoiceName;
+    QByteArray m_previewAudioData;
+    QString    m_generatedOutputPath;
 
     QLabel               *m_titleLabel{};
     StepIndicatorWidget  *m_stepIndicator{};

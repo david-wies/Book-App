@@ -18,10 +18,6 @@ add_library(shared STATIC
 target_include_directories(shared PUBLIC src/shared)
 target_link_libraries(shared PUBLIC Qt6::Sql)
 
-# Collector and GUI sources are compiled directly into the consuming target rather than as a
-# separate STATIC library. Qt AUTOMOC + STATIC libraries causes CMake to recompile all sources
-# inline for every consumer while also omitting the library's moc_compilation unit from the
-# link, leaving Q_OBJECT vtables/staticMetaObjects undefined at link time.
 set(COLLECTOR_SOURCES
     src/collector/collector_worker.cpp
     src/collector/source_adapter.cpp
@@ -53,11 +49,17 @@ set(GUI_SOURCES
     src/gui/query_worker.cpp
 )
 
+add_library(bookhub_collector OBJECT ${COLLECTOR_SOURCES})
+target_include_directories(bookhub_collector PUBLIC src)
+target_link_libraries(bookhub_collector PUBLIC Qt6::Widgets Qt6::Network shared LibArchive::LibArchive)
+
+add_library(bookhub_gui OBJECT ${GUI_SOURCES})
+target_include_directories(bookhub_gui PUBLIC src)
+target_link_libraries(bookhub_gui PUBLIC Qt6::Widgets Qt6::Network shared)
+
 add_executable(bookhub
     src/main.cpp
     resources.qrc
-    ${COLLECTOR_SOURCES}
-    ${GUI_SOURCES}
 )
 # macOS-specific: creates a .app bundle for packaging. Ignored on Linux and Windows.
 if(APPLE)
@@ -72,14 +74,14 @@ endif()
 # multi-config (Visual Studio) generators, where CMAKE_BUILD_TYPE is not set.
 set_target_properties(bookhub PROPERTIES WIN32_EXECUTABLE $<CONFIG:Release>)
 target_include_directories(bookhub PRIVATE src)
-target_link_libraries(bookhub PRIVATE Qt6::Widgets Qt6::Network shared LibArchive::LibArchive)
+target_link_libraries(bookhub PRIVATE bookhub_collector bookhub_gui)
 
 enable_testing()
 
 function(add_bookhub_test test_name)
-    add_executable(${test_name} ${ARGN} ${COLLECTOR_SOURCES} ${GUI_SOURCES})
+    add_executable(${test_name} ${ARGN})
     target_include_directories(${test_name} PRIVATE src tests)
-    target_link_libraries(${test_name} PRIVATE Qt6::Test Qt6::Widgets Qt6::Network shared LibArchive::LibArchive)
+    target_link_libraries(${test_name} PRIVATE Qt6::Test bookhub_collector bookhub_gui)
     add_test(NAME ${test_name} COMMAND ${test_name})
     set_tests_properties(${test_name} PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"

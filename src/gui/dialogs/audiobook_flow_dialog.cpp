@@ -4,7 +4,15 @@
 #include "../widgets/voice_selector_widget.h"
 #include "../widgets/mini_audio_player_widget.h"
 #include "../services/library_service.h"
+#include "../services/tts_service.h"
 #include "../query_worker.h"
+#include <QDateTime>
+#include <QDesktopServices>
+#include <QDir>
+#include <QFileInfo>
+#include <QRegularExpression>
+#include <QStandardPaths>
+#include <QUrl>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -19,10 +27,12 @@ namespace bookhub::gui {
 
 AudiobookFlowDialog::AudiobookFlowDialog(LibraryService *libraryService,
                                          QueryWorker    *worker,
-                                         QWidget        *parent)
+                                         QWidget        *parent,
+                                         TTSService     *ttsService)
     : QDialog(parent)
     , m_libraryService(libraryService)
     , m_worker(worker)
+    , m_ttsService(ttsService ? ttsService : new NativeTTSService(this))
 {
     setWindowTitle("Convert to Audiobook");
     setModal(true);
@@ -36,6 +46,12 @@ AudiobookFlowDialog::AudiobookFlowDialog(LibraryService *libraryService,
             this, &AudiobookFlowDialog::onDetailsCompleted);
     connect(m_detailsService, &BookDetailsService::formatsCompleted,
             this, &AudiobookFlowDialog::onFormatsCompleted);
+    connect(m_ttsService, &TTSService::previewGenerated,
+            this, &AudiobookFlowDialog::onPreviewGenerated);
+    connect(m_ttsService, &TTSService::generationProgress,
+            this, &AudiobookFlowDialog::onGenerationProgress);
+    connect(m_ttsService, &TTSService::generationCompleted,
+            this, &AudiobookFlowDialog::onGenerationFinished);
 
     if (m_worker) {
         // Route listVoicesRequested through Qt's connection mechanism so the
@@ -144,6 +160,8 @@ void AudiobookFlowDialog::buildUi()
     // TODO: Phase 3 — show during async TTS generation; connect to TTSService::cancel().
     m_cancelGenBtn = new QPushButton("Cancel", this);
     m_cancelGenBtn->hide();
+    connect(m_cancelGenBtn, &QPushButton::clicked,
+            this, &AudiobookFlowDialog::onCancelGenerationClicked);
     genLayout->addWidget(m_cancelGenBtn, 0, Qt::AlignHCenter);
     // Post-generation action buttons — hidden until generation completes (Phase 3)
     QHBoxLayout *postGenLayout = new QHBoxLayout();
@@ -195,6 +213,8 @@ void AudiobookFlowDialog::resetState()
     m_selectedFormat.clear();
     m_selectedVoiceId = -1;
     m_selectedVoiceName.clear();
+    m_previewAudioData.clear();
+    m_generatedOutputPath.clear();
     m_pendingDetailsId = 0;
     m_pendingFormatsId = 0;
     m_pendingVoicesId  = 0;
@@ -218,6 +238,7 @@ void AudiobookFlowDialog::resetState()
     m_cancelGenBtn->hide();
     m_openFileBtn->hide();
     m_addToLibBtn->hide();
+    m_nextBtn->setEnabled(true);
 
     updateStepUi();
 }
@@ -292,6 +313,10 @@ void AudiobookFlowDialog::onVoiceSelectionChanged(int voiceId, const QString &vo
     m_previewVoiceLabel->setText(voiceId >= 0
         ? QString("Listening to: %1").arg(voiceName)
         : QStringLiteral("Listening to: —"));
+    m_previewText->setText(previewScript());
+    m_previewAudioData.clear();
+    m_previewPlayer->setDuration(0);
+    m_previewPlayer->setCurrentTime(0);
     updateNextButtonEnabled();
 }
 
@@ -322,20 +347,14 @@ void AudiobookFlowDialog::onNextOrGenerateClicked()
         m_currentStep++;
         updateStepUi();
     } else {
-        if (startGeneration()) {
-            m_progressBar->setValue(0);
-            m_progressText->setText("Generating audiobook...");
-            m_resultLabel->clear();
-            // Phase 3+: connect to actual TTS service progress
-            onGenerationProgress(100);
-            onGenerationComplete();
-        }
+        startGeneration();
     }
 }
 
 void AudiobookFlowDialog::onPlayPreview()
 {
-    // Phase 3+: generate and play preview audio via TTSService
+    if (m_previewAudioData.isEmpty())
+        onPreviewVoiceClicked();
 }
 
 void AudiobookFlowDialog::onGenerationProgress(int percent)
@@ -364,12 +383,47 @@ void AudiobookFlowDialog::onGenerationComplete()
 
 void AudiobookFlowDialog::onPreviewVoiceClicked()
 {
-    // Phase 3: request a 10-second preview clip from TTSService for m_selectedVoiceName
+    if (m_selectedVoiceId < 0 || !m_ttsService)
+        return;
+
+    m_previewVoiceBtn->setEnabled(false);
+    m_previewVoiceBtn->setText("Generating preview...");
+    m_previewText->setText(previewScript());
+    m_ttsService->generatePreview(m_selectedVoiceId, m_selectedVoiceName, m_previewText->text());
+}
+
+void AudiobookFlowDialog::onPreviewGenerated(int voiceId, const QByteArray &audioData)
+{
+    if (voiceId != m_selectedVoiceId)
+        return;
+
+    m_previewAudioData = audioData;
+    m_previewVoiceBtn->setEnabled(true);
+    m_previewVoiceBtn->setText("Regenerate preview");
+    m_previewPlayer->setDuration(4000);
+    m_previewPlayer->setCurrentTime(0);
+    m_resultLabel->clear();
+}
+
+void AudiobookFlowDialog::onGenerationFinished(bool success, const QString &outputPath)
+{
+    if (!success) {
+        m_cancelGenBtn->hide();
+        m_progressText->setText("Generation failed.");
+        m_resultLabel->setText("Could not generate audiobook.");
+        m_nextBtn->setText("Retry");
+        m_nextBtn->setEnabled(true);
+        return;
+    }
+
+    m_generatedOutputPath = outputPath;
+    onGenerationComplete();
 }
 
 void AudiobookFlowDialog::onOpenFileClicked()
 {
-    // Phase 3: open generated audio file via QDesktopServices::openUrl()
+    if (!m_generatedOutputPath.isEmpty())
+        QDesktopServices::openUrl(QUrl::fromLocalFile(m_generatedOutputPath));
 }
 
 void AudiobookFlowDialog::onAddToLibraryClicked()
@@ -379,6 +433,18 @@ void AudiobookFlowDialog::onAddToLibraryClicked()
     // dropping the status update.
     markAudiobookReady();
     accept();
+}
+
+void AudiobookFlowDialog::onCancelGenerationClicked()
+{
+    if (m_ttsService)
+        m_ttsService->cancel();
+
+    m_cancelGenBtn->hide();
+    m_progressText->setText("Generation cancelled.");
+    m_resultLabel->setText("Audiobook generation was cancelled.");
+    m_nextBtn->setText("Retry");
+    m_nextBtn->setEnabled(true);
 }
 
 void AudiobookFlowDialog::populateLanguageList()
@@ -398,19 +464,23 @@ void AudiobookFlowDialog::populateFormatList()
     int epubIndex = -1;
     for (int i = 0; i < m_formats.size(); ++i) {
         const QString &type = m_formats[i].formatType;
+        if (!isTextCompatibleFormat(type))
+            continue;
         QString label = type;
-        if (type == QLatin1String("epub")) {
+        if (type.startsWith(QLatin1String("epub"))) {
             label += " (recommended)";
-            epubIndex = i;
+            epubIndex = m_formatList->count();
         }
         auto *item = new QListWidgetItem(label);
         item->setData(Qt::UserRole, type);
         m_formatList->addItem(item);
     }
-    if (!m_formats.isEmpty()) {
+    if (m_formatList->count() > 0) {
         const int selectRow = (epubIndex >= 0) ? epubIndex : 0;
         m_formatList->setCurrentRow(selectRow);
-        m_selectedFormat = m_formats[selectRow].formatType;
+        m_selectedFormat = m_formatList->item(selectRow)->data(Qt::UserRole).toString();
+    } else {
+        m_selectedFormat.clear();
     }
 }
 
@@ -465,6 +535,30 @@ bool AudiobookFlowDialog::startGeneration()
         showErrorState("Please select language, format, and voice.");
         return false;
     }
+    if (!m_ttsService) {
+        showErrorState("The text-to-speech service is unavailable.");
+        return false;
+    }
+
+    m_generatedOutputPath = defaultOutputPath();
+    if (m_generatedOutputPath.isEmpty()) {
+        showErrorState("Could not prepare the audiobook output folder.");
+        return false;
+    }
+
+    m_progressBar->setValue(0);
+    m_progressText->setText("Generating audiobook...");
+    m_progressText->show();
+    m_resultLabel->clear();
+    m_cancelGenBtn->show();
+    m_openFileBtn->hide();
+    m_addToLibBtn->hide();
+    m_nextBtn->setEnabled(false);
+    if (m_libraryItemId > 0 && m_libraryService)
+        m_libraryService->requestUpdateStatus(m_libraryItemId, QStringLiteral("converting"));
+
+    m_ttsService->generateAudiobook(m_selectedVoiceId, m_selectedVoiceName,
+                                    generationScript(), m_generatedOutputPath);
     return true;
 }
 
@@ -483,9 +577,81 @@ BookSourceEntry AudiobookFlowDialog::selectedSource() const
     return BookSourceEntry{};
 }
 
+bool AudiobookFlowDialog::isTextCompatibleFormat(const QString &formatType) const
+{
+    const QString type = formatType.toLower();
+    return type.startsWith(QLatin1String("epub"))
+        || type.startsWith(QLatin1String("txt"))
+        || type.startsWith(QLatin1String("text"))
+        || type.startsWith(QLatin1String("html"));
+}
+
+QString AudiobookFlowDialog::previewScript() const
+{
+    const QString title = m_bookTitle.isEmpty() ? QStringLiteral("this book") : m_bookTitle;
+    const QString voice = m_selectedVoiceName.isEmpty()
+        ? QStringLiteral("the selected voice")
+        : m_selectedVoiceName;
+    return QStringLiteral("%1 reading from %2. This is a short BookHub voice preview.")
+        .arg(voice, title);
+}
+
+QString AudiobookFlowDialog::generationScript() const
+{
+    const BookSourceEntry source = selectedSource();
+    QStringList lines;
+    lines << QStringLiteral("BookHub audiobook")
+          << QStringLiteral("Title: %1").arg(m_bookTitle.isEmpty()
+                                             ? QStringLiteral("Untitled book")
+                                             : m_bookTitle)
+          << QStringLiteral("Language: %1").arg(m_selectedLanguage)
+          << QStringLiteral("Format source: %1").arg(source.sourceName.isEmpty()
+                                                     ? m_selectedFormat
+                                                     : source.sourceName)
+          << QStringLiteral("Voice: %1").arg(m_selectedVoiceName)
+          << QStringLiteral("This MVP build creates a local sample narration file. "
+                            "Full text extraction from downloaded editions will use the same "
+                            "generation service in the packaging phase.");
+    return lines.join(QLatin1Char('\n'));
+}
+
+QString AudiobookFlowDialog::defaultOutputPath() const
+{
+    QString baseDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    if (baseDir.isEmpty())
+        baseDir = QDir::homePath() + QStringLiteral("/.bookhub");
+
+    QDir dir(baseDir);
+    if (!dir.mkpath(QStringLiteral("audiobooks"))) {
+        dir = QDir(QDir::tempPath() + QStringLiteral("/bookhub"));
+        if (!dir.mkpath(QStringLiteral("audiobooks")))
+            return {};
+    }
+    dir.cd(QStringLiteral("audiobooks"));
+
+    QString stem = m_bookTitle.simplified().toLower();
+    stem.replace(QRegularExpression(QStringLiteral("[^a-z0-9]+")), QStringLiteral("-"));
+    stem = stem.trimmed();
+    while (stem.startsWith(QLatin1Char('-')))
+        stem.remove(0, 1);
+    while (stem.endsWith(QLatin1Char('-')))
+        stem.chop(1);
+    if (stem.isEmpty())
+        stem = QStringLiteral("audiobook");
+
+    const QString stamp = QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyyMMdd-hhmmss"));
+    return dir.filePath(QStringLiteral("%1-%2.wav").arg(stem, stamp));
+}
+
 void AudiobookFlowDialog::showErrorState(const QString &message)
 {
-    QMessageBox::warning(this, "Error", message);
+    auto *box = new QMessageBox(QMessageBox::Warning,
+                                QStringLiteral("Error"),
+                                message,
+                                QMessageBox::Ok,
+                                this);
+    box->setAttribute(Qt::WA_DeleteOnClose);
+    box->open();
 }
 
 } // namespace bookhub::gui

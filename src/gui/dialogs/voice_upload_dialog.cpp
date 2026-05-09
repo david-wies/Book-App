@@ -5,9 +5,45 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QFileDialog>
+#include <QFile>
 #include <QFileInfo>
 
 namespace bookhub::gui {
+
+namespace {
+
+int wavDurationMs(const QString &filePath)
+{
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly))
+        return -1;
+
+    const QByteArray header = file.read(44);
+    if (header.size() < 44 || header.mid(0, 4) != "RIFF" || header.mid(8, 4) != "WAVE")
+        return -1;
+
+    auto readUInt16 = [&header](int offset) {
+        return static_cast<quint16>(static_cast<uchar>(header[offset]))
+            | static_cast<quint16>(static_cast<uchar>(header[offset + 1]) << 8);
+    };
+    auto readUInt32 = [&header](int offset) {
+        return static_cast<quint32>(static_cast<uchar>(header[offset]))
+            | (static_cast<quint32>(static_cast<uchar>(header[offset + 1])) << 8)
+            | (static_cast<quint32>(static_cast<uchar>(header[offset + 2])) << 16)
+            | (static_cast<quint32>(static_cast<uchar>(header[offset + 3])) << 24);
+    };
+
+    const quint16 channels = readUInt16(22);
+    const quint32 sampleRate = readUInt32(24);
+    const quint16 bitsPerSample = readUInt16(34);
+    const quint32 dataBytes = readUInt32(40);
+    const quint32 bytesPerSecond = sampleRate * channels * bitsPerSample / 8;
+    if (bytesPerSecond == 0)
+        return -1;
+    return static_cast<int>((static_cast<quint64>(dataBytes) * 1000) / bytesPerSecond);
+}
+
+} // namespace
 
 VoiceUploadDialog::VoiceUploadDialog(QWidget *parent)
     : QDialog(parent)
@@ -145,10 +181,24 @@ void VoiceUploadDialog::validateFile(const QString &filePath)
         m_formatLabel->setStyleSheet("color: #DC2626; font-size: 11px; font-weight: bold;");
     }
 
-    // Duration validation (MVP: not implemented — deferred to Phase 3)
-    m_isDurationValid = true;
-    m_durationLabel->setText("○ Duration: not checked in MVP");
-    m_durationLabel->setStyleSheet("color: #6B7280; font-size: 11px;");
+    if (suffix == QLatin1String("wav")) {
+        const int durationMs = wavDurationMs(filePath);
+        m_isDurationValid = durationMs >= 10'000 && durationMs <= 120'000;
+        if (m_isDurationValid) {
+            m_durationLabel->setText(
+                QStringLiteral("✓ Duration: %1 seconds (OK)").arg(durationMs / 1000));
+            m_durationLabel->setStyleSheet(
+                "color: #16A34A; font-size: 11px; font-weight: bold;");
+        } else {
+            m_durationLabel->setText(QStringLiteral("✗ Duration: must be 10–120 seconds"));
+            m_durationLabel->setStyleSheet(
+                "color: #DC2626; font-size: 11px; font-weight: bold;");
+        }
+    } else {
+        m_isDurationValid = m_isFormatValid;
+        m_durationLabel->setText(QStringLiteral("○ Duration: checked after import"));
+        m_durationLabel->setStyleSheet("color: #6B7280; font-size: 11px;");
+    }
 
     // Quality: placeholder for MVP
     m_qualityLabel->setText("○ Quality: placeholder for Phase 4");

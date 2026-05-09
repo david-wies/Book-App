@@ -1,9 +1,12 @@
 #pragma once
 
 #include "tts_types.h"
-#include <QObject>
+#include <QByteArray>
 #include <QList>
+#include <QObject>
 #include <QString>
+
+class QTimer;
 
 namespace bookhub::gui {
 
@@ -11,8 +14,9 @@ namespace bookhub::gui {
 // TTSService — abstract interface for text-to-speech synthesis.
 //
 // Concrete implementations handle voice synthesis, audio generation, and
-// file output. MVP version is a no-op stub; Phase 3+ will integrate with
-// Sherpa-ONNX or PocketTTS.cpp for real TTS.
+// file output. The default implementation is a small native WAV synthesizer
+// for the preset MVP voices; it keeps the flow functional without pulling in
+// an external TTS runtime before model packaging is ready.
 // ---------------------------------------------------------------------------
 
 class TTSService : public QObject {
@@ -31,6 +35,7 @@ public:
     // Emits generationCompleted(success, outputPath) on completion
     virtual void generateAudiobook(int voiceId, const QString &voiceName, const QString &text,
                                    const QString &outputPath) = 0;
+    virtual void cancel() {}
 
 signals:
     // Preview generation completed with audio bytes
@@ -39,6 +44,34 @@ signals:
     // Audiobook generation progress and completion
     void generationProgress(int percent);
     void generationCompleted(bool success, const QString &outputPath);
+};
+
+class NativeTTSService final : public TTSService {
+    Q_OBJECT
+public:
+    explicit NativeTTSService(QObject *parent = nullptr);
+
+    void generatePreview(int voiceId, const QString &voiceName, const QString &text) override;
+    void generateAudiobook(int voiceId, const QString &voiceName, const QString &text,
+                           const QString &outputPath) override;
+    void cancel() override;
+
+private:
+    struct VoiceProfile {
+        double baseFrequency{180.0};
+        double cadence{8.0};
+        double brightness{0.35};
+    };
+
+    static VoiceProfile profileForVoice(int voiceId, const QString &voiceName);
+    static QByteArray synthesizeWav(const QString &text, const VoiceProfile &profile,
+                                    int durationMs);
+    static void appendAscii(QByteArray &data, const char *text);
+    static void appendUInt16LE(QByteArray &data, quint16 value);
+    static void appendUInt32LE(QByteArray &data, quint32 value);
+
+    QTimer *m_generationTimer{};
+    int *m_generationProgress{};
 };
 
 } // namespace bookhub::gui
