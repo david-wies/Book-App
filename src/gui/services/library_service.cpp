@@ -25,6 +25,12 @@ void LibraryService::connectToWorker(QueryWorker *worker)
     connect(this, &LibraryService::updateStatusRequested,
             worker, &QueryWorker::handleUpdateStatusRequest);
 
+    // Audiobook operations
+    connect(this, &LibraryService::queryAudiobookStatusRequested,
+            worker, &QueryWorker::handleQueryAudiobookStatusRequest);
+    connect(this, &LibraryService::setAudiobookReadyRequested,
+            worker, &QueryWorker::handleSetAudiobookReadyRequest);
+
     connect(worker, &QueryWorker::fetchItemsCompleted, this,
             [this](quint64 id, QList<LibraryItem> items) {
                 Q_ASSERT(m_pendingCount > 0);
@@ -52,6 +58,22 @@ void LibraryService::connectToWorker(QueryWorker *worker)
                 Q_ASSERT(m_pendingCount > 0);
                 --m_pendingCount;
                 emit updateStatusCompleted(id, success);
+                if (success)
+                    emit libraryChanged();
+            });
+
+    // Audiobook status handlers
+    connect(worker, &QueryWorker::audiobookStatusQueried, this,
+            [this](quint64 id, bool isReady) {
+                Q_ASSERT(m_pendingCount > 0);
+                --m_pendingCount;
+                emit audiobookStatusQueried(id, isReady);
+            });
+    connect(worker, &QueryWorker::audiobookReadySet, this,
+            [this](quint64 id, bool success) {
+                Q_ASSERT(m_pendingCount > 0);
+                --m_pendingCount;
+                emit audiobookConversionCompleted(id, success);
                 if (success)
                     emit libraryChanged();
             });
@@ -99,6 +121,22 @@ quint64 LibraryService::requestUpdateStatus(int libraryItemId, const QString &st
     const quint64 id = m_nextRequestId.fetch_add(1, std::memory_order_relaxed);
     ++m_pendingCount;
     emit updateStatusRequested(id, libraryItemId, status);
+    return id;
+}
+
+quint64 LibraryService::requestQueryAudiobookStatus(const QString &bookId)
+{
+    const quint64 id = m_nextRequestId.fetch_add(1, std::memory_order_relaxed);
+    ++m_pendingCount;
+    emit queryAudiobookStatusRequested(id, bookId);
+    return id;
+}
+
+quint64 LibraryService::requestSetAudiobookReady(const QString &bookId)
+{
+    const quint64 id = m_nextRequestId.fetch_add(1, std::memory_order_relaxed);
+    ++m_pendingCount;
+    emit setAudiobookReadyRequested(id, bookId);
     return id;
 }
 

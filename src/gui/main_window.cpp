@@ -1,4 +1,5 @@
 #include "main_window.h"
+#include "dialogs/audiobook_flow_dialog.h"
 #include "dialogs/download_flow_dialog.h"
 #include "panels/book_details_panel.h"
 #include "query_worker.h"
@@ -111,8 +112,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
           this, &MainWindow::onBookDetailsDismissed);
   connect(m_bookDetailsPanel, &BookDetailsPanel::downloadRequested,
           this, &MainWindow::onDownloadRequested);
+  connect(m_bookDetailsPanel, &BookDetailsPanel::audiobookRequested,
+          this, &MainWindow::onAudiobookRequested);
 
   m_downloadDialog = new DownloadFlowDialog(m_libraryService, m_queryWorker, this);
+  m_audiobookDialog = new AudiobookFlowDialog(m_libraryService, m_queryWorker, this);
 
   // Status bar
   buildStatusBar();
@@ -262,6 +266,11 @@ void MainWindow::onBookDetailsDismissed() {
 
 void MainWindow::onDownloadRequested(const QString &bookId) {
   m_downloadDialog->startForBook(bookId);
+}
+
+void MainWindow::onAudiobookRequested(const QString &bookId) {
+  m_audiobookDialog->startForBook(bookId);
+  m_audiobookDialog->exec();
 }
 
 } // namespace bookhub::gui

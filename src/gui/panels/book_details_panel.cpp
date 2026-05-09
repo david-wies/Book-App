@@ -406,8 +406,8 @@ void BookDetailsPanel::buildUi()
 
     m_audiobookBtn = new QPushButton(QStringLiteral("♪ Audiobook"), secondaryRow);
     m_audiobookBtn->setStyleSheet(secondaryStyle);
-    m_audiobookBtn->setToolTip(QStringLiteral("Audiobook conversion — coming soon"));
-    m_audiobookBtn->setEnabled(false); // Task 12
+    m_audiobookBtn->setToolTip(QStringLiteral("Convert this book to an audiobook"));
+    m_audiobookBtn->setEnabled(false);
     connect(m_audiobookBtn, &QPushButton::clicked, this,
             [this] { emit audiobookRequested(m_currentBookId); });
     secondaryLayout->addWidget(m_audiobookBtn);
@@ -480,6 +480,7 @@ void BookDetailsPanel::populateDetails(const BookDetails &details)
 
     setLibraryButtonState(m_inLibrary);
     m_downloadBtn->setEnabled(false);
+    m_audiobookBtn->setEnabled(false);
 
     // Clear formats; they'll be loaded by the requestFormatsForEdition call
     // that follows immediately in onDetailsCompleted.
@@ -497,6 +498,7 @@ void BookDetailsPanel::populateFormats(const QList<BookFormatEntry> &formats)
 
     if (formats.isEmpty()) {
         m_downloadBtn->setEnabled(false);
+        m_audiobookBtn->setEnabled(false);
         auto *noFmt = new QLabel(
             QStringLiteral("No downloadable formats available yet."),
             m_formatsWidget);
@@ -508,6 +510,7 @@ void BookDetailsPanel::populateFormats(const QList<BookFormatEntry> &formats)
     }
 
     m_downloadBtn->setEnabled(true);
+    m_audiobookBtn->setEnabled(true);
 
     for (const auto &fmt : formats) {
         auto *row       = new QWidget(m_formatsWidget);

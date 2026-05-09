@@ -9,6 +9,7 @@
 #include "services/explore_service.h"
 #include "services/library_service.h"
 #include "services/search_service.h"
+#include "services/tts_types.h"
 
 namespace bookhub::gui {
 
@@ -59,6 +60,17 @@ public slots:
     virtual void handleBookDetailsRequest(quint64 requestId, const QString &bookId);
     virtual void handleFormatsForEditionRequest(quint64 requestId, int editionId);
 
+    // Voice CRUD
+    virtual void handleListVoicesRequest(quint64 requestId);
+    virtual void handleInsertVoiceRequest(quint64 requestId, const QString &name,
+                                          const QString &type, const QString &engine);
+    virtual void handleUpdateVoiceRequest(quint64 requestId, int voiceId, const QString &engine);
+    virtual void handleDeleteVoiceRequest(quint64 requestId, int voiceId);
+
+    // Audiobook operations
+    virtual void handleQueryAudiobookStatusRequest(quint64 requestId, const QString &bookId);
+    virtual void handleSetAudiobookReadyRequest(quint64 requestId, const QString &bookId);
+
 signals:
     // Search results
     void searchCompleted(quint64 requestId, QList<bookhub::gui::SearchResult> results);
@@ -84,9 +96,35 @@ signals:
     void formatsForEditionCompleted(quint64 requestId,
                                     QList<bookhub::gui::BookFormatEntry> formats);
 
+    // Voice results
+    void listVoicesCompleted(quint64 requestId, QList<bookhub::gui::VoiceEntry> voices);
+    void insertVoiceCompleted(quint64 requestId, bool success, int newId);
+    void updateVoiceCompleted(quint64 requestId, bool success);
+    void deleteVoiceCompleted(quint64 requestId, bool success);
+
+    // Audiobook status results
+    void audiobookStatusQueried(quint64 requestId, bool isReady);
+    void audiobookReadySet(quint64 requestId, bool success);
+
 private:
     static constexpr const char *kConnectionName = "gui_query_connection";
     static QLatin1String conn() noexcept { return QLatin1String{kConnectionName}; }
 };
+
+// ---------------------------------------------------------------------------
+// Internal free functions for voice and audiobook-status queries.
+// Implemented in query_worker.cpp; called by TestQueryWorker in tests.
+// ---------------------------------------------------------------------------
+namespace internal {
+    QList<VoiceEntry> listVoices(const QString &connectionName);
+    // type must be 'preset' or 'custom'; engine must be 'sherpa_onnx' or 'pocket_tts'.
+    bool insertVoice(const QString &name, const QString &type, const QString &engine,
+                     int *outNewId, const QString &connectionName);
+    bool updateVoice(int voiceId, const QString &engine, const QString &connectionName);
+    bool deleteVoice(int voiceId, const QString &connectionName);
+    bool queryAudiobookStatus(const QString &bookId, bool &outIsReady,
+                              const QString &connectionName);
+    bool setAudiobookReady(const QString &bookId, const QString &connectionName);
+} // namespace internal
 
 } // namespace bookhub::gui

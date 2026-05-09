@@ -128,6 +128,47 @@ public slots:
             internal::fetchFormatsForEdition(editionId,
                                              QSqlDatabase::defaultConnection));
     }
+
+    void handleListVoicesRequest(quint64 requestId) override
+    {
+        emit listVoicesCompleted(requestId,
+            internal::listVoices(QSqlDatabase::defaultConnection));
+    }
+
+    void handleInsertVoiceRequest(quint64 requestId, const QString &name,
+                                  const QString &type, const QString &engine) override
+    {
+        int newId = -1;
+        const bool ok = internal::insertVoice(name, type, engine,
+                                               &newId, QSqlDatabase::defaultConnection);
+        emit insertVoiceCompleted(requestId, ok, newId);
+    }
+
+    void handleUpdateVoiceRequest(quint64 requestId, int voiceId,
+                                  const QString &engine) override
+    {
+        emit updateVoiceCompleted(requestId,
+            internal::updateVoice(voiceId, engine, QSqlDatabase::defaultConnection));
+    }
+
+    void handleDeleteVoiceRequest(quint64 requestId, int voiceId) override
+    {
+        emit deleteVoiceCompleted(requestId,
+            internal::deleteVoice(voiceId, QSqlDatabase::defaultConnection));
+    }
+
+    void handleQueryAudiobookStatusRequest(quint64 requestId, const QString &bookId) override
+    {
+        bool isReady = false;
+        internal::queryAudiobookStatus(bookId, isReady, QSqlDatabase::defaultConnection);
+        emit audiobookStatusQueried(requestId, isReady);
+    }
+
+    void handleSetAudiobookReadyRequest(quint64 requestId, const QString &bookId) override
+    {
+        const bool success = internal::setAudiobookReady(bookId, QSqlDatabase::defaultConnection);
+        emit audiobookReadySet(requestId, success);
+    }
 };
 
 } // namespace bookhub::gui

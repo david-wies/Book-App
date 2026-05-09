@@ -107,9 +107,19 @@ bool createSchema(const QString &connectionName)
             book_id TEXT NOT NULL UNIQUE,
             edition_id INTEGER,
             added_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            status TEXT,
+            status TEXT CHECK(status IS NULL OR status IN ('saved', 'downloading', 'downloaded', 'converting', 'audiobook_ready', 'error')),
             FOREIGN KEY (book_id) REFERENCES books(book_id) ON DELETE CASCADE ON UPDATE CASCADE,
             FOREIGN KEY (edition_id) REFERENCES editions(id)
+        ))",
+        R"(CREATE TABLE IF NOT EXISTS voices (
+            id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+            name                 TEXT NOT NULL UNIQUE,
+            type                 TEXT NOT NULL CHECK(type IN ('preset', 'custom')),
+            engine               TEXT NOT NULL CHECK(engine IN ('sherpa_onnx', 'pocket_tts')),
+            model_path           TEXT,
+            config_path          TEXT,
+            reference_audio_path TEXT,
+            created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         ))"
     };
 
@@ -118,6 +128,19 @@ bool createSchema(const QString &connectionName)
             qWarning() << "Failed to create table:" << query.lastError().text() << "\nQuery:" << sql;
             return false;
         }
+    }
+
+    // Seed the three preset voices. These are product baseline data (not dev
+    // sample data), so they live here rather than in insertSampleData so
+    // production Release builds — which skip insertSampleData — still get them.
+    // UNIQUE(name) on the voices table makes this genuinely idempotent.
+    if (!query.exec(QStringLiteral(
+            "INSERT OR IGNORE INTO voices (name, type, engine) VALUES "
+            "('Classic Storyteller', 'preset', 'sherpa_onnx'),"
+            "('Warm Listener',       'preset', 'sherpa_onnx'),"
+            "('Crisp Narrator',      'preset', 'sherpa_onnx')"))) {
+        qWarning() << "Failed to seed preset voices:" << query.lastError().text();
+        return false;
     }
 
     if (!query.exec(QStringLiteral("PRAGMA user_version = %1").arg(kSchemaVersion))) {
@@ -197,7 +220,10 @@ bool verifySchemaVersion(const QString &connectionName)
             "INSERT OR IGNORE INTO library_items_new SELECT * FROM library_items",
             "DROP TABLE library_items",
             "ALTER TABLE library_items_new RENAME TO library_items",
-            QStringLiteral("PRAGMA user_version = %1").arg(kSchemaVersion),
+            // Stamp the version this migration produces, not kSchemaVersion —
+            // otherwise bumping the schema later (e.g. v3, v4, …) would cause a
+            // v1 DB to skip every intermediate migration step.
+            QStringLiteral("PRAGMA user_version = 2"),
             "COMMIT",
             "PRAGMA foreign_keys = ON"
         };
@@ -213,7 +239,74 @@ bool verifySchemaVersion(const QString &connectionName)
             }
         }
         qDebug() << "Migration to schema version 2 complete.";
-        return true;
+        // Chain into the next migration so a v1 DB lands at the current
+        // schema version in a single startup.
+        return verifySchemaVersion(connectionName);
+    }
+
+    // Migration: version 2 → 3
+    // Adds voices table for preset and custom voice storage, and a CHECK
+    // constraint on library_items.status so typos cannot silently land bad data.
+    if (version == 2) {
+        qDebug() << "Migrating database schema from version 2 to 3...";
+        QStringList migration = {
+            // PRAGMA must run outside a transaction; FK checks are disabled
+            // during the table-recreation dance for library_items.
+            "PRAGMA foreign_keys = OFF",
+            "BEGIN",
+            R"(CREATE TABLE IF NOT EXISTS voices (
+                id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+                name                 TEXT NOT NULL UNIQUE,
+                type                 TEXT NOT NULL CHECK(type IN ('preset', 'custom')),
+                engine               TEXT NOT NULL CHECK(engine IN ('sherpa_onnx', 'pocket_tts')),
+                model_path           TEXT,
+                config_path          TEXT,
+                reference_audio_path TEXT,
+                created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            ))",
+            // Seed preset voices here so users upgrading from v2 get them
+            // immediately, without waiting for another createSchema() call.
+            QStringLiteral("INSERT OR IGNORE INTO voices (name, type, engine) VALUES "
+                           "('Classic Storyteller', 'preset', 'sherpa_onnx'),"
+                           "('Warm Listener',       'preset', 'sherpa_onnx'),"
+                           "('Crisp Narrator',      'preset', 'sherpa_onnx')"),
+            // Recreate library_items with CHECK constraint on status.
+            // SQLite does not support ALTER TABLE ADD CONSTRAINT.
+            R"(CREATE TABLE library_items_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_id TEXT NOT NULL UNIQUE,
+                edition_id INTEGER,
+                added_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                status TEXT CHECK(status IS NULL OR status IN ('saved', 'downloading', 'downloaded', 'converting', 'audiobook_ready', 'error')),
+                FOREIGN KEY (book_id) REFERENCES books(book_id) ON DELETE CASCADE ON UPDATE CASCADE,
+                FOREIGN KEY (edition_id) REFERENCES editions(id)
+            ))",
+            // Fail loudly if any existing status value violates the new constraint
+            // rather than silently discarding rows.
+            "INSERT INTO library_items_new SELECT * FROM library_items",
+            "DROP TABLE library_items",
+            "ALTER TABLE library_items_new RENAME TO library_items",
+            // Hard-code the version this migration produces so a future v3→v4
+            // migration is not silently skipped by a stale kSchemaVersion stamp.
+            QStringLiteral("PRAGMA user_version = 3"),
+            "COMMIT",
+            "PRAGMA foreign_keys = ON"
+        };
+
+        QSqlQuery mq(db);
+        for (const QString &sql : migration) {
+            if (!mq.exec(sql)) {
+                qCritical() << "Migration v2→v3 failed at:" << sql
+                            << "\nError:" << mq.lastError().text();
+                mq.exec("ROLLBACK");
+                mq.exec("PRAGMA foreign_keys = ON");
+                return false;
+            }
+        }
+        qDebug() << "Migration to schema version 3 complete.";
+        // Chain into any future migration so a single startup advances the DB
+        // all the way to kSchemaVersion. Today this just returns true.
+        return verifySchemaVersion(connectionName);
     }
 
     qCritical("Database schema version mismatch: expected %d, found %d. "
@@ -271,6 +364,8 @@ bool insertSampleData(const QString &connectionName)
             ('lccn:n78095332', 1, 'saved'),
             ('lccn:n79025140', 3, 'downloaded')
         )"
+        // NOTE: preset voices are seeded by createSchema() so they exist in
+        // production builds (which skip insertSampleData under !QT_DEBUG).
     };
 
     for (const QString &sql : inserts) {

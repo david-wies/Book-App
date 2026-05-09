@@ -30,7 +30,9 @@ set(COLLECTOR_SOURCES
 )
 
 set(GUI_SOURCES
+    src/gui/dialogs/audiobook_flow_dialog.cpp
     src/gui/dialogs/download_flow_dialog.cpp
+    src/gui/dialogs/voice_upload_dialog.cpp
     src/gui/main_window.cpp
     src/gui/panels/book_details_panel.cpp
     src/gui/screens/explore_screen.cpp
@@ -40,11 +42,14 @@ set(GUI_SOURCES
     src/gui/services/explore_service.cpp
     src/gui/services/library_service.cpp
     src/gui/services/search_service.cpp
+    src/gui/services/tts_service.cpp
     src/gui/widgets/badge_label.cpp
     src/gui/widgets/book_card_delegate.cpp
     src/gui/widgets/empty_state_widget.cpp
+    src/gui/widgets/mini_audio_player_widget.cpp
     src/gui/widgets/search_result_delegate.cpp
     src/gui/widgets/step_indicator_widget.cpp
+    src/gui/widgets/voice_selector_widget.cpp
     src/gui/query_worker.cpp
 )
 
@@ -149,3 +154,8 @@ add_bookhub_test(test_step_indicator_widget
     tests/gui/test_step_indicator_widget.cpp
 )
 label_bookhub_test(test_step_indicator_widget sanity gui widgets)
+
+add_bookhub_test(test_audiobook_flow_dialog
+    tests/gui/test_audiobook_flow_dialog.cpp
+)
+label_bookhub_test(test_audiobook_flow_dialog sanity gui audiobook)
