@@ -3,6 +3,7 @@
 #include "tts_types.h"
 
 #include <QByteArray>
+#include <QByteArrayView>
 #include <QList>
 #include <QObject>
 #include <QString>
@@ -76,7 +77,8 @@ private:
     static QByteArray synthesizeWav(const QString &text,
                                     const VoiceProfile &profile,
                                     int durationMs);
-    static void appendAscii(QByteArray &data, const char *text);
+    // tag must be exactly 4 characters (FourCC). Asserted in debug builds.
+    static void appendFourCC(QByteArray &data, QByteArrayView tag);
     static void appendUInt16LE(QByteArray &data, quint16 value);
     static void appendUInt32LE(QByteArray &data, quint32 value);
 

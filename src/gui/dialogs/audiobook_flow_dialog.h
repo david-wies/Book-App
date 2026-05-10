@@ -10,7 +10,6 @@ class QListWidget;
 class QPushButton;
 class QProgressBar;
 class QStackedWidget;
-class QTimer;
 #ifdef BOOKHUB_HAVE_MULTIMEDIA
 class QMediaPlayer;
 class QAudioOutput;
@@ -32,10 +31,13 @@ class AudiobookFlowDialog : public QDialog
     Q_OBJECT
 
 public:
+    // ttsService: caller retains ownership. Null → a NativeTTSService is created
+    // and owned by this dialog.
     explicit AudiobookFlowDialog(LibraryService *libraryService,
                                  QueryWorker *worker,
                                  TTSService *ttsService = nullptr,
                                  QWidget *parent = nullptr);
+    ~AudiobookFlowDialog() override;
 
     void startForBook(const QString &bookId);
 
@@ -112,8 +114,7 @@ private:
     QByteArray m_previewAudioData;
     QString m_previewTempPath;
     bool m_previewListened{false};
-    qint64 m_previewElapsedMs{0}; // accumulated playback ms for the 3-second gate
-    QTimer *m_playbackTimer{};    // ticks while preview plays (non-Multimedia fallback)
+    bool m_previewPlaying{false}; // true while QMediaPlayer is in PlayingState
     QString m_generatedOutputPath;
 #ifdef BOOKHUB_HAVE_MULTIMEDIA
     QMediaPlayer *m_mediaPlayer{};

@@ -44,6 +44,10 @@ qint64 wavDurationMsFromBytes(const QByteArray &wav)
         return 0;
     if (wav.mid(0, 4) != "RIFF" || wav.mid(8, 4) != "WAVE")
         return 0;
+    // Verify 'fmt ' subchunk and PCM audio format (1). Non-PCM encodings
+    // (ADPCM, IEEE float) produce incorrect durations from this fixed formula.
+    if (wav.mid(12, 4) != "fmt " || wav.mid(20, 2) != QByteArray("\x01\x00", 2))
+        return 0;
 
     auto u16 = [&wav](int off) -> quint32 {
         return static_cast<quint32>(static_cast<uchar>(wav[off])) |
@@ -135,7 +139,6 @@ AudiobookFlowDialog::AudiobookFlowDialog(LibraryService *libraryService,
 
     connect(m_mediaPlayer, &QMediaPlayer::positionChanged, this, [this](qint64 posMs) {
         m_previewPlayer->setCurrentTime(posMs);
-        m_previewElapsedMs = posMs;
         if (!m_previewListened && posMs >= 3000) {
             m_previewListened = true;
             updateNextButtonEnabled();
@@ -149,8 +152,10 @@ AudiobookFlowDialog::AudiobookFlowDialog(LibraryService *libraryService,
                 m_previewPlayer->setPlaying(playing);
                 if (playing) {
                     m_previewVoiceBtn->setText(QStringLiteral("■ Stop"));
+                    m_previewPlaying = true;
                 } else if (!m_previewAudioData.isEmpty()) {
                     m_previewVoiceBtn->setText(QStringLiteral("▶ Preview selected voice"));
+                    m_previewPlaying = false;
                 }
                 if (state == QMediaPlayer::StoppedState)
                     m_previewPlayer->setCurrentTime(0);
@@ -158,6 +163,12 @@ AudiobookFlowDialog::AudiobookFlowDialog(LibraryService *libraryService,
 #endif
 
     resetState();
+}
+
+AudiobookFlowDialog::~AudiobookFlowDialog()
+{
+    if (!m_previewTempPath.isEmpty())
+        QFile::remove(m_previewTempPath);
 }
 
 void AudiobookFlowDialog::buildUi()
@@ -212,7 +223,7 @@ void AudiobookFlowDialog::buildUi()
             this,
             &AudiobookFlowDialog::onVoiceUploadRequested);
     voiceLayout->addWidget(m_voiceSelector);
-    // Phase 3: connect to TTSService to generate a 10-second preview clip
+    // Generates a 4-second preview clip via TTSService; see kPreviewDurationMs.
     m_previewVoiceBtn = new QPushButton("▶ Preview selected voice", this);
     m_previewVoiceBtn->setEnabled(false); // enabled once a voice is selected
     connect(m_previewVoiceBtn,
@@ -324,7 +335,7 @@ void AudiobookFlowDialog::resetState()
     m_selectedVoiceName.clear();
     m_previewAudioData.clear();
     m_previewListened = false;
-    m_previewElapsedMs = 0;
+    m_previewPlaying = false;
     if (!m_previewTempPath.isEmpty()) {
         QFile::remove(m_previewTempPath);
         m_previewTempPath.clear();
@@ -434,7 +445,7 @@ void AudiobookFlowDialog::onVoiceSelectionChanged(int voiceId, const QString &vo
     m_previewText->setText(previewScript());
     m_previewAudioData.clear();
     m_previewListened = false;
-    m_previewElapsedMs = 0;
+    m_previewPlaying = false;
     if (!m_previewTempPath.isEmpty()) {
         QFile::remove(m_previewTempPath);
         m_previewTempPath.clear();
@@ -510,9 +521,7 @@ void AudiobookFlowDialog::onStopPreview()
     if (m_mediaPlayer)
         m_mediaPlayer->stop();
 #endif
-    if (m_playbackTimer) {
-        m_playbackTimer->stop();
-    }
+    m_previewPlaying = false;
     m_previewPlayer->setPlaying(false);
     if (!m_previewAudioData.isEmpty())
         m_previewVoiceBtn->setText(QStringLiteral("▶ Preview selected voice"));
@@ -550,8 +559,7 @@ void AudiobookFlowDialog::onPreviewVoiceClicked()
     if (m_selectedVoiceId < 0 || !m_ttsService)
         return;
 
-    // If the button shows "■ Stop" (audio is playing), stop playback.
-    if (m_previewVoiceBtn->text() == QStringLiteral("■ Stop")) {
+    if (m_previewPlaying) {
         onStopPreview();
         return;
     }
@@ -575,10 +583,14 @@ void AudiobookFlowDialog::onPreviewGenerated(int voiceId, const QByteArray &audi
     m_previewTempPath =
         QDir::tempPath() +
         QStringLiteral("/bookhub-preview-%1.wav").arg(QDateTime::currentMSecsSinceEpoch());
-    QFile previewFile(m_previewTempPath);
-    if (audioData.isEmpty() || !previewFile.open(QIODevice::WriteOnly) ||
-        previewFile.write(audioData) != audioData.size()) {
-        m_previewTempPath.clear();
+    {
+        // Scope the QFile so it is closed before QMediaPlayer opens the same path.
+        // On Windows, an open write handle prevents the player from reading the file.
+        QFile previewFile(m_previewTempPath);
+        if (audioData.isEmpty() || !previewFile.open(QIODevice::WriteOnly) ||
+            previewFile.write(audioData) != audioData.size()) {
+            m_previewTempPath.clear();
+        }
     }
 
     m_previewVoiceBtn->setEnabled(true);

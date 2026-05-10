@@ -1,6 +1,7 @@
 #include "pocket_tts_service.h"
 
 #include <QDir>
+#include <QDirIterator>
 #include <QSet>
 #include <QStandardPaths>
 #include <QTimer>
@@ -64,8 +65,9 @@ bool PocketTTSService::libraryAvailable() noexcept
 
 bool PocketTTSService::modelsAvailable()
 {
-    const QDir dir(modelDir());
-    return dir.exists() && !dir.entryList(QDir::Files).isEmpty();
+    // Check for any file without listing the whole directory (O(1) vs O(n)).
+    QDirIterator it(modelDir(), QDir::Files | QDir::NoDotAndDotDot);
+    return it.hasNext();
 }
 
 QString PocketTTSService::modelDir()
@@ -100,8 +102,10 @@ void PocketTTSService::generatePreview(int voiceId, const QString &voiceName, co
     // TODO (Task 22 + Task 14): run PocketTTS inference with m_referenceAudioPath as the
     // conditioning signal. Emit previewGenerated(voiceId, wavBytes) and return.
     Q_UNUSED(voiceId)
+    // Prevent fall-through to the failure emit below once synthesis is wired in.
+    return;
 #endif
-    // Library not linked or TODO above not yet implemented — emit empty data so the dialog
+    // Library not linked or synthesis not yet implemented — emit empty data so the dialog
     // can show duration 0:00 and let the user retry once models are ready.
     QTimer::singleShot(0, this, [this, voiceId] { emit previewGenerated(voiceId, QByteArray{}); });
 }
@@ -123,8 +127,10 @@ void PocketTTSService::generateAudiobook(int voiceId,
     // TODO (Task 22 + Task 14): run PocketTTS full-document synthesis.
     // Emit generationProgress() updates and generationCompleted(true, outputPath). Return.
     Q_UNUSED(voiceId)
+    // Prevent fall-through to the failure emit below once synthesis is wired in.
+    return;
 #endif
-    // Library not linked or TODO above not yet implemented — emit failure.
+    // Library not linked or synthesis not yet implemented — emit failure.
     QTimer::singleShot(0, this, [this] { emit generationCompleted(false, {}); });
 }
 

@@ -414,6 +414,7 @@ void AudiobookFlowDialogTest::startGeneration_succeedsWithAllSelections()
     QTRY_COMPARE(m_dialog->m_progressBar->value(), 100);
     QCOMPARE(m_dialog->m_nextBtn->text(), QStringLiteral("Close"));
     QVERIFY(QFileInfo::exists(m_dialog->m_generatedOutputPath));
+    QFile::remove(m_dialog->m_generatedOutputPath);
 }
 
 void AudiobookFlowDialogTest::startGeneration_showsSaveAsButton()
@@ -429,6 +430,7 @@ void AudiobookFlowDialogTest::startGeneration_showsSaveAsButton()
     QTRY_COMPARE(m_dialog->m_nextBtn->text(), QStringLiteral("Close"));
     QVERIFY(!m_dialog->m_openFileBtn->isHidden());
     QVERIFY(!m_dialog->m_saveAsBtn->isHidden());
+    QFile::remove(m_dialog->m_generatedOutputPath);
 }
 
 void AudiobookFlowDialogTest::startGeneration_writesWavFile()

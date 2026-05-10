@@ -55,6 +55,8 @@ private:
 
     QString m_language;
     QString m_referenceAudioPath;
+    // Owned timer for async generation progress ticks. Null when idle.
+    // Created in generateAudiobook() once real synthesis is wired in (Task 22).
     QTimer *m_generationTimer{};
 };
 

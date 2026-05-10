@@ -43,6 +43,8 @@ public:
     void cancel() override;
 
 private:
+    // Owned timer for async generation progress ticks. Null when idle.
+    // Created in generateAudiobook() once real synthesis is wired in (Task 22).
     QTimer *m_generationTimer{};
 };
 

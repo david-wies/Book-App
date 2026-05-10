@@ -28,6 +28,10 @@ int wavDurationMs(const QString &filePath)
     const QByteArray header = file.read(44);
     if (header.size() < 44 || header.mid(0, 4) != "RIFF" || header.mid(8, 4) != "WAVE")
         return -1;
+    // Verify 'fmt ' subchunk and PCM audio format (1). Non-PCM encodings
+    // (ADPCM, IEEE float) produce incorrect durations from this fixed formula.
+    if (header.mid(12, 4) != "fmt " || header.mid(20, 2) != QByteArray("\x01\x00", 2))
+        return -1;
 
     auto readUInt16 = [&header](int offset) {
         return static_cast<quint16>(

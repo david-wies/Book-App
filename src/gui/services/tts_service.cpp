@@ -55,7 +55,9 @@ void NativeTTSService::generateAudiobook(int voiceId,
         m_generationTimer = nullptr;
 
         QSaveFile file(outputPath);
-        const int duration = std::clamp(static_cast<int>(script.size()) * 65, 7000, 45000);
+        const qsizetype rawDuration = script.size() * 65;
+        const int duration = static_cast<int>(
+            std::clamp(rawDuration, qsizetype{7000}, qsizetype{45000}));
         const QByteArray wav = synthesizeWav(script, profile, duration);
         const bool success =
             file.open(QIODevice::WriteOnly) && file.write(wav) == wav.size() && file.commit();
@@ -129,10 +131,10 @@ QByteArray NativeTTSService::synthesizeWav(const QString &text,
     }
 
     QByteArray wav;
-    appendAscii(wav, "RIFF");
+    appendFourCC(wav, "RIFF");
     appendUInt32LE(wav, static_cast<quint32>(36 + pcm.size()));
-    appendAscii(wav, "WAVE");
-    appendAscii(wav, "fmt ");
+    appendFourCC(wav, "WAVE");
+    appendFourCC(wav, "fmt ");
     appendUInt32LE(wav, 16);
     appendUInt16LE(wav, 1);
     appendUInt16LE(wav, kChannels);
@@ -140,15 +142,16 @@ QByteArray NativeTTSService::synthesizeWav(const QString &text,
     appendUInt32LE(wav, (kSampleRate * kChannels * kBitsPerSample) / 8);
     appendUInt16LE(wav, (kChannels * kBitsPerSample) / 8);
     appendUInt16LE(wav, kBitsPerSample);
-    appendAscii(wav, "data");
+    appendFourCC(wav, "data");
     appendUInt32LE(wav, static_cast<quint32>(pcm.size()));
     wav.append(pcm);
     return wav;
 }
 
-void NativeTTSService::appendAscii(QByteArray &data, const char *text)
+void NativeTTSService::appendFourCC(QByteArray &data, QByteArrayView tag)
 {
-    data.append(text, 4);
+    Q_ASSERT(tag.size() == 4);
+    data.append(tag);
 }
 
 void NativeTTSService::appendUInt16LE(QByteArray &data, quint16 value)
