@@ -19,11 +19,17 @@ namespace bookhub::gui {
 // Build with -DENABLE_SHERPA_ONNX=ON to link the sherpa-onnx library and
 // enable real synthesis. Without it, the service degrades gracefully.
 //
-// NOTE: GPU acceleration — when CUDA Toolkit ≥11 is found at configure time,
-// BOOKHUB_HAVE_CUDA is defined and SherpaOnnxOfflineTtsConfig::provider will be
-// set to "cuda" during Task 22 synthesis wiring. The sherpa-onnx library must
-// itself be a CUDA-enabled build; finding the toolkit is necessary but not
-// sufficient for GPU inference to work at runtime.
+// NOTE: GPU acceleration — Task 22 selects the ONNX execution provider based
+// on whichever backend was detected at configure time (BOOKHUB_HAVE_GPU is set
+// whenever any backend is found):
+//   BOOKHUB_HAVE_CUDA     → provider = "cuda"     (NVIDIA, Linux/Windows)
+//   BOOKHUB_HAVE_COREML   → provider = "coreml"   (Apple, macOS)
+//   BOOKHUB_HAVE_DIRECTML → provider = "dml"      (Windows, all GPU vendors)
+//   BOOKHUB_HAVE_ROCM     → provider = "rocm"     (AMD, Linux)
+//   BOOKHUB_HAVE_OPENVINO → provider = "openvino" (Intel iGPU, Linux)
+//   (none)                → provider = "cpu"      (default)
+// The sherpa-onnx library must itself be built with the matching backend;
+// finding the toolkit is necessary but not sufficient for GPU inference.
 
 class SherpaOnnxTTSService final : public TTSService
 {

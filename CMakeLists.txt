@@ -127,22 +127,56 @@ if(ENABLE_POCKET_TTS)
 endif()
 
 # ---------------------------------------------------------------------------
-# CUDA / GPU acceleration — auto-detected, no opt-in required
+# GPU / accelerator backend — auto-detected, no opt-in required
 # ---------------------------------------------------------------------------
-# When CUDA Toolkit ≥11 is present on the host, BOOKHUB_HAVE_CUDA is defined
-# and the ONNX Runtime sessions in SherpaOnnxTTSService and PocketTTSService
-# will be configured to use the CUDA execution provider once synthesis is
-# wired in (Task 22).
+# Exactly one backend macro is defined; the first match in this priority
+# chain wins.  Task 22 maps each macro to the correct ONNX execution-
+# provider string when wiring real synthesis.
 #
-# IMPORTANT: the TTS library must itself be a CUDA-enabled build — detecting
-# the toolkit is a necessary but not sufficient condition for GPU inference to
-# work at runtime. CPU inference is used as a fallback when CUDA is absent.
+# Priority and scope:
+#   1. BOOKHUB_HAVE_CUDA     — NVIDIA CUDA ≥11        (Linux, Windows)
+#   2. BOOKHUB_HAVE_COREML   — Apple CoreML           (macOS, always present)
+#   3. BOOKHUB_HAVE_DIRECTML — Windows DirectML       (Windows 10+, all GPU vendors)
+#   4. BOOKHUB_HAVE_ROCM     — AMD ROCm / HIP         (Linux)
+#   5. BOOKHUB_HAVE_OPENVINO — Intel OpenVINO         (Linux, Windows, macOS)
+#   6. (none)                — CPU fallback
+#
+# BOOKHUB_HAVE_GPU is always defined alongside the specific macro so code
+# that only needs to guard any GPU path can use a single check.
+#
+# IMPORTANT: the TTS library (Sherpa-ONNX / ONNX Runtime) must itself be
+# built with the matching backend — detecting the toolkit is necessary but
+# not sufficient for GPU inference to work at runtime.
 find_package(CUDAToolkit 11 QUIET)
 if(CUDAToolkit_FOUND)
-    message(STATUS "CUDA ${CUDAToolkit_VERSION} found — GPU inference enabled for ONNX-based TTS engines (BOOKHUB_HAVE_CUDA)")
-    target_compile_definitions(bookhub_gui PUBLIC BOOKHUB_HAVE_CUDA)
+    # NVIDIA CUDA — highest priority on all platforms that support it.
+    message(STATUS "CUDA ${CUDAToolkit_VERSION} found — GPU inference via CUDA execution provider (BOOKHUB_HAVE_CUDA)")
+    target_compile_definitions(bookhub_gui PUBLIC BOOKHUB_HAVE_GPU BOOKHUB_HAVE_CUDA)
+elseif(APPLE)
+    # CoreML is always available on Apple platforms — no external toolkit needed.
+    message(STATUS "Apple platform — GPU inference via CoreML execution provider (BOOKHUB_HAVE_COREML)")
+    target_compile_definitions(bookhub_gui PUBLIC BOOKHUB_HAVE_GPU BOOKHUB_HAVE_COREML)
+elseif(WIN32)
+    # DirectML ships with Windows 10+ and covers all GPU vendors (AMD, Intel, NVIDIA)
+    # via DirectX 12 without requiring a vendor-specific SDK.
+    message(STATUS "Windows platform — GPU inference via DirectML execution provider (BOOKHUB_HAVE_DIRECTML)")
+    target_compile_definitions(bookhub_gui PUBLIC BOOKHUB_HAVE_GPU BOOKHUB_HAVE_DIRECTML)
 else()
-    message(STATUS "CUDA Toolkit not found — TTS engines will use CPU inference")
+    # Linux without CUDA: try AMD ROCm, then Intel OpenVINO, then CPU.
+    find_package(hip QUIET HINTS /opt/rocm/lib/cmake/hip /usr/lib/cmake/hip)
+    if(hip_FOUND)
+        message(STATUS "ROCm/HIP ${hip_VERSION} found — GPU inference via ROCm execution provider (BOOKHUB_HAVE_ROCM)")
+        target_compile_definitions(bookhub_gui PUBLIC BOOKHUB_HAVE_GPU BOOKHUB_HAVE_ROCM)
+    else()
+        # Intel OpenVINO supports iGPU and CPU neural-network acceleration.
+        find_package(OpenVINO QUIET)
+        if(OpenVINO_FOUND)
+            message(STATUS "OpenVINO ${OpenVINO_VERSION} found — inference via OpenVINO execution provider (BOOKHUB_HAVE_OPENVINO)")
+            target_compile_definitions(bookhub_gui PUBLIC BOOKHUB_HAVE_GPU BOOKHUB_HAVE_OPENVINO)
+        else()
+            message(STATUS "No GPU/accelerator toolkit found — TTS engines will use CPU inference")
+        endif()
+    endif()
 endif()
 
 add_executable(bookhub

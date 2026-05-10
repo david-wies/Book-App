@@ -101,9 +101,13 @@ void PocketTTSService::generatePreview(int voiceId, const QString &voiceName, co
 #ifdef BOOKHUB_HAVE_POCKET_TTS
     // TODO (Task 22 + Task 14): run PocketTTS inference with m_referenceAudioPath as the
     // conditioning signal. Emit previewGenerated(voiceId, wavBytes) and return.
-#ifdef BOOKHUB_HAVE_CUDA
-    // TODO (Task 22): call sessionOptions.AppendExecutionProvider_CUDA(OrtCUDAProviderOptions{})
-    // before creating the ONNX Runtime session to enable GPU inference.
+#ifdef BOOKHUB_HAVE_GPU
+    // TODO (Task 22): append the matching execution provider before creating the session:
+    //   CUDA    → AppendExecutionProvider_CUDA(OrtCUDAProviderOptions{})
+    //   CoreML  → AppendExecutionProvider_CoreML(0)
+    //   DML     → AppendExecutionProvider_DML(0)
+    //   ROCm    → AppendExecutionProvider_ROCm(OrtROCMProviderOptions{})
+    //   OpenVINO→ AppendExecutionProvider_OpenVINO(OrtOpenVINOProviderOptions{})
 #endif
     Q_UNUSED(voiceId)
     // Prevent fall-through to the failure emit below once synthesis is wired in.
@@ -130,9 +134,13 @@ void PocketTTSService::generateAudiobook(int voiceId,
 #ifdef BOOKHUB_HAVE_POCKET_TTS
     // TODO (Task 22 + Task 14): run PocketTTS full-document synthesis.
     // Emit generationProgress() updates and generationCompleted(true, outputPath). Return.
-#ifdef BOOKHUB_HAVE_CUDA
-    // TODO (Task 22): call sessionOptions.AppendExecutionProvider_CUDA(OrtCUDAProviderOptions{})
-    // before creating the ONNX Runtime session to enable GPU inference.
+#ifdef BOOKHUB_HAVE_GPU
+    // TODO (Task 22): append the matching execution provider before creating the session:
+    //   CUDA    → AppendExecutionProvider_CUDA(OrtCUDAProviderOptions{})
+    //   CoreML  → AppendExecutionProvider_CoreML(0)
+    //   DML     → AppendExecutionProvider_DML(0)
+    //   ROCm    → AppendExecutionProvider_ROCm(OrtROCMProviderOptions{})
+    //   OpenVINO→ AppendExecutionProvider_OpenVINO(OrtOpenVINOProviderOptions{})
 #endif
     Q_UNUSED(voiceId)
     // Prevent fall-through to the failure emit below once synthesis is wired in.
