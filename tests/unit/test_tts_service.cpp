@@ -8,6 +8,7 @@
 #include <QTimer>
 
 #include <QtTest>
+#include <algorithm>
 
 namespace bookhub::gui {
 
@@ -84,10 +85,8 @@ void TtsServiceTest::native_generateAudiobook_writesWavFileAndEmitsSuccess()
     QCOMPARE(completed.first().at(1).toString(), path);
 
     // Progress must have reached 100 on success.
-    const bool saw100 =
-        std::any_of(progress.cbegin(), progress.cend(), [](const QList<QVariant> &args) {
-            return args.at(0).toInt() == 100;
-        });
+    const bool saw100 = std::ranges::any_of(
+        progress, [](const QList<QVariant> &args) { return args.at(0).toInt() == 100; });
     QVERIFY(saw100);
 
     QFile f(path);

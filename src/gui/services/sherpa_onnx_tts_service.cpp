@@ -50,15 +50,13 @@ void SherpaOnnxTTSService::generatePreview(int voiceId,
 
 #ifdef BOOKHUB_HAVE_SHERPA_ONNX
     if (modelAvailable(voiceId)) {
-        // TODO (Task 22): load model from modelDir(voiceId) and synthesize preview WAV.
-        // The sherpa-onnx C++ API call goes here once model packaging is in place.
-        // Until then, fall through to the "not available" path below.
+        // TODO (Task 22): load model from modelDir(voiceId) and synthesize preview WAV,
+        // then emit previewGenerated(voiceId, wavBytes). Return here once done.
+        // Until model packaging is in place, fall through to the failure path.
     }
 #endif
-
-    // Emit empty data so the dialog shows the preview button in a ready state
-    // without audio. The user will see duration 0:00 and can retry after
-    // downloading models via ModelManager (Task 22).
+    // Library not linked or model absent — emit empty data so the dialog can show
+    // duration 0:00 and let the user retry after models are downloaded (Task 22).
     QTimer::singleShot(0, this, [this, voiceId] { emit previewGenerated(voiceId, QByteArray{}); });
 }
 
@@ -67,18 +65,16 @@ void SherpaOnnxTTSService::generateAudiobook(int voiceId,
                                              const QString &text,
                                              const QString &outputPath)
 {
+    Q_UNUSED(voiceId)
     Q_UNUSED(voiceName)
     Q_UNUSED(text)
     Q_UNUSED(outputPath)
     cancel();
 
 #ifdef BOOKHUB_HAVE_SHERPA_ONNX
-    if (modelAvailable(voiceId)) {
-        // TODO (Task 22): synthesize full audiobook using sherpa-onnx inference.
-        // Report progress via generationProgress() and emit generationCompleted()
-        // on finish. Until model packaging is in place, fall through below.
-        Q_UNUSED(voiceId)
-    }
+    // TODO (Task 22): synthesize full audiobook using sherpa-onnx inference.
+    // Check modelAvailable(voiceId), load model, report progress via generationProgress(),
+    // and emit generationCompleted() on finish.
 #endif
 
     // Model not available — emit failure immediately so the dialog surfaces an error.

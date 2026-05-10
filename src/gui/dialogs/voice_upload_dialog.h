@@ -8,7 +8,8 @@ class QLabel;
 
 namespace bookhub::gui {
 
-class VoiceUploadDialog : public QDialog {
+class VoiceUploadDialog : public QDialog
+{
     Q_OBJECT
 
 public:

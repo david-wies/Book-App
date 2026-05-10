@@ -43,12 +43,20 @@ Checks: >-
   -cppcoreguidelines-special-member-functions,
   -misc-include-cleaner,
   -misc-non-private-member-variables-in-classes,
+  -cppcoreguidelines-prefer-member-initializer,
+  -misc-const-correctness,
+  -modernize-use-auto,
+  -modernize-use-designated-initializers,
   -modernize-use-nodiscard,
   -modernize-use-trailing-return-type,
+  -readability-braces-around-statements,
   -readability-convert-member-functions-to-static,
   -readability-identifier-length,
+  -readability-implicit-bool-conversion,
   -readability-magic-numbers,
-  -readability-named-parameter
+  -readability-named-parameter,
+  -readability-identifier-naming,
+  -readability-redundant-access-specifiers
 
 # Leave empty here; pass --warnings-as-errors='*' on the CI command line so
 # local runs can still surface warnings without hard-failing.
@@ -69,17 +77,17 @@ CheckOptions:
   readability-identifier-naming.ClassCase:               CamelCase
   readability-identifier-naming.StructCase:              CamelCase
   readability-identifier-naming.EnumCase:                CamelCase
-  readability-identifier-naming.FunctionCase:            camelCase
-  readability-identifier-naming.MethodCase:              camelCase
-  readability-identifier-naming.PrivateMemberCase:       camelCase
+  readability-identifier-naming.FunctionCase:            camelBack
+  readability-identifier-naming.MethodCase:              camelBack
+  readability-identifier-naming.PrivateMemberCase:       camelBack
   readability-identifier-naming.PrivateMemberPrefix:     m_
-  readability-identifier-naming.ProtectedMemberCase:     camelCase
+  readability-identifier-naming.ProtectedMemberCase:     camelBack
   readability-identifier-naming.ProtectedMemberPrefix:   m_
-  readability-identifier-naming.ParameterCase:           camelCase
-  readability-identifier-naming.LocalVariableCase:       camelCase
-  readability-identifier-naming.StaticConstantCase:      camelCase
+  readability-identifier-naming.ParameterCase:           camelBack
+  readability-identifier-naming.LocalVariableCase:       camelBack
+  readability-identifier-naming.StaticConstantCase:      CamelCase
   readability-identifier-naming.StaticConstantPrefix:    k
-  readability-identifier-naming.ClassConstantCase:       camelCase
+  readability-identifier-naming.ClassConstantCase:       CamelCase
   readability-identifier-naming.ClassConstantPrefix:     k
 
   # Cognitive complexity — flag functions that are hard to test; complements

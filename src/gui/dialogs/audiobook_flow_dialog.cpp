@@ -671,8 +671,8 @@ void AudiobookFlowDialog::populateFormatList()
 {
     m_formatList->clear();
     int epubIndex = -1;
-    for (int i = 0; i < m_formats.size(); ++i) {
-        const QString &type = m_formats[i].formatType;
+    for (const auto &format : std::as_const(m_formats)) {
+        const QString &type = format.formatType;
         if (!isTextCompatibleFormat(type))
             continue;
         QString label = type;

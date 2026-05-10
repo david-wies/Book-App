@@ -5,6 +5,8 @@
 #include <QStandardPaths>
 #include <QTimer>
 
+#include <utility>
+
 #ifdef BOOKHUB_HAVE_POCKET_TTS
 // When PocketTTS.cpp is compiled in, include its header here.
 // Actual synthesis implementation will be added once model packaging
@@ -20,7 +22,7 @@ namespace {
 // Stored as a QSet for O(1) lookup. Tags are lower-cased before lookup.
 const QSet<QString> &supportedTags()
 {
-    static const QSet<QString> tags{
+    static const QSet<QString> kTags{
         QStringLiteral("en"),
         QStringLiteral("fr"),
         QStringLiteral("de"),
@@ -28,15 +30,17 @@ const QSet<QString> &supportedTags()
         QStringLiteral("pt"),
         QStringLiteral("es"),
     };
-    return tags;
+    return kTags;
 }
 
 } // namespace
 
 PocketTTSService::PocketTTSService(const QString &language,
-                                   const QString &referenceAudioPath,
+                                   QString referenceAudioPath,
                                    QObject *parent)
-    : TTSService(parent), m_language(language.toLower()), m_referenceAudioPath(referenceAudioPath)
+    : TTSService(parent),
+      m_language(language.toLower()),
+      m_referenceAudioPath(std::move(referenceAudioPath))
 {}
 
 PocketTTSService::~PocketTTSService()
@@ -93,12 +97,12 @@ void PocketTTSService::generatePreview(int voiceId, const QString &voiceName, co
         return;
 
 #ifdef BOOKHUB_HAVE_POCKET_TTS
-    // TODO (Task 22 + Task 14): run PocketTTS inference with m_referenceAudioPath
-    // as the conditioning signal and emit previewGenerated with the result WAV bytes.
+    // TODO (Task 22 + Task 14): run PocketTTS inference with m_referenceAudioPath as the
+    // conditioning signal. Emit previewGenerated(voiceId, wavBytes) and return.
     Q_UNUSED(voiceId)
 #endif
-
-    // Library not linked yet — emit empty data.
+    // Library not linked or TODO above not yet implemented — emit empty data so the dialog
+    // can show duration 0:00 and let the user retry once models are ready.
     QTimer::singleShot(0, this, [this, voiceId] { emit previewGenerated(voiceId, QByteArray{}); });
 }
 
@@ -117,9 +121,10 @@ void PocketTTSService::generateAudiobook(int voiceId,
 
 #ifdef BOOKHUB_HAVE_POCKET_TTS
     // TODO (Task 22 + Task 14): run PocketTTS full-document synthesis.
+    // Emit generationProgress() updates and generationCompleted(true, outputPath). Return.
     Q_UNUSED(voiceId)
 #endif
-
+    // Library not linked or TODO above not yet implemented — emit failure.
     QTimer::singleShot(0, this, [this] { emit generationCompleted(false, {}); });
 }
 

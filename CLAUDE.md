@@ -8,7 +8,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 git config core.hooksPath .githooks
 ```
 
-This activates the pre-push hook in `.githooks/pre-push`. The hook enforces two rules locally:
+This activates both hooks in `.githooks/`:
+- **pre-commit** — rejects staged C++/header files that are not clang-format clean. Fix with `clang-format -i --style=file <file>`.
+- **pre-push** — enforces branch-naming rules before any push reaches GitHub.
+
+The pre-push hook enforces two rules locally:
 
 1. **No direct push to `master`** — any push that targets `master` as the remote ref is rejected, regardless of who runs it or which branch they are on.
 2. **Source must be `develop` or `release/*`** — if the remote destination is `master`, only the `develop` branch or a `release/vX.Y.Z` branch (created by `tools/prepare-release.sh`) is a valid source. Pushes from `feature/*`, `fix/*`, or any other branch are blocked with a clear error message pointing to the correct workflow.
@@ -84,7 +88,7 @@ cmake -B build-tsan -DENABLE_TSAN=ON ..
 cmake --build build-tsan
 cd build-tsan && ctest --output-on-failure
 ```
-The CMake options (`ENABLE_SANITIZERS`, `ENABLE_TSAN`, etc.) are defined in `docs/static-analysis-tools.md` — add them to `CMakeLists.txt` if not yet present.
+The CMake options (`ENABLE_SANITIZERS`, `ENABLE_TSAN`, `ENABLE_MSAN`) are defined in `CMakeLists.txt`. Full tool reference: `docs/static-analysis-tools.md`.
 
 **Before starting a refactor — complexity check:**
 Run Lizard on the area you are about to modify. Functions with cyclomatic complexity > 10 or length > 60 lines are high-risk targets — understand them before adding more:
@@ -168,7 +172,7 @@ source tools/venv/bin/activate && lizard src/path/to/target/ --CCN 10 --length 6
 1. **Design comparison** — for every changed source file, check whether a corresponding design doc exists under `docs/design/` or a spec under `spec/`. If one does, read it and verify the implementation matches the specified behaviour, interfaces, and constraints. Flag any divergence before proceeding.
 2. **clang-tidy** — `run-clang-tidy -p build src/ tests/`; fix all warnings.
 3. **clazy** — `clazy-standalone -checks=level1 -p build $(find src/ -name '*.cpp')`; fix all warnings.
-4. **cppcheck** — `cppcheck --enable=all --std=c++23 --error-exitcode=1 --suppress=missingIncludeSystem --suppress=missingInclude -I src/ src/`; fix all errors.
+4. **cppcheck** — `cppcheck --suppressions-list=cppcheck-suppressions.txt --enable=all --std=c++23 --error-exitcode=1 --suppress=missingIncludeSystem --suppress=missingInclude -I src/ src/`; fix all errors.
 5. **`/review`** — run the slash command to perform a full code review of the branch changes and address any issues found. If `/review` finds any issues — even minor ones — post a comment on the PR summarising the findings: `gh pr comment <number> --body "..."`.
 6. **Test plan** — if the PR description includes a test plan, execute every step and confirm each item passes before marking the review complete.
 

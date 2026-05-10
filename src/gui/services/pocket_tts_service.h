@@ -25,7 +25,7 @@ public:
     // language:          BCP-47 language tag for the book (e.g. "en", "fr").
     // referenceAudioPath: path to the user's uploaded .wav/.mp3/.flac sample.
     explicit PocketTTSService(const QString &language,
-                              const QString &referenceAudioPath,
+                              QString referenceAudioPath,
                               QObject *parent = nullptr);
     ~PocketTTSService() override;
 

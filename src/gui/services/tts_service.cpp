@@ -103,7 +103,7 @@ QByteArray NativeTTSService::synthesizeWav(const QString &text,
 
     const int sampleCount = std::max(1, (kSampleRate * durationMs) / 1000);
     QByteArray pcm;
-    pcm.reserve(sampleCount * 2);
+    pcm.reserve(static_cast<qsizetype>(sampleCount) * 2);
 
     const QString source = text.isEmpty() ? QStringLiteral("BookHub") : text;
     for (int i = 0; i < sampleCount; ++i) {
@@ -112,11 +112,11 @@ QByteArray NativeTTSService::synthesizeWav(const QString &text,
             static_cast<int>((static_cast<qint64>(i) * source.size()) / sampleCount);
         const int safeIndex = std::clamp(charIndex, 0, static_cast<int>(source.size()) - 1);
         const ushort code = source.at(safeIndex).unicode();
-        const double wordShape = 1.0 + static_cast<double>(code % 17) / 75.0;
-        const double syllable = 0.62 + 0.38 * std::sin(kTwoPi * profile.cadence * t);
-        const double phrase = 0.82 + 0.18 * std::sin(kTwoPi * 0.55 * t);
+        const double wordShape = 1.0 + (static_cast<double>(code % 17) / 75.0);
+        const double syllable = 0.62 + (0.38 * std::sin(kTwoPi * profile.cadence * t));
+        const double phrase = 0.82 + (0.18 * std::sin(kTwoPi * 0.55 * t));
         const double frequency =
-            profile.baseFrequency * wordShape + 18.0 * std::sin(kTwoPi * 1.7 * t);
+            (profile.baseFrequency * wordShape) + (18.0 * std::sin(kTwoPi * 1.7 * t));
         const double carrier = std::sin(kTwoPi * frequency * t);
         const double overtone = std::sin(kTwoPi * frequency * 2.0 * t) * profile.brightness;
         const double consonant = std::sin(kTwoPi * frequency * 3.0 * t) * 0.08;
@@ -137,8 +137,8 @@ QByteArray NativeTTSService::synthesizeWav(const QString &text,
     appendUInt16LE(wav, 1);
     appendUInt16LE(wav, kChannels);
     appendUInt32LE(wav, kSampleRate);
-    appendUInt32LE(wav, kSampleRate * kChannels * kBitsPerSample / 8);
-    appendUInt16LE(wav, kChannels * kBitsPerSample / 8);
+    appendUInt32LE(wav, (kSampleRate * kChannels * kBitsPerSample) / 8);
+    appendUInt16LE(wav, (kChannels * kBitsPerSample) / 8);
     appendUInt16LE(wav, kBitsPerSample);
     appendAscii(wav, "data");
     appendUInt32LE(wav, static_cast<quint32>(pcm.size()));

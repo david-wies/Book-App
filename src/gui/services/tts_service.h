@@ -56,9 +56,6 @@ class NativeTTSService final : public TTSService
 public:
     explicit NativeTTSService(QObject *parent = nullptr);
 
-    // Duration of the voice preview WAV produced by generatePreview().
-    static constexpr int kPreviewDurationMs = 4000;
-
     void generatePreview(int voiceId, const QString &voiceName, const QString &text) override;
     void generateAudiobook(int voiceId,
                            const QString &voiceName,
@@ -67,6 +64,7 @@ public:
     void cancel() override;
 
 private:
+    static constexpr int kPreviewDurationMs = 4000;
     struct VoiceProfile
     {
         double baseFrequency{180.0};
