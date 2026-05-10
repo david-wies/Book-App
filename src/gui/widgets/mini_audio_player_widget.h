@@ -16,6 +16,8 @@ public:
     void setDuration(qint64 durationMs);
     void setCurrentTime(qint64 currentTimeMs);
     bool isPlaying() const;
+    // Sync the play/pause button to external playback state without emitting signals.
+    void setPlaying(bool playing);
 
 signals:
     void playClicked();

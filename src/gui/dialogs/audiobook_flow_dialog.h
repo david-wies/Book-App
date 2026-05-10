@@ -9,6 +9,11 @@ class QListWidget;
 class QPushButton;
 class QProgressBar;
 class QStackedWidget;
+class QTimer;
+#ifdef BOOKHUB_HAVE_MULTIMEDIA
+class QMediaPlayer;
+class QAudioOutput;
+#endif
 
 namespace bookhub::gui {
 
@@ -46,6 +51,7 @@ private slots:
     void onBackClicked();
     void onNextOrGenerateClicked();
     void onPlayPreview();
+    void onStopPreview();
     void onGenerationProgress(int percent);
     void onGenerationComplete();
     void onPreviewGenerated(int voiceId, const QByteArray &audioData);
@@ -105,7 +111,13 @@ private:
     QByteArray m_previewAudioData;
     QString    m_previewTempPath;
     bool       m_previewListened{false};
+    qint64     m_previewElapsedMs{0};  // accumulated playback ms for the 3-second gate
+    QTimer    *m_playbackTimer{};      // ticks while preview plays (non-Multimedia fallback)
     QString    m_generatedOutputPath;
+#ifdef BOOKHUB_HAVE_MULTIMEDIA
+    QMediaPlayer *m_mediaPlayer{};
+    QAudioOutput *m_audioOutput{};
+#endif
 
     QLabel               *m_titleLabel{};
     StepIndicatorWidget  *m_stepIndicator{};

@@ -60,7 +60,8 @@ void NativeTTSService::generateAudiobook(int voiceId, const QString &voiceName, 
             && file.write(wav) == wav.size()
             && file.commit();
 
-        emit generationProgress(success ? 100 : 0);
+        if (success)
+            emit generationProgress(100);
         emit generationCompleted(success, success ? outputPath : QString{});
     });
     m_generationTimer->start();

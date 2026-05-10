@@ -63,6 +63,12 @@ bool MiniAudioPlayerWidget::isPlaying() const
     return m_isPlaying;
 }
 
+void MiniAudioPlayerWidget::setPlaying(bool playing)
+{
+    m_isPlaying = playing;
+    m_playPauseBtn->setText(playing ? "⏸" : "▶");
+}
+
 void MiniAudioPlayerWidget::onPlayPauseClicked()
 {
     m_isPlaying = !m_isPlaying;

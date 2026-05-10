@@ -303,9 +303,8 @@ void AudiobookFlowDialogTest::voiceUploadDialog_validatesFormatAndWavDuration()
     auto *validateButton = buttonByText(dialog, QStringLiteral("Validate & Upload"));
     QVERIFY(validateButton);
 
-    auto lineEdits = dialog.findChildren<QLineEdit *>();
-    QCOMPARE(lineEdits.size(), 2);
-    auto *voiceName = lineEdits[1];
+    auto *voiceName = dialog.findChild<QLineEdit *>(QStringLiteral("voiceNameEdit"));
+    QVERIFY(voiceName);
     voiceName->setText(QStringLiteral("My Voice"));
 
     const QString invalidPath = QDir::temp().filePath(QStringLiteral("not-a-voice.txt"));
@@ -345,7 +344,9 @@ void AudiobookFlowDialogTest::previewVoice_generatesWavData()
 
     QTRY_VERIFY(!m_dialog->m_previewAudioData.isEmpty());
     QCOMPARE(m_dialog->m_previewAudioData.left(4), QByteArray("RIFF"));
-    QCOMPARE(m_dialog->m_previewVoiceBtn->text(), QStringLiteral("Regenerate preview"));
+    // After preview is ready the button returns to its idle label so the user
+    // can generate a new one or click it again to play/stop.
+    QCOMPARE(m_dialog->m_previewVoiceBtn->text(), QStringLiteral("▶ Preview selected voice"));
 }
 
 void AudiobookFlowDialogTest::previewVoice_writesTempFile()

@@ -9,6 +9,7 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 find_package(Qt6 COMPONENTS Widgets Sql Network Test REQUIRED)
+find_package(Qt6 COMPONENTS Multimedia QUIET)
 find_package(LibArchive REQUIRED)
 
 # shared: pure database helpers, no Q_OBJECT — safe as a STATIC library consumed by all targets.
@@ -37,7 +38,9 @@ set(GUI_SOURCES
     src/gui/services/book_details_service.cpp
     src/gui/services/explore_service.cpp
     src/gui/services/library_service.cpp
+    src/gui/services/pocket_tts_service.cpp
     src/gui/services/search_service.cpp
+    src/gui/services/sherpa_onnx_tts_service.cpp
     src/gui/services/tts_service.cpp
     src/gui/widgets/badge_label.cpp
     src/gui/widgets/book_card_delegate.cpp
@@ -59,6 +62,37 @@ target_link_libraries(bookhub_collector PUBLIC Qt6::Widgets Qt6::Network shared 
 add_library(bookhub_gui OBJECT ${GUI_SOURCES})
 target_include_directories(bookhub_gui PUBLIC src)
 target_link_libraries(bookhub_gui PUBLIC Qt6::Widgets Qt6::Network shared)
+
+# Optional: Qt Multimedia for in-app audio preview on step 4 of the audiobook flow.
+# When present, MiniAudioPlayerWidget is wired to QMediaPlayer for real playback.
+# Without it, the preview falls back to opening the system audio player.
+if(Qt6Multimedia_FOUND)
+    message(STATUS "Qt6::Multimedia found — in-app preview playback enabled")
+    target_link_libraries(bookhub_gui PUBLIC Qt6::Multimedia)
+    target_compile_definitions(bookhub_gui PUBLIC BOOKHUB_HAVE_MULTIMEDIA)
+endif()
+
+# Optional: Sherpa-ONNX for real preset-voice TTS (Apache 2.0).
+# Models are managed by ModelManager (Task 22). Without this option the
+# SherpaOnnxTTSService class still compiles but degrades to emitting failure.
+option(ENABLE_SHERPA_ONNX "Enable Sherpa-ONNX TTS engine (Apache 2.0)" OFF)
+if(ENABLE_SHERPA_ONNX)
+    find_package(sherpa-onnx REQUIRED)
+    target_link_libraries(bookhub_gui PUBLIC sherpa-onnx)
+    target_compile_definitions(bookhub_gui PUBLIC BOOKHUB_HAVE_SHERPA_ONNX)
+    message(STATUS "Sherpa-ONNX TTS enabled")
+endif()
+
+# Optional: PocketTTS.cpp for zero-shot voice cloning (MIT).
+# Models are managed by ModelManager (Task 22). Without this option the
+# PocketTTSService class still compiles but degrades to emitting failure.
+option(ENABLE_POCKET_TTS "Enable PocketTTS.cpp voice cloning engine (MIT)" OFF)
+if(ENABLE_POCKET_TTS)
+    find_package(pocket-tts REQUIRED)
+    target_link_libraries(bookhub_gui PUBLIC pocket-tts)
+    target_compile_definitions(bookhub_gui PUBLIC BOOKHUB_HAVE_POCKET_TTS)
+    message(STATUS "PocketTTS.cpp voice cloning enabled")
+endif()
 
 add_executable(bookhub
     src/main.cpp
@@ -164,3 +198,8 @@ add_bookhub_test(test_audiobook_flow_dialog
     tests/gui/test_audiobook_flow_dialog.cpp
 )
 label_bookhub_test(test_audiobook_flow_dialog sanity gui audiobook)
+
+add_bookhub_test(test_tts_service
+    tests/unit/test_tts_service.cpp
+)
+label_bookhub_test(test_tts_service sanity unit tts)

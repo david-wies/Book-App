@@ -28,8 +28,9 @@ int wavDurationMs(const QString &filePath)
         return -1;
 
     auto readUInt16 = [&header](int offset) {
-        return static_cast<quint16>(static_cast<uchar>(header[offset]))
-            | static_cast<quint16>(static_cast<uchar>(header[offset + 1]) << 8);
+        return static_cast<quint16>(
+            static_cast<quint32>(static_cast<uchar>(header[offset]))
+            | (static_cast<quint32>(static_cast<uchar>(header[offset + 1])) << 8));
     };
     auto readUInt32 = [&header](int offset) {
         return static_cast<quint32>(static_cast<uchar>(header[offset]))
@@ -110,6 +111,7 @@ void VoiceUploadDialog::buildUi()
     mainLayout->addWidget(nameLabel);
 
     m_voiceNameEdit = new QLineEdit(this);
+    m_voiceNameEdit->setObjectName(QStringLiteral("voiceNameEdit"));
     m_voiceNameEdit->setPlaceholderText("e.g., My Voice");
     connect(m_voiceNameEdit, &QLineEdit::textChanged,
             this, &VoiceUploadDialog::onVoiceNameChanged);

@@ -208,8 +208,10 @@ Project-specific slash commands live in `.claude/commands/`:
 
 ### Current Status
 
-Tasks 1–13, 16, 19 complete: project scaffolding, SQLite schema, single-executable build, background collector with Gutenberg adapter, application icon, Library screen, Search screen, Explore screen, BookDetailsPanel, add/remove from library, download flow, audiobook conversion flow with TTS integration (NativeTTSService — WAV synthesis for preset voices), UI polish, multiplatform support.
+Tasks 1–12, 16, 19 complete: project scaffolding, SQLite schema, single-executable build, background collector with Gutenberg adapter, application icon, Library screen, Search screen, Explore screen, BookDetailsPanel, add/remove from library, download flow, audiobook conversion flow UI scaffold, UI polish, multiplatform support.
 
-Task 15 in progress: source adapter extensibility refactor.
+Task 15 in progress: source adapter extensibility refactor (BenYehuda and Archive adapters pending).
 
-Tasks 14, 17–18 not started: custom voice upload, packaging, and tooltip polish.
+Tasks 13 complete: TTS integration — NativeTTSService (Phase 1), SherpaOnnxTTSService and PocketTTSService stubs with model-path discovery and graceful fallback (Phase 2/3 architecture ready; actual synthesis awaits Task 22 model management). In-app WAV preview via Qt Multimedia (BOOKHUB_HAVE_MULTIMEDIA guard), preview button toggle, 3-second playback gate, all code review fixes applied.
+
+Tasks 14, 17–18, 20–25 not started: custom voice upload, packaging, tooltip polish, AudiobookService/VoiceService, ebook text extraction, TTS model management, cover art, configurable collector schedule, search chips.

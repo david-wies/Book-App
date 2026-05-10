@@ -14,6 +14,7 @@
 #include <QFileInfo>
 #include <QRegularExpression>
 #include <QStandardPaths>
+#include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -24,8 +25,44 @@
 #include <QProgressBar>
 #include <QStackedWidget>
 #include <QMessageBox>
+#ifdef BOOKHUB_HAVE_MULTIMEDIA
+#include <QAudioOutput>
+#include <QMediaPlayer>
+#endif
 
 namespace bookhub::gui {
+
+namespace {
+
+// Parse duration from a standard PCM WAV byte array (44-byte header assumed).
+// Returns 0 on malformed or missing data.
+qint64 wavDurationMsFromBytes(const QByteArray &wav)
+{
+    if (wav.size() < 44) return 0;
+    if (wav.mid(0, 4) != "RIFF" || wav.mid(8, 4) != "WAVE") return 0;
+
+    auto u16 = [&wav](int off) -> quint32 {
+        return static_cast<quint32>(static_cast<uchar>(wav[off]))
+            | (static_cast<quint32>(static_cast<uchar>(wav[off + 1])) << 8);
+    };
+    auto u32 = [&wav](int off) -> quint32 {
+        return static_cast<quint32>(static_cast<uchar>(wav[off]))
+            | (static_cast<quint32>(static_cast<uchar>(wav[off + 1])) << 8)
+            | (static_cast<quint32>(static_cast<uchar>(wav[off + 2])) << 16)
+            | (static_cast<quint32>(static_cast<uchar>(wav[off + 3])) << 24);
+    };
+
+    const quint32 sampleRate    = u32(24);
+    const quint32 channels      = u16(22);
+    const quint32 bitsPerSample = u16(34);
+    const quint32 dataBytes     = u32(40);
+
+    const quint64 bytesPerSecond = static_cast<quint64>(sampleRate) * channels * bitsPerSample / 8;
+    if (bytesPerSecond == 0) return 0;
+    return static_cast<qint64>(static_cast<quint64>(dataBytes) * 1000 / bytesPerSecond);
+}
+
+} // namespace
 
 AudiobookFlowDialog::AudiobookFlowDialog(LibraryService *libraryService,
                                          QueryWorker    *worker,
@@ -73,6 +110,35 @@ AudiobookFlowDialog::AudiobookFlowDialog(LibraryService *libraryService,
     }
 
     buildUi();
+
+#ifdef BOOKHUB_HAVE_MULTIMEDIA
+    m_audioOutput = new QAudioOutput(this);
+    m_mediaPlayer = new QMediaPlayer(this);
+    m_mediaPlayer->setAudioOutput(m_audioOutput);
+
+    connect(m_mediaPlayer, &QMediaPlayer::positionChanged,
+            this, [this](qint64 posMs) {
+                m_previewPlayer->setCurrentTime(posMs);
+                m_previewElapsedMs = posMs;
+                if (!m_previewListened && posMs >= 3000) {
+                    m_previewListened = true;
+                    updateNextButtonEnabled();
+                }
+            });
+    connect(m_mediaPlayer, &QMediaPlayer::playbackStateChanged,
+            this, [this](QMediaPlayer::PlaybackState state) {
+                const bool playing = (state == QMediaPlayer::PlayingState);
+                m_previewPlayer->setPlaying(playing);
+                if (playing) {
+                    m_previewVoiceBtn->setText(QStringLiteral("■ Stop"));
+                } else if (!m_previewAudioData.isEmpty()) {
+                    m_previewVoiceBtn->setText(QStringLiteral("▶ Preview selected voice"));
+                }
+                if (state == QMediaPlayer::StoppedState)
+                    m_previewPlayer->setCurrentTime(0);
+            });
+#endif
+
     resetState();
 }
 
@@ -140,6 +206,8 @@ void AudiobookFlowDialog::buildUi()
     m_previewPlayer = new MiniAudioPlayerWidget(this);
     connect(m_previewPlayer, &MiniAudioPlayerWidget::playClicked,
             this, &AudiobookFlowDialog::onPlayPreview);
+    connect(m_previewPlayer, &MiniAudioPlayerWidget::pauseClicked,
+            this, &AudiobookFlowDialog::onStopPreview);
     previewLayout->addWidget(m_previewPlayer);
     previewLayout->addStretch();
     m_stepsContainer->addWidget(previewStep);
@@ -223,10 +291,15 @@ void AudiobookFlowDialog::resetState()
     m_selectedVoiceName.clear();
     m_previewAudioData.clear();
     m_previewListened = false;
+    m_previewElapsedMs = 0;
     if (!m_previewTempPath.isEmpty()) {
         QFile::remove(m_previewTempPath);
         m_previewTempPath.clear();
     }
+#ifdef BOOKHUB_HAVE_MULTIMEDIA
+    if (m_mediaPlayer)
+        m_mediaPlayer->stop();
+#endif
     m_generatedOutputPath.clear();
     m_pendingDetailsId = 0;
     m_pendingFormatsId = 0;
@@ -324,16 +397,23 @@ void AudiobookFlowDialog::onVoiceSelectionChanged(int voiceId, const QString &vo
     m_selectedVoiceId = voiceId;
     m_selectedVoiceName = voiceName;
     m_previewVoiceBtn->setEnabled(voiceId >= 0);
+    m_previewVoiceBtn->setText(QStringLiteral("▶ Preview selected voice"));
     m_previewVoiceLabel->setText(voiceId >= 0
         ? QString("Listening to: %1").arg(voiceName)
         : QStringLiteral("Listening to: —"));
     m_previewText->setText(previewScript());
     m_previewAudioData.clear();
     m_previewListened = false;
+    m_previewElapsedMs = 0;
     if (!m_previewTempPath.isEmpty()) {
         QFile::remove(m_previewTempPath);
         m_previewTempPath.clear();
     }
+#ifdef BOOKHUB_HAVE_MULTIMEDIA
+    if (m_mediaPlayer)
+        m_mediaPlayer->stop();
+#endif
+    m_previewPlayer->setPlaying(false);
     m_previewPlayer->setDuration(0);
     m_previewPlayer->setCurrentTime(0);
     updateNextButtonEnabled();
@@ -376,11 +456,34 @@ void AudiobookFlowDialog::onPlayPreview()
         onPreviewVoiceClicked();
         return;
     }
-    if (!m_previewTempPath.isEmpty()) {
-        QDesktopServices::openUrl(QUrl::fromLocalFile(m_previewTempPath));
-        m_previewListened = true;
-        updateNextButtonEnabled();
+    if (m_previewTempPath.isEmpty())
+        return;
+
+#ifdef BOOKHUB_HAVE_MULTIMEDIA
+    if (m_mediaPlayer) {
+        m_mediaPlayer->setSource(QUrl::fromLocalFile(m_previewTempPath));
+        m_mediaPlayer->play();
+        return;
     }
+#endif
+    // Fallback: open in system audio player; treat as listened immediately.
+    QDesktopServices::openUrl(QUrl::fromLocalFile(m_previewTempPath));
+    m_previewListened = true;
+    updateNextButtonEnabled();
+}
+
+void AudiobookFlowDialog::onStopPreview()
+{
+#ifdef BOOKHUB_HAVE_MULTIMEDIA
+    if (m_mediaPlayer)
+        m_mediaPlayer->stop();
+#endif
+    if (m_playbackTimer) {
+        m_playbackTimer->stop();
+    }
+    m_previewPlayer->setPlaying(false);
+    if (!m_previewAudioData.isEmpty())
+        m_previewVoiceBtn->setText(QStringLiteral("▶ Preview selected voice"));
 }
 
 void AudiobookFlowDialog::onGenerationProgress(int percent)
@@ -415,8 +518,14 @@ void AudiobookFlowDialog::onPreviewVoiceClicked()
     if (m_selectedVoiceId < 0 || !m_ttsService)
         return;
 
+    // If the button shows "■ Stop" (audio is playing), stop playback.
+    if (m_previewVoiceBtn->text() == QStringLiteral("■ Stop")) {
+        onStopPreview();
+        return;
+    }
+
     m_previewVoiceBtn->setEnabled(false);
-    m_previewVoiceBtn->setText("Generating preview...");
+    m_previewVoiceBtn->setText(QStringLiteral("Generating preview…"));
     m_previewText->setText(previewScript());
     m_ttsService->generatePreview(m_selectedVoiceId, m_selectedVoiceName, m_previewText->text());
 }
@@ -428,19 +537,33 @@ void AudiobookFlowDialog::onPreviewGenerated(int voiceId, const QByteArray &audi
 
     m_previewAudioData = audioData;
 
-    // Write to a temp file so the system audio player can open it via onPlayPreview.
+    // Write to a temp file so the audio player (in-app or system) can open it.
     if (!m_previewTempPath.isEmpty())
         QFile::remove(m_previewTempPath);
     m_previewTempPath = QDir::tempPath()
         + QStringLiteral("/bookhub-preview-%1.wav").arg(QDateTime::currentMSecsSinceEpoch());
     QFile previewFile(m_previewTempPath);
-    if (!previewFile.open(QIODevice::WriteOnly) || previewFile.write(audioData) != audioData.size())
+    if (audioData.isEmpty()
+        || !previewFile.open(QIODevice::WriteOnly)
+        || previewFile.write(audioData) != audioData.size()) {
         m_previewTempPath.clear();
+    }
 
     m_previewVoiceBtn->setEnabled(true);
-    m_previewVoiceBtn->setText("Regenerate preview");
-    m_previewPlayer->setDuration(NativeTTSService::kPreviewDurationMs);
+    m_previewVoiceBtn->setText(QStringLiteral("▶ Preview selected voice"));
+
+    const qint64 durationMs = wavDurationMsFromBytes(audioData);
+    m_previewPlayer->setDuration(durationMs);
     m_previewPlayer->setCurrentTime(0);
+
+#ifdef BOOKHUB_HAVE_MULTIMEDIA
+    // Auto-play the preview on step 3 so the user hears it immediately.
+    if (m_mediaPlayer && !m_previewTempPath.isEmpty()) {
+        m_mediaPlayer->setSource(QUrl::fromLocalFile(m_previewTempPath));
+        m_mediaPlayer->play();
+    }
+#endif
+
     m_resultLabel->clear();
 }
 
@@ -474,8 +597,9 @@ void AudiobookFlowDialog::onSaveAsClicked()
         QStringLiteral("Save Audiobook As"),
         QDir::homePath() + QLatin1Char('/') + QFileInfo(m_generatedOutputPath).fileName(),
         QStringLiteral("WAV audio (*.wav);;All files (*)"));
-    if (!dest.isEmpty())
-        QFile::copy(m_generatedOutputPath, dest);
+    if (!dest.isEmpty() && !QFile::copy(m_generatedOutputPath, dest))
+        showErrorState(QStringLiteral("Could not save the audiobook to \"%1\".\n"
+                                      "Check disk space and permissions.").arg(dest));
 }
 
 void AudiobookFlowDialog::onAddToLibraryClicked()
