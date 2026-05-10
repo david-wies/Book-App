@@ -1,6 +1,7 @@
 #pragma once
 
 #include "tts_types.h"
+
 #include <QByteArray>
 #include <QList>
 #include <QObject>
@@ -19,7 +20,8 @@ namespace bookhub::gui {
 // an external TTS runtime before model packaging is ready.
 // ---------------------------------------------------------------------------
 
-class TTSService : public QObject {
+class TTSService : public QObject
+{
     Q_OBJECT
 public:
     explicit TTSService(QObject *parent = nullptr) : QObject(parent) {}
@@ -33,7 +35,9 @@ public:
     // Generate full audiobook audio from text and save to outputPath (non-blocking)
     // Emits generationProgress(percent) during generation
     // Emits generationCompleted(success, outputPath) on completion
-    virtual void generateAudiobook(int voiceId, const QString &voiceName, const QString &text,
+    virtual void generateAudiobook(int voiceId,
+                                   const QString &voiceName,
+                                   const QString &text,
                                    const QString &outputPath) = 0;
     virtual void cancel() {}
 
@@ -46,7 +50,8 @@ signals:
     void generationCompleted(bool success, const QString &outputPath);
 };
 
-class NativeTTSService final : public TTSService {
+class NativeTTSService final : public TTSService
+{
     Q_OBJECT
 public:
     explicit NativeTTSService(QObject *parent = nullptr);
@@ -55,19 +60,23 @@ public:
     static constexpr int kPreviewDurationMs = 4000;
 
     void generatePreview(int voiceId, const QString &voiceName, const QString &text) override;
-    void generateAudiobook(int voiceId, const QString &voiceName, const QString &text,
+    void generateAudiobook(int voiceId,
+                           const QString &voiceName,
+                           const QString &text,
                            const QString &outputPath) override;
     void cancel() override;
 
 private:
-    struct VoiceProfile {
+    struct VoiceProfile
+    {
         double baseFrequency{180.0};
         double cadence{8.0};
         double brightness{0.35};
     };
 
     static VoiceProfile profileForVoice(int voiceId, const QString &voiceName);
-    static QByteArray synthesizeWav(const QString &text, const VoiceProfile &profile,
+    static QByteArray synthesizeWav(const QString &text,
+                                    const VoiceProfile &profile,
                                     int durationMs);
     static void appendAscii(QByteArray &data, const char *text);
     static void appendUInt16LE(QByteArray &data, quint16 value);

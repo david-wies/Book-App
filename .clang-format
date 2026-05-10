@@ -1,0 +1,195 @@
+---
+# .clang-format — BookHub project (C++23 / Qt6)
+#
+# Run:  clang-format -i $(find src tests -name '*.cpp' -o -name '*.h')
+#       Or via CMake:  cmake --build build --target clang-format  (if wired up)
+#
+# Style summary:
+#   4-space indent, 100-column limit, Allman braces for functions/classes,
+#   K&R for control flow, pointer/reference on the right (variable side).
+
+Language: Cpp
+Standard: Latest
+BasedOnStyle: LLVM
+
+# ---------------------------------------------------------------------------
+# Indentation
+# ---------------------------------------------------------------------------
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 4
+
+# Access modifiers (public:, private:, signals:) sit at the class level,
+# not indented relative to the enclosing brace.
+AccessModifierOffset: -4
+
+# Namespace bodies are not indented to avoid deep nesting in bookhub::gui::*.
+NamespaceIndentation: None
+
+# case labels are indented one level inside switch.
+IndentCaseLabels: true
+IndentCaseBlocks: false
+
+# Preprocessor directives: indent nested #if/#elif/#endif.
+IndentPPDirectives: AfterHash
+
+# ---------------------------------------------------------------------------
+# Line length
+# ---------------------------------------------------------------------------
+ColumnLimit: 100
+
+# Don't break string literals — long qDebug/QStringLiteral strings overflow
+# rather than get split mid-string.
+BreakStringLiterals: false
+
+# ---------------------------------------------------------------------------
+# Brace placement
+# ---------------------------------------------------------------------------
+# Function and class/struct/enum definitions: opening brace on its own line
+# (Allman), giving a clear visual boundary between signature and body.
+# Control-flow constructs (if/for/while): brace stays on the same line (K&R).
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterCaseLabel:       false
+  AfterClass:           true
+  AfterControlStatement: Never
+  AfterEnum:            true
+  AfterFunction:        true
+  AfterNamespace:       false   # namespace bookhub::gui { stays on one line
+  AfterObjCDeclaration: false
+  AfterStruct:          true
+  AfterUnion:           true
+  AfterExternBlock:     false
+  BeforeCatch:          false
+  BeforeElse:           false
+  BeforeLambdaBody:     false
+  BeforeWhile:          false
+  IndentBraces:         false
+  SplitEmptyFunction:   false
+  SplitEmptyRecord:     false
+  SplitEmptyNamespace:  false
+
+# ---------------------------------------------------------------------------
+# Short constructs
+# ---------------------------------------------------------------------------
+# Allow trivial accessors / empty bodies on a single line.
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortLambdasOnASingleLine:   All
+AllowShortBlocksOnASingleLine:    Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine:     false
+AllowShortCaseLabelsOnASingleLine: false
+
+# ---------------------------------------------------------------------------
+# Pointers and references
+# ---------------------------------------------------------------------------
+# Right: "Type *ptr", "const QString &ref" — the traditional Qt convention.
+PointerAlignment: Right
+ReferenceAlignment: Right
+SpaceAroundPointerQualifiers: Default
+
+# ---------------------------------------------------------------------------
+# Constructor initializer lists
+# ---------------------------------------------------------------------------
+BreakConstructorInitializers:     BeforeColon
+ConstructorInitializerIndentWidth: 4
+# Pack initializers on the next line if they don't all fit; otherwise one
+# initializer per line.
+PackConstructorInitializers:      NextLine
+
+# ---------------------------------------------------------------------------
+# Function calls and declarations
+# ---------------------------------------------------------------------------
+# Either all arguments fit on one line or each gets its own line.
+# Avoids the ragged "bin-packed" look in Qt connect() calls.
+BinPackArguments:  false
+BinPackParameters: false
+AllowAllArgumentsOnNextLine:               true
+AllowAllParametersOfDeclarationOnNextLine: true
+
+# Break before the '?' and ':' of a ternary expression.
+BreakBeforeTernaryOperators: true
+
+# Keep template parameter lists on one line where possible.
+AlwaysBreakTemplateDeclarations: MultiLine
+
+# ---------------------------------------------------------------------------
+# Alignment
+# ---------------------------------------------------------------------------
+# Consecutive member declarations in a struct (like LibraryItem) are left
+# for manual alignment — auto-alignment tends to thrash on small edits.
+AlignConsecutiveAssignments:  None
+AlignConsecutiveDeclarations: None
+AlignConsecutiveMacros:       None
+
+# Align escaped newlines in macros to the right.
+AlignEscapedNewlines: Right
+
+# Align operands of binary expressions broken across lines.
+AlignOperands: Align
+
+# Align trailing // comments within a block.
+AlignTrailingComments:
+  Kind:           Always
+  OverEmptyLines: 0
+
+# ---------------------------------------------------------------------------
+# Spaces
+# ---------------------------------------------------------------------------
+SpaceBeforeParens:            ControlStatements
+SpaceBeforeRangeBasedForLoopColon: true
+SpaceAfterCStyleCast:         false
+SpaceAfterTemplateKeyword:    true
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeCpp11BracedList:   false
+SpacesInParens:               Never
+SpacesInSquareBrackets:       false
+SpaceInEmptyBlock:            false
+
+# ---------------------------------------------------------------------------
+# Empty lines
+# ---------------------------------------------------------------------------
+MaxEmptyLinesToKeep: 2
+EmptyLineBeforeAccessModifier: LogicalBlock
+EmptyLineAfterAccessModifier:  Never
+SeparateDefinitionBlocks:      Leave
+
+# ---------------------------------------------------------------------------
+# Include sorting
+# ---------------------------------------------------------------------------
+# Group order (separated by a blank line):
+#   1. Own header (auto-detected by IncludeIsMainRegex — always first)
+#   2. Other project headers  "..."
+#   3. Qt headers             <Q...>
+#   4. System / third-party   <...>
+SortIncludes: CaseSensitive
+IncludeBlocks: Regroup
+IncludeIsMainRegex: '([-_](test|unittest))?$'
+IncludeCategories:
+  - Regex:         '^"'
+    Priority:      2
+    SortPriority:  0
+    CaseSensitive: false
+  - Regex:         '^<Q[A-Z]'
+    Priority:      3
+    SortPriority:  0
+    CaseSensitive: true
+  - Regex:         '^<'
+    Priority:      4
+    SortPriority:  0
+    CaseSensitive: false
+
+# ---------------------------------------------------------------------------
+# Comments
+# ---------------------------------------------------------------------------
+ReflowComments: false   # don't reflow hand-formatted block comments
+
+# ---------------------------------------------------------------------------
+# Penalties (tune line-break decisions)
+# ---------------------------------------------------------------------------
+PenaltyBreakComment:           300
+PenaltyBreakFirstLessLess:     120
+PenaltyBreakString:            1000
+PenaltyExcessCharacter:        1000000
+PenaltyReturnTypeOnItsOwnLine: 200

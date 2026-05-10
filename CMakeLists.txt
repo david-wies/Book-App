@@ -8,6 +8,38 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
+# ---------------------------------------------------------------------------
+# Sanitizer options — each builds in its own directory to avoid flag conflicts
+#   cmake -B build-san  -DENABLE_SANITIZERS=ON  ..  (ASan + UBSan, most runs)
+#   cmake -B build-tsan -DENABLE_TSAN=ON         ..  (TSan, race detection)
+#   cmake -B build-msan -DENABLE_MSAN=ON         ..  (MSan, clang only)
+# ---------------------------------------------------------------------------
+option(ENABLE_SANITIZERS "Enable AddressSanitizer + UndefinedBehaviorSanitizer" OFF)
+if(ENABLE_SANITIZERS)
+    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined)
+endif()
+
+# TSan is incompatible with ASan and MSan — run in a dedicated build tree.
+option(ENABLE_TSAN "Enable ThreadSanitizer (incompatible with ASan/MSan)" OFF)
+if(ENABLE_TSAN)
+    if(ENABLE_SANITIZERS OR ENABLE_MSAN)
+        message(FATAL_ERROR "ENABLE_TSAN is incompatible with ENABLE_SANITIZERS and ENABLE_MSAN")
+    endif()
+    add_compile_options(-fsanitize=thread -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=thread)
+endif()
+
+# MSan requires a clang build and an MSan-instrumented C++ standard library.
+option(ENABLE_MSAN "Enable MemorySanitizer (clang only, incompatible with ASan/TSan)" OFF)
+if(ENABLE_MSAN)
+    if(ENABLE_SANITIZERS OR ENABLE_TSAN)
+        message(FATAL_ERROR "ENABLE_MSAN is incompatible with ENABLE_SANITIZERS and ENABLE_TSAN")
+    endif()
+    add_compile_options(-fsanitize=memory -fno-omit-frame-pointer -fPIE)
+    add_link_options(-fsanitize=memory -pie)
+endif()
+
 find_package(Qt6 COMPONENTS Widgets Sql Network Test REQUIRED)
 find_package(Qt6 COMPONENTS Multimedia QUIET)
 find_package(LibArchive REQUIRED)
@@ -203,3 +235,29 @@ add_bookhub_test(test_tts_service
     tests/unit/test_tts_service.cpp
 )
 label_bookhub_test(test_tts_service sanity unit tts)
+
+# ---------------------------------------------------------------------------
+# clang-format target — reformat all sources in-place
+#   cmake --build build --target format
+# ---------------------------------------------------------------------------
+find_program(CLANG_FORMAT_EXE NAMES clang-format-19 clang-format-18 clang-format-17 clang-format)
+if(CLANG_FORMAT_EXE)
+    file(GLOB_RECURSE ALL_SOURCES
+        "${CMAKE_SOURCE_DIR}/src/*.cpp"
+        "${CMAKE_SOURCE_DIR}/src/*.h"
+        "${CMAKE_SOURCE_DIR}/tests/*.cpp"
+        "${CMAKE_SOURCE_DIR}/tests/*.h"
+    )
+    add_custom_target(format
+        COMMAND ${CLANG_FORMAT_EXE} -i --style=file ${ALL_SOURCES}
+        COMMENT "Running clang-format on all sources"
+        VERBATIM
+    )
+    add_custom_target(format-check
+        COMMAND ${CLANG_FORMAT_EXE} --style=file --dry-run -Werror ${ALL_SOURCES}
+        COMMENT "Checking clang-format compliance (no files modified)"
+        VERBATIM
+    )
+else()
+    message(STATUS "clang-format not found — 'format' and 'format-check' targets unavailable")
+endif()

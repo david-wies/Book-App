@@ -1,0 +1,132 @@
+# tools/iwyu_qt6.imp — IWYU mappings for Qt6
+#
+# Usage:
+#   iwyu_tool.py -p build src/ -- -Xiwyu --mapping_file=tools/iwyu_qt6.imp \
+#     | fix_includes.py --dry_run
+#
+# Purpose: Qt installs two header layers —
+#   Private: <QtCore/qstring.h>   (lowercased, module-prefixed)
+#   Public:  <QString>             (PascalCase, the documented API surface)
+# IWYU often resolves transitive includes to the private layer. These
+# mappings redirect every private Qt header back to its public equivalent so
+# IWYU never suggests <QtCore/qstring.h> in user code.
+#
+# Sections follow Qt module layout: Core → Sql → Network → Widgets → Gui → Test
+
+[
+  # -------------------------------------------------------------------------
+  # QtCore
+  # -------------------------------------------------------------------------
+  { include: ["<QtCore/qabstractitemmodel.h>",   private, "<QAbstractItemModel>",   public] },
+  { include: ["<QtCore/qbytearray.h>",           private, "<QByteArray>",           public] },
+  { include: ["<QtCore/qcoreapplication.h>",     private, "<QCoreApplication>",     public] },
+  { include: ["<QtCore/qdatetime.h>",            private, "<QDateTime>",            public] },
+  { include: ["<QtCore/qdir.h>",                 private, "<QDir>",                 public] },
+  { include: ["<QtCore/qfileinfo.h>",            private, "<QFileInfo>",            public] },
+  { include: ["<QtCore/qglobal.h>",              private, "<QtGlobal>",             public] },
+  { include: ["<QtCore/qhash.h>",                private, "<QHash>",                public] },
+  { include: ["<QtCore/qiodevice.h>",            private, "<QIODevice>",            public] },
+  { include: ["<QtCore/qlatin1stringview.h>",    private, "<QLatin1StringView>",    public] },
+  { include: ["<QtCore/qlist.h>",                private, "<QList>",                public] },
+  { include: ["<QtCore/qmap.h>",                 private, "<QMap>",                 public] },
+  { include: ["<QtCore/qmetaobject.h>",          private, "<QMetaObject>",          public] },
+  { include: ["<QtCore/qmutex.h>",               private, "<QMutex>",               public] },
+  { include: ["<QtCore/qobject.h>",              private, "<QObject>",              public] },
+  { include: ["<QtCore/qobjectdefs.h>",          private, "<QObject>",              public] },
+  { include: ["<QtCore/qpointer.h>",             private, "<QPointer>",             public] },
+  { include: ["<QtCore/qreadwritelock.h>",       private, "<QReadWriteLock>",       public] },
+  { include: ["<QtCore/qregularexpression.h>",   private, "<QRegularExpression>",   public] },
+  { include: ["<QtCore/qscopedpointer.h>",       private, "<QScopedPointer>",       public] },
+  { include: ["<QtCore/qsettings.h>",            private, "<QSettings>",            public] },
+  { include: ["<QtCore/qsharedpointer.h>",       private, "<QSharedPointer>",       public] },
+  { include: ["<QtCore/qstandardpaths.h>",       private, "<QStandardPaths>",       public] },
+  { include: ["<QtCore/qstring.h>",              private, "<QString>",              public] },
+  { include: ["<QtCore/qstringlist.h>",          private, "<QStringList>",          public] },
+  { include: ["<QtCore/qstringview.h>",          private, "<QStringView>",          public] },
+  { include: ["<QtCore/qthread.h>",              private, "<QThread>",              public] },
+  { include: ["<QtCore/qtimer.h>",               private, "<QTimer>",               public] },
+  { include: ["<QtCore/qurl.h>",                 private, "<QUrl>",                 public] },
+  { include: ["<QtCore/qvariant.h>",             private, "<QVariant>",             public] },
+  { include: ["<QtCore/qwaitcondition.h>",       private, "<QWaitCondition>",       public] },
+  { include: ["<QtCore/qxmlstream.h>",           private, "<QXmlStreamReader>",     public] },
+  { include: ["<QtCore/qxmlstream.h>",           private, "<QXmlStreamWriter>",     public] },
+
+  # -------------------------------------------------------------------------
+  # QtSql
+  # -------------------------------------------------------------------------
+  { include: ["<QtSql/qsqldatabase.h>",          private, "<QSqlDatabase>",         public] },
+  { include: ["<QtSql/qsqlerror.h>",             private, "<QSqlError>",            public] },
+  { include: ["<QtSql/qsqlquery.h>",             private, "<QSqlQuery>",            public] },
+  { include: ["<QtSql/qsqlrecord.h>",            private, "<QSqlRecord>",           public] },
+
+  # -------------------------------------------------------------------------
+  # QtNetwork
+  # -------------------------------------------------------------------------
+  { include: ["<QtNetwork/qnetworkaccessmanager.h>", private, "<QNetworkAccessManager>", public] },
+  { include: ["<QtNetwork/qnetworkreply.h>",         private, "<QNetworkReply>",         public] },
+  { include: ["<QtNetwork/qnetworkrequest.h>",       private, "<QNetworkRequest>",       public] },
+
+  # -------------------------------------------------------------------------
+  # QtWidgets
+  # -------------------------------------------------------------------------
+  { include: ["<QtWidgets/qabstractbutton.h>",   private, "<QAbstractButton>",      public] },
+  { include: ["<QtWidgets/qabstractitemview.h>", private, "<QAbstractItemView>",    public] },
+  { include: ["<QtWidgets/qaction.h>",           private, "<QAction>",              public] },
+  { include: ["<QtWidgets/qapplication.h>",      private, "<QApplication>",         public] },
+  { include: ["<QtWidgets/qboxlayout.h>",        private, "<QBoxLayout>",           public] },
+  { include: ["<QtWidgets/qboxlayout.h>",        private, "<QHBoxLayout>",          public] },
+  { include: ["<QtWidgets/qboxlayout.h>",        private, "<QVBoxLayout>",          public] },
+  { include: ["<QtWidgets/qbuttongroup.h>",      private, "<QButtonGroup>",         public] },
+  { include: ["<QtWidgets/qcheckbox.h>",         private, "<QCheckBox>",            public] },
+  { include: ["<QtWidgets/qcombobox.h>",         private, "<QComboBox>",            public] },
+  { include: ["<QtWidgets/qdialog.h>",           private, "<QDialog>",              public] },
+  { include: ["<QtWidgets/qdialogbuttonbox.h>",  private, "<QDialogButtonBox>",     public] },
+  { include: ["<QtWidgets/qframe.h>",            private, "<QFrame>",               public] },
+  { include: ["<QtWidgets/qgridlayout.h>",       private, "<QGridLayout>",          public] },
+  { include: ["<QtWidgets/qlabel.h>",            private, "<QLabel>",               public] },
+  { include: ["<QtWidgets/qlineedit.h>",         private, "<QLineEdit>",            public] },
+  { include: ["<QtWidgets/qlistview.h>",         private, "<QListView>",            public] },
+  { include: ["<QtWidgets/qlistwidget.h>",       private, "<QListWidget>",          public] },
+  { include: ["<QtWidgets/qmainwindow.h>",       private, "<QMainWindow>",          public] },
+  { include: ["<QtWidgets/qmenu.h>",             private, "<QMenu>",                public] },
+  { include: ["<QtWidgets/qmenubar.h>",          private, "<QMenuBar>",             public] },
+  { include: ["<QtWidgets/qmessagebox.h>",       private, "<QMessageBox>",          public] },
+  { include: ["<QtWidgets/qprogressbar.h>",      private, "<QProgressBar>",         public] },
+  { include: ["<QtWidgets/qpushbutton.h>",       private, "<QPushButton>",          public] },
+  { include: ["<QtWidgets/qscrollarea.h>",       private, "<QScrollArea>",          public] },
+  { include: ["<QtWidgets/qscrollbar.h>",        private, "<QScrollBar>",           public] },
+  { include: ["<QtWidgets/qsizepolicy.h>",       private, "<QSizePolicy>",          public] },
+  { include: ["<QtWidgets/qspaceritem.h>",       private, "<QSpacerItem>",          public] },
+  { include: ["<QtWidgets/qsplitter.h>",         private, "<QSplitter>",            public] },
+  { include: ["<QtWidgets/qstackedwidget.h>",    private, "<QStackedWidget>",       public] },
+  { include: ["<QtWidgets/qstatusbar.h>",        private, "<QStatusBar>",           public] },
+  { include: ["<QtWidgets/qstyleditemdelegate.h>", private, "<QStyledItemDelegate>", public] },
+  { include: ["<QtWidgets/qtextedit.h>",         private, "<QTextEdit>",            public] },
+  { include: ["<QtWidgets/qtoolbar.h>",          private, "<QToolBar>",             public] },
+  { include: ["<QtWidgets/qtreeview.h>",         private, "<QTreeView>",            public] },
+  { include: ["<QtWidgets/qwidget.h>",           private, "<QWidget>",              public] },
+
+  # -------------------------------------------------------------------------
+  # QtGui
+  # -------------------------------------------------------------------------
+  { include: ["<QtGui/qbrush.h>",                private, "<QBrush>",               public] },
+  { include: ["<QtGui/qcolor.h>",                private, "<QColor>",               public] },
+  { include: ["<QtGui/qfont.h>",                 private, "<QFont>",                public] },
+  { include: ["<QtGui/qfontmetrics.h>",          private, "<QFontMetrics>",         public] },
+  { include: ["<QtGui/qguiapplication.h>",       private, "<QGuiApplication>",      public] },
+  { include: ["<QtGui/qicon.h>",                 private, "<QIcon>",                public] },
+  { include: ["<QtGui/qimage.h>",                private, "<QImage>",               public] },
+  { include: ["<QtGui/qkeysequence.h>",          private, "<QKeySequence>",         public] },
+  { include: ["<QtGui/qpainter.h>",              private, "<QPainter>",             public] },
+  { include: ["<QtGui/qpainterpath.h>",          private, "<QPainterPath>",         public] },
+  { include: ["<QtGui/qpen.h>",                  private, "<QPen>",                 public] },
+  { include: ["<QtGui/qpixmap.h>",               private, "<QPixmap>",              public] },
+  { include: ["<QtGui/qstandarditemmodel.h>",    private, "<QStandardItemModel>",   public] },
+
+  # -------------------------------------------------------------------------
+  # QtTest
+  # -------------------------------------------------------------------------
+  { include: ["<QtTest/qtest.h>",                private, "<QTest>",                public] },
+  { include: ["<QtTest/qtestcase.h>",            private, "<QTest>",                public] },
+  { include: ["<QtTest/qtestevent.h>",           private, "<QTestEvent>",           public] }
+]

@@ -1,12 +1,14 @@
 #include "voice_upload_dialog.h"
-#include <QVBoxLayout>
+
+#include <QFile>
+#include <QFileDialog>
+#include <QFileInfo>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
-#include <QFileDialog>
-#include <QFile>
-#include <QFileInfo>
+#include <QVBoxLayout>
+
 #include <limits>
 
 namespace bookhub::gui {
@@ -29,25 +31,24 @@ int wavDurationMs(const QString &filePath)
 
     auto readUInt16 = [&header](int offset) {
         return static_cast<quint16>(
-            static_cast<quint32>(static_cast<uchar>(header[offset]))
-            | (static_cast<quint32>(static_cast<uchar>(header[offset + 1])) << 8));
+            static_cast<quint32>(static_cast<uchar>(header[offset])) |
+            (static_cast<quint32>(static_cast<uchar>(header[offset + 1])) << 8));
     };
     auto readUInt32 = [&header](int offset) {
-        return static_cast<quint32>(static_cast<uchar>(header[offset]))
-            | (static_cast<quint32>(static_cast<uchar>(header[offset + 1])) << 8)
-            | (static_cast<quint32>(static_cast<uchar>(header[offset + 2])) << 16)
-            | (static_cast<quint32>(static_cast<uchar>(header[offset + 3])) << 24);
+        return static_cast<quint32>(static_cast<uchar>(header[offset])) |
+               (static_cast<quint32>(static_cast<uchar>(header[offset + 1])) << 8) |
+               (static_cast<quint32>(static_cast<uchar>(header[offset + 2])) << 16) |
+               (static_cast<quint32>(static_cast<uchar>(header[offset + 3])) << 24);
     };
 
-    const quint16 channels      = readUInt16(22);
-    const quint32 sampleRate    = readUInt32(24);
+    const quint16 channels = readUInt16(22);
+    const quint32 sampleRate = readUInt32(24);
     const quint16 bitsPerSample = readUInt16(34);
-    const quint32 dataBytes     = readUInt32(40);
+    const quint32 dataBytes = readUInt32(40);
 
     // Promote to quint64 before multiplying to prevent quint32 overflow for
     // high sample-rate / multi-channel files (e.g. 192 kHz stereo 24-bit).
-    const quint64 bytesPerSecond =
-        static_cast<quint64>(sampleRate) * channels * bitsPerSample / 8;
+    const quint64 bytesPerSecond = static_cast<quint64>(sampleRate) * channels * bitsPerSample / 8;
     if (bytesPerSecond == 0)
         return -1;
 
@@ -59,8 +60,7 @@ int wavDurationMs(const QString &filePath)
 
 } // namespace
 
-VoiceUploadDialog::VoiceUploadDialog(QWidget *parent)
-    : QDialog(parent)
+VoiceUploadDialog::VoiceUploadDialog(QWidget *parent) : QDialog(parent)
 {
     setWindowTitle("Upload Voice Sample");
     setModal(true);
@@ -113,8 +113,7 @@ void VoiceUploadDialog::buildUi()
     m_voiceNameEdit = new QLineEdit(this);
     m_voiceNameEdit->setObjectName(QStringLiteral("voiceNameEdit"));
     m_voiceNameEdit->setPlaceholderText("e.g., My Voice");
-    connect(m_voiceNameEdit, &QLineEdit::textChanged,
-            this, &VoiceUploadDialog::onVoiceNameChanged);
+    connect(m_voiceNameEdit, &QLineEdit::textChanged, this, &VoiceUploadDialog::onVoiceNameChanged);
     mainLayout->addWidget(m_voiceNameEdit);
 
     // Validate button
@@ -143,11 +142,7 @@ void VoiceUploadDialog::buildUi()
 void VoiceUploadDialog::onChooseFileClicked()
 {
     QString fileName = QFileDialog::getOpenFileName(
-        this,
-        "Select Voice Sample",
-        QString(),
-        "Audio files (*.wav *.mp3 *.flac);;All files (*)"
-    );
+        this, "Select Voice Sample", QString(), "Audio files (*.wav *.mp3 *.flac);;All files (*)");
 
     if (!fileName.isEmpty()) {
         onFileSelected(fileName);
@@ -177,8 +172,8 @@ void VoiceUploadDialog::onVoiceNameChanged()
 
 void VoiceUploadDialog::updateValidateButton()
 {
-    m_validateBtn->setEnabled(!m_selectedFile.isEmpty() && m_isFileValid
-                              && !m_voiceNameEdit->text().isEmpty());
+    m_validateBtn->setEnabled(!m_selectedFile.isEmpty() && m_isFileValid &&
+                              !m_voiceNameEdit->text().isEmpty());
 }
 
 void VoiceUploadDialog::validateFile(const QString &filePath)
@@ -202,12 +197,10 @@ void VoiceUploadDialog::validateFile(const QString &filePath)
         if (m_isDurationValid) {
             m_durationLabel->setText(
                 QStringLiteral("✓ Duration: %1 seconds (OK)").arg(durationMs / 1000));
-            m_durationLabel->setStyleSheet(
-                "color: #16A34A; font-size: 11px; font-weight: bold;");
+            m_durationLabel->setStyleSheet("color: #16A34A; font-size: 11px; font-weight: bold;");
         } else {
             m_durationLabel->setText(QStringLiteral("✗ Duration: must be 10–120 seconds"));
-            m_durationLabel->setStyleSheet(
-                "color: #DC2626; font-size: 11px; font-weight: bold;");
+            m_durationLabel->setStyleSheet("color: #DC2626; font-size: 11px; font-weight: bold;");
         }
     } else {
         m_isDurationValid = m_isFormatValid;

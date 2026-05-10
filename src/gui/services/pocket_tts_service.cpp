@@ -21,9 +21,12 @@ namespace {
 const QSet<QString> &supportedTags()
 {
     static const QSet<QString> tags{
-        QStringLiteral("en"), QStringLiteral("fr"),
-        QStringLiteral("de"), QStringLiteral("it"),
-        QStringLiteral("pt"), QStringLiteral("es"),
+        QStringLiteral("en"),
+        QStringLiteral("fr"),
+        QStringLiteral("de"),
+        QStringLiteral("it"),
+        QStringLiteral("pt"),
+        QStringLiteral("es"),
     };
     return tags;
 }
@@ -33,11 +36,8 @@ const QSet<QString> &supportedTags()
 PocketTTSService::PocketTTSService(const QString &language,
                                    const QString &referenceAudioPath,
                                    QObject *parent)
-    : TTSService(parent)
-    , m_language(language.toLower())
-    , m_referenceAudioPath(referenceAudioPath)
-{
-}
+    : TTSService(parent), m_language(language.toLower()), m_referenceAudioPath(referenceAudioPath)
+{}
 
 PocketTTSService::~PocketTTSService()
 {
@@ -66,29 +66,25 @@ bool PocketTTSService::modelsAvailable()
 
 QString PocketTTSService::modelDir()
 {
-    return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
-        + QStringLiteral("/models/pocket-tts");
+    return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) +
+           QStringLiteral("/models/pocket-tts");
 }
 
 bool PocketTTSService::checkAvailabilityAndEmitFailure(int voiceId, bool isPreview)
 {
     if (!languageSupported(m_language) || !modelsAvailable()) {
         if (isPreview) {
-            QTimer::singleShot(0, this, [this, voiceId] {
-                emit previewGenerated(voiceId, QByteArray{});
-            });
+            QTimer::singleShot(
+                0, this, [this, voiceId] { emit previewGenerated(voiceId, QByteArray{}); });
         } else {
-            QTimer::singleShot(0, this, [this] {
-                emit generationCompleted(false, {});
-            });
+            QTimer::singleShot(0, this, [this] { emit generationCompleted(false, {}); });
         }
         return false;
     }
     return true;
 }
 
-void PocketTTSService::generatePreview(int voiceId, const QString &voiceName,
-                                       const QString &text)
+void PocketTTSService::generatePreview(int voiceId, const QString &voiceName, const QString &text)
 {
     Q_UNUSED(voiceName)
     Q_UNUSED(text)
@@ -103,12 +99,11 @@ void PocketTTSService::generatePreview(int voiceId, const QString &voiceName,
 #endif
 
     // Library not linked yet — emit empty data.
-    QTimer::singleShot(0, this, [this, voiceId] {
-        emit previewGenerated(voiceId, QByteArray{});
-    });
+    QTimer::singleShot(0, this, [this, voiceId] { emit previewGenerated(voiceId, QByteArray{}); });
 }
 
-void PocketTTSService::generateAudiobook(int voiceId, const QString &voiceName,
+void PocketTTSService::generateAudiobook(int voiceId,
+                                         const QString &voiceName,
                                          const QString &text,
                                          const QString &outputPath)
 {
@@ -125,9 +120,7 @@ void PocketTTSService::generateAudiobook(int voiceId, const QString &voiceName,
     Q_UNUSED(voiceId)
 #endif
 
-    QTimer::singleShot(0, this, [this] {
-        emit generationCompleted(false, {});
-    });
+    QTimer::singleShot(0, this, [this] { emit generationCompleted(false, {}); });
 }
 
 void PocketTTSService::cancel()

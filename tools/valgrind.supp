@@ -1,0 +1,63 @@
+# BookHub project-specific Valgrind suppressions
+#
+# Usage — always combine with the system Qt suppression file:
+#   valgrind \
+#     --suppressions=/usr/share/doc/qt6-base-dev/valgrind.supp \
+#     --suppressions=tools/valgrind.supp \
+#     --leak-check=full \
+#     --show-leak-kinds=definite \
+#     --track-origins=yes \
+#     QT_QPA_PLATFORM=offscreen ./build/tests/test_library_service
+#
+# When to add entries here:
+#   1. Run valgrind and spot a Memcheck:Leak in the "still reachable" or
+#      "definitely lost" bucket that you've confirmed is a false positive.
+#   2. Copy the call-stack frames from valgrind's output into a new entry.
+#   3. Use wildcards (fun:* or obj:*) sparingly — be as specific as possible
+#      to avoid accidentally suppressing real leaks.
+#
+# Entry format:
+#   {
+#      <descriptive-name>
+#      Memcheck:<error-kind>
+#      [match-leak-kinds: definite,indirect,possible,reachable]
+#      fun:<frame>    — exact function name
+#      ...
+#      obj:<pattern>  — shared library glob
+#   }
+
+# ---------------------------------------------------------------------------
+# SQLite internal page cache
+# ---------------------------------------------------------------------------
+# SQLite pre-allocates a page cache that is intentionally never freed for the
+# lifetime of the process. This is "still reachable" by valgrind's definition
+# but is not a leak.
+{
+   sqlite3_pcache_static
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   ...
+   fun:sqlite3PcacheOpen
+}
+
+# ---------------------------------------------------------------------------
+# Qt SQLite plugin static initialisation
+# ---------------------------------------------------------------------------
+# The QSQLITE driver is registered as a static plugin. Qt's plugin registry
+# holds the factory forever (intentional singleton), which valgrind classifies
+# as "still reachable".
+{
+   qsqlite_plugin_registry
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   obj:*libqsqlite*
+}
+
+# ---------------------------------------------------------------------------
+# Add project-specific suppressions below this line
+# ---------------------------------------------------------------------------
+# To generate a suppression entry automatically, run valgrind with:
+#   --gen-suppressions=all
+# and paste the generated block here, then give it a descriptive name.

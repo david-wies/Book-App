@@ -1,33 +1,35 @@
 #include "audiobook_flow_dialog.h"
-#include "voice_upload_dialog.h"
-#include "../widgets/step_indicator_widget.h"
-#include "../widgets/voice_selector_widget.h"
-#include "../widgets/mini_audio_player_widget.h"
+
+#include "../query_worker.h"
 #include "../services/library_service.h"
 #include "../services/tts_service.h"
-#include "../query_worker.h"
+#include "../widgets/mini_audio_player_widget.h"
+#include "../widgets/step_indicator_widget.h"
+#include "../widgets/voice_selector_widget.h"
+#include "voice_upload_dialog.h"
+
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
-#include <QRegularExpression>
-#include <QStandardPaths>
-#include <QTimer>
-#include <QUrl>
-#include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
 #include <QListWidgetItem>
-#include <QPushButton>
-#include <QProgressBar>
-#include <QStackedWidget>
 #include <QMessageBox>
+#include <QProgressBar>
+#include <QPushButton>
+#include <QRegularExpression>
+#include <QStackedWidget>
+#include <QStandardPaths>
+#include <QTimer>
+#include <QUrl>
+#include <QVBoxLayout>
 #ifdef BOOKHUB_HAVE_MULTIMEDIA
-#include <QAudioOutput>
-#include <QMediaPlayer>
+#    include <QAudioOutput>
+#    include <QMediaPlayer>
 #endif
 
 namespace bookhub::gui {
@@ -38,40 +40,43 @@ namespace {
 // Returns 0 on malformed or missing data.
 qint64 wavDurationMsFromBytes(const QByteArray &wav)
 {
-    if (wav.size() < 44) return 0;
-    if (wav.mid(0, 4) != "RIFF" || wav.mid(8, 4) != "WAVE") return 0;
+    if (wav.size() < 44)
+        return 0;
+    if (wav.mid(0, 4) != "RIFF" || wav.mid(8, 4) != "WAVE")
+        return 0;
 
     auto u16 = [&wav](int off) -> quint32 {
-        return static_cast<quint32>(static_cast<uchar>(wav[off]))
-            | (static_cast<quint32>(static_cast<uchar>(wav[off + 1])) << 8);
+        return static_cast<quint32>(static_cast<uchar>(wav[off])) |
+               (static_cast<quint32>(static_cast<uchar>(wav[off + 1])) << 8);
     };
     auto u32 = [&wav](int off) -> quint32 {
-        return static_cast<quint32>(static_cast<uchar>(wav[off]))
-            | (static_cast<quint32>(static_cast<uchar>(wav[off + 1])) << 8)
-            | (static_cast<quint32>(static_cast<uchar>(wav[off + 2])) << 16)
-            | (static_cast<quint32>(static_cast<uchar>(wav[off + 3])) << 24);
+        return static_cast<quint32>(static_cast<uchar>(wav[off])) |
+               (static_cast<quint32>(static_cast<uchar>(wav[off + 1])) << 8) |
+               (static_cast<quint32>(static_cast<uchar>(wav[off + 2])) << 16) |
+               (static_cast<quint32>(static_cast<uchar>(wav[off + 3])) << 24);
     };
 
-    const quint32 sampleRate    = u32(24);
-    const quint32 channels      = u16(22);
+    const quint32 sampleRate = u32(24);
+    const quint32 channels = u16(22);
     const quint32 bitsPerSample = u16(34);
-    const quint32 dataBytes     = u32(40);
+    const quint32 dataBytes = u32(40);
 
     const quint64 bytesPerSecond = static_cast<quint64>(sampleRate) * channels * bitsPerSample / 8;
-    if (bytesPerSecond == 0) return 0;
+    if (bytesPerSecond == 0)
+        return 0;
     return static_cast<qint64>(static_cast<quint64>(dataBytes) * 1000 / bytesPerSecond);
 }
 
 } // namespace
 
 AudiobookFlowDialog::AudiobookFlowDialog(LibraryService *libraryService,
-                                         QueryWorker    *worker,
-                                         TTSService     *ttsService,
-                                         QWidget        *parent)
-    : QDialog(parent)
-    , m_libraryService(libraryService)
-    , m_worker(worker)
-    , m_ttsService(ttsService ? ttsService : new NativeTTSService(this))
+                                         QueryWorker *worker,
+                                         TTSService *ttsService,
+                                         QWidget *parent)
+    : QDialog(parent),
+      m_libraryService(libraryService),
+      m_worker(worker),
+      m_ttsService(ttsService ? ttsService : new NativeTTSService(this))
 {
     setWindowTitle("Convert to Audiobook");
     setModal(true);
@@ -81,22 +86,34 @@ AudiobookFlowDialog::AudiobookFlowDialog(LibraryService *libraryService,
     m_detailsService = new BookDetailsService(this);
     if (m_worker)
         m_detailsService->connectToWorker(m_worker);
-    connect(m_detailsService, &BookDetailsService::detailsCompleted,
-            this, &AudiobookFlowDialog::onDetailsCompleted);
-    connect(m_detailsService, &BookDetailsService::formatsCompleted,
-            this, &AudiobookFlowDialog::onFormatsCompleted);
-    connect(m_ttsService, &TTSService::previewGenerated,
-            this, &AudiobookFlowDialog::onPreviewGenerated);
-    connect(m_ttsService, &TTSService::generationProgress,
-            this, &AudiobookFlowDialog::onGenerationProgress);
-    connect(m_ttsService, &TTSService::generationCompleted,
-            this, &AudiobookFlowDialog::onGenerationFinished);
+    connect(m_detailsService,
+            &BookDetailsService::detailsCompleted,
+            this,
+            &AudiobookFlowDialog::onDetailsCompleted);
+    connect(m_detailsService,
+            &BookDetailsService::formatsCompleted,
+            this,
+            &AudiobookFlowDialog::onFormatsCompleted);
+    connect(m_ttsService,
+            &TTSService::previewGenerated,
+            this,
+            &AudiobookFlowDialog::onPreviewGenerated);
+    connect(m_ttsService,
+            &TTSService::generationProgress,
+            this,
+            &AudiobookFlowDialog::onGenerationProgress);
+    connect(m_ttsService,
+            &TTSService::generationCompleted,
+            this,
+            &AudiobookFlowDialog::onGenerationFinished);
 
     if (m_worker) {
         // Route listVoicesRequested through Qt's connection mechanism so the
         // call is queued when m_worker lives on the query thread.
-        connect(this, &AudiobookFlowDialog::listVoicesRequested,
-                m_worker, &QueryWorker::handleListVoicesRequest);
+        connect(this,
+                &AudiobookFlowDialog::listVoicesRequested,
+                m_worker,
+                &QueryWorker::handleListVoicesRequest);
 
         connect(m_worker,
                 &QueryWorker::listVoicesCompleted,
@@ -116,17 +133,18 @@ AudiobookFlowDialog::AudiobookFlowDialog(LibraryService *libraryService,
     m_mediaPlayer = new QMediaPlayer(this);
     m_mediaPlayer->setAudioOutput(m_audioOutput);
 
-    connect(m_mediaPlayer, &QMediaPlayer::positionChanged,
-            this, [this](qint64 posMs) {
-                m_previewPlayer->setCurrentTime(posMs);
-                m_previewElapsedMs = posMs;
-                if (!m_previewListened && posMs >= 3000) {
-                    m_previewListened = true;
-                    updateNextButtonEnabled();
-                }
-            });
-    connect(m_mediaPlayer, &QMediaPlayer::playbackStateChanged,
-            this, [this](QMediaPlayer::PlaybackState state) {
+    connect(m_mediaPlayer, &QMediaPlayer::positionChanged, this, [this](qint64 posMs) {
+        m_previewPlayer->setCurrentTime(posMs);
+        m_previewElapsedMs = posMs;
+        if (!m_previewListened && posMs >= 3000) {
+            m_previewListened = true;
+            updateNextButtonEnabled();
+        }
+    });
+    connect(m_mediaPlayer,
+            &QMediaPlayer::playbackStateChanged,
+            this,
+            [this](QMediaPlayer::PlaybackState state) {
                 const bool playing = (state == QMediaPlayer::PlayingState);
                 m_previewPlayer->setPlaying(playing);
                 if (playing) {
@@ -162,8 +180,10 @@ void AudiobookFlowDialog::buildUi()
     QVBoxLayout *langLayout = new QVBoxLayout(langStep);
     m_languageList = new QListWidget(this);
     m_languageList->setSelectionMode(QAbstractItemView::SingleSelection);
-    connect(m_languageList, &QListWidget::itemSelectionChanged,
-            this, &AudiobookFlowDialog::onLanguageSelectionChanged);
+    connect(m_languageList,
+            &QListWidget::itemSelectionChanged,
+            this,
+            &AudiobookFlowDialog::onLanguageSelectionChanged);
     langLayout->addWidget(m_languageList);
     m_stepsContainer->addWidget(langStep);
 
@@ -172,8 +192,10 @@ void AudiobookFlowDialog::buildUi()
     QVBoxLayout *formatLayout = new QVBoxLayout(formatStep);
     m_formatList = new QListWidget(this);
     m_formatList->setSelectionMode(QAbstractItemView::SingleSelection);
-    connect(m_formatList, &QListWidget::itemSelectionChanged,
-            this, &AudiobookFlowDialog::onFormatSelectionChanged);
+    connect(m_formatList,
+            &QListWidget::itemSelectionChanged,
+            this,
+            &AudiobookFlowDialog::onFormatSelectionChanged);
     formatLayout->addWidget(m_formatList);
     m_stepsContainer->addWidget(formatStep);
 
@@ -181,16 +203,22 @@ void AudiobookFlowDialog::buildUi()
     QWidget *voiceStep = new QWidget(this);
     QVBoxLayout *voiceLayout = new QVBoxLayout(voiceStep);
     m_voiceSelector = new VoiceSelectorWidget(this);
-    connect(m_voiceSelector, &VoiceSelectorWidget::voiceSelected,
-            this, &AudiobookFlowDialog::onVoiceSelectionChanged);
-    connect(m_voiceSelector, &VoiceSelectorWidget::uploadNewVoiceRequested,
-            this, &AudiobookFlowDialog::onVoiceUploadRequested);
+    connect(m_voiceSelector,
+            &VoiceSelectorWidget::voiceSelected,
+            this,
+            &AudiobookFlowDialog::onVoiceSelectionChanged);
+    connect(m_voiceSelector,
+            &VoiceSelectorWidget::uploadNewVoiceRequested,
+            this,
+            &AudiobookFlowDialog::onVoiceUploadRequested);
     voiceLayout->addWidget(m_voiceSelector);
     // Phase 3: connect to TTSService to generate a 10-second preview clip
     m_previewVoiceBtn = new QPushButton("▶ Preview selected voice", this);
     m_previewVoiceBtn->setEnabled(false); // enabled once a voice is selected
-    connect(m_previewVoiceBtn, &QPushButton::clicked,
-            this, &AudiobookFlowDialog::onPreviewVoiceClicked);
+    connect(m_previewVoiceBtn,
+            &QPushButton::clicked,
+            this,
+            &AudiobookFlowDialog::onPreviewVoiceClicked);
     voiceLayout->addWidget(m_previewVoiceBtn);
     m_stepsContainer->addWidget(voiceStep);
 
@@ -204,10 +232,14 @@ void AudiobookFlowDialog::buildUi()
     m_previewText->setMaximumHeight(80);
     previewLayout->addWidget(m_previewText);
     m_previewPlayer = new MiniAudioPlayerWidget(this);
-    connect(m_previewPlayer, &MiniAudioPlayerWidget::playClicked,
-            this, &AudiobookFlowDialog::onPlayPreview);
-    connect(m_previewPlayer, &MiniAudioPlayerWidget::pauseClicked,
-            this, &AudiobookFlowDialog::onStopPreview);
+    connect(m_previewPlayer,
+            &MiniAudioPlayerWidget::playClicked,
+            this,
+            &AudiobookFlowDialog::onPlayPreview);
+    connect(m_previewPlayer,
+            &MiniAudioPlayerWidget::pauseClicked,
+            this,
+            &AudiobookFlowDialog::onStopPreview);
     previewLayout->addWidget(m_previewPlayer);
     previewLayout->addStretch();
     m_stepsContainer->addWidget(previewStep);
@@ -220,7 +252,8 @@ void AudiobookFlowDialog::buildUi()
     m_progressBar->setRange(0, 100);
     m_progressBar->setValue(0);
     m_progressBar->setAccessibleName(QStringLiteral("Audiobook generation progress"));
-    m_progressBar->setAccessibleDescription(QStringLiteral("Generating audiobook, 0 percent complete"));
+    m_progressBar->setAccessibleDescription(
+        QStringLiteral("Generating audiobook, 0 percent complete"));
     genLayout->addWidget(m_progressBar);
     m_progressText = new QLabel("Estimated time: ~4 minutes", this);
     m_progressText->setAlignment(Qt::AlignCenter);
@@ -231,23 +264,23 @@ void AudiobookFlowDialog::buildUi()
     genLayout->addWidget(m_resultLabel);
     m_cancelGenBtn = new QPushButton("Cancel", this);
     m_cancelGenBtn->hide();
-    connect(m_cancelGenBtn, &QPushButton::clicked,
-            this, &AudiobookFlowDialog::onCancelGenerationClicked);
+    connect(m_cancelGenBtn,
+            &QPushButton::clicked,
+            this,
+            &AudiobookFlowDialog::onCancelGenerationClicked);
     genLayout->addWidget(m_cancelGenBtn, 0, Qt::AlignHCenter);
     // Post-generation action buttons — hidden until generation completes
     QHBoxLayout *postGenLayout = new QHBoxLayout();
     m_openFileBtn = new QPushButton("Open file", this);
     m_openFileBtn->hide();
-    connect(m_openFileBtn, &QPushButton::clicked,
-            this, &AudiobookFlowDialog::onOpenFileClicked);
+    connect(m_openFileBtn, &QPushButton::clicked, this, &AudiobookFlowDialog::onOpenFileClicked);
     m_saveAsBtn = new QPushButton("Save as…", this);
     m_saveAsBtn->hide();
-    connect(m_saveAsBtn, &QPushButton::clicked,
-            this, &AudiobookFlowDialog::onSaveAsClicked);
+    connect(m_saveAsBtn, &QPushButton::clicked, this, &AudiobookFlowDialog::onSaveAsClicked);
     m_addToLibBtn = new QPushButton("Add to library", this);
     m_addToLibBtn->hide();
-    connect(m_addToLibBtn, &QPushButton::clicked,
-            this, &AudiobookFlowDialog::onAddToLibraryClicked);
+    connect(
+        m_addToLibBtn, &QPushButton::clicked, this, &AudiobookFlowDialog::onAddToLibraryClicked);
     postGenLayout->addWidget(m_openFileBtn);
     postGenLayout->addWidget(m_saveAsBtn);
     postGenLayout->addWidget(m_addToLibBtn);
@@ -303,8 +336,8 @@ void AudiobookFlowDialog::resetState()
     m_generatedOutputPath.clear();
     m_pendingDetailsId = 0;
     m_pendingFormatsId = 0;
-    m_pendingVoicesId  = 0;
-    m_voicesLoaded     = false;
+    m_pendingVoicesId = 0;
+    m_voicesLoaded = false;
     m_languageList->clear();
     m_formatList->clear();
     m_voiceSelector->setVoices({});
@@ -313,8 +346,7 @@ void AudiobookFlowDialog::resetState()
     // to QDialog::accept; without this reset, reopening the dialog for a second
     // book leaves every "Next" click accepting the dialog immediately.
     disconnect(m_nextBtn, &QPushButton::clicked, nullptr, nullptr);
-    connect(m_nextBtn, &QPushButton::clicked,
-            this, &AudiobookFlowDialog::onNextOrGenerateClicked);
+    connect(m_nextBtn, &QPushButton::clicked, this, &AudiobookFlowDialog::onNextOrGenerateClicked);
 
     // Reset generation step widgets to their initial state
     m_progressBar->setValue(0);
@@ -330,8 +362,7 @@ void AudiobookFlowDialog::resetState()
     updateStepUi();
 }
 
-void AudiobookFlowDialog::onDetailsCompleted(quint64 requestId,
-                                              const BookDetails &details)
+void AudiobookFlowDialog::onDetailsCompleted(quint64 requestId, const BookDetails &details)
 {
     if (requestId != m_pendingDetailsId)
         return;
@@ -356,7 +387,7 @@ void AudiobookFlowDialog::onDetailsCompleted(quint64 requestId,
 }
 
 void AudiobookFlowDialog::onFormatsCompleted(quint64 requestId,
-                                              const QList<BookFormatEntry> &formats)
+                                             const QList<BookFormatEntry> &formats)
 {
     if (requestId != m_pendingFormatsId)
         return;
@@ -372,7 +403,7 @@ void AudiobookFlowDialog::onLanguageSelectionChanged()
         return;
 
     m_selectedLanguage = item->text();
-    for (const auto &edition : m_editions) {
+    for (const auto &edition : std::as_const(m_editions)) {
         if (edition.language == m_selectedLanguage) {
             m_pendingFormatsId = m_detailsService->peekNextId();
             m_detailsService->requestFormatsForEdition(edition.editionId);
@@ -398,9 +429,8 @@ void AudiobookFlowDialog::onVoiceSelectionChanged(int voiceId, const QString &vo
     m_selectedVoiceName = voiceName;
     m_previewVoiceBtn->setEnabled(voiceId >= 0);
     m_previewVoiceBtn->setText(QStringLiteral("▶ Preview selected voice"));
-    m_previewVoiceLabel->setText(voiceId >= 0
-        ? QString("Listening to: %1").arg(voiceName)
-        : QStringLiteral("Listening to: —"));
+    m_previewVoiceLabel->setText(voiceId >= 0 ? QString("Listening to: %1").arg(voiceName)
+                                              : QStringLiteral("Listening to: —"));
     m_previewText->setText(previewScript());
     m_previewAudioData.clear();
     m_previewListened = false;
@@ -425,7 +455,9 @@ void AudiobookFlowDialog::onVoiceUploadRequested()
     if (uploadDialog.exec() == QDialog::Accepted) {
         // Phase 3: insert into voices table and call populateVoiceList().
         // For now, acknowledge the submission so the user knows it was received.
-        QMessageBox::information(this, "Voice Registered",
+        QMessageBox::information(
+            this,
+            "Voice Registered",
             QString("\"%1\" has been noted.\n\n"
                     "Custom voice cloning will be available in a future release.")
                 .arg(uploadDialog.voiceName()));
@@ -508,8 +540,8 @@ void AudiobookFlowDialog::onGenerationComplete()
     else
         m_addToLibBtn->hide();
     m_nextBtn->setText("Close");
-    disconnect(m_nextBtn, &QPushButton::clicked,
-               this, &AudiobookFlowDialog::onNextOrGenerateClicked);
+    disconnect(
+        m_nextBtn, &QPushButton::clicked, this, &AudiobookFlowDialog::onNextOrGenerateClicked);
     connect(m_nextBtn, &QPushButton::clicked, this, &QDialog::accept);
 }
 
@@ -540,12 +572,12 @@ void AudiobookFlowDialog::onPreviewGenerated(int voiceId, const QByteArray &audi
     // Write to a temp file so the audio player (in-app or system) can open it.
     if (!m_previewTempPath.isEmpty())
         QFile::remove(m_previewTempPath);
-    m_previewTempPath = QDir::tempPath()
-        + QStringLiteral("/bookhub-preview-%1.wav").arg(QDateTime::currentMSecsSinceEpoch());
+    m_previewTempPath =
+        QDir::tempPath() +
+        QStringLiteral("/bookhub-preview-%1.wav").arg(QDateTime::currentMSecsSinceEpoch());
     QFile previewFile(m_previewTempPath);
-    if (audioData.isEmpty()
-        || !previewFile.open(QIODevice::WriteOnly)
-        || previewFile.write(audioData) != audioData.size()) {
+    if (audioData.isEmpty() || !previewFile.open(QIODevice::WriteOnly) ||
+        previewFile.write(audioData) != audioData.size()) {
         m_previewTempPath.clear();
     }
 
@@ -599,7 +631,8 @@ void AudiobookFlowDialog::onSaveAsClicked()
         QStringLiteral("WAV audio (*.wav);;All files (*)"));
     if (!dest.isEmpty() && !QFile::copy(m_generatedOutputPath, dest))
         showErrorState(QStringLiteral("Could not save the audiobook to \"%1\".\n"
-                                      "Check disk space and permissions.").arg(dest));
+                                      "Check disk space and permissions.")
+                           .arg(dest));
 }
 
 void AudiobookFlowDialog::onAddToLibraryClicked()
@@ -626,7 +659,7 @@ void AudiobookFlowDialog::onCancelGenerationClicked()
 void AudiobookFlowDialog::populateLanguageList()
 {
     m_languageList->clear();
-    for (const auto &edition : m_editions) {
+    for (const auto &edition : std::as_const(m_editions)) {
         QListWidgetItem *item = new QListWidgetItem(edition.language);
         m_languageList->addItem(item);
     }
@@ -676,9 +709,8 @@ void AudiobookFlowDialog::updateStepUi()
     m_stepsContainer->setCurrentIndex(m_currentStep);
 
     m_backBtn->setVisible(m_currentStep > 0);
-    m_nextBtn->setText(m_currentStep == 4
-        ? QStringLiteral("✓ Confirm & Generate")
-        : QStringLiteral("Next →"));
+    m_nextBtn->setText(m_currentStep == 4 ? QStringLiteral("✓ Confirm & Generate")
+                                          : QStringLiteral("Next →"));
 
     if (m_currentStep == 0 && m_hasLanguageStep)
         populateLanguageList();
@@ -697,11 +729,21 @@ void AudiobookFlowDialog::updateNextButtonEnabled()
     // no extra input — Next is always enabled there.
     bool enabled = true;
     switch (m_currentStep) {
-        case 0: enabled = !m_selectedLanguage.isEmpty(); break;
-        case 1: enabled = !m_selectedFormat.isEmpty();   break;
-        case 2: enabled = m_selectedVoiceId >= 0;        break;
-        case 3: enabled = m_previewListened;             break;
-        default: enabled = true;                         break;
+        case 0:
+            enabled = !m_selectedLanguage.isEmpty();
+            break;
+        case 1:
+            enabled = !m_selectedFormat.isEmpty();
+            break;
+        case 2:
+            enabled = m_selectedVoiceId >= 0;
+            break;
+        case 3:
+            enabled = m_previewListened;
+            break;
+        default:
+            enabled = true;
+            break;
     }
     m_nextBtn->setEnabled(enabled);
 }
@@ -735,8 +777,8 @@ bool AudiobookFlowDialog::startGeneration()
     if (m_libraryItemId > 0 && m_libraryService)
         m_libraryService->requestUpdateStatus(m_libraryItemId, QStringLiteral("converting"));
 
-    m_ttsService->generateAudiobook(m_selectedVoiceId, m_selectedVoiceName,
-                                    generationScript(), m_generatedOutputPath);
+    m_ttsService->generateAudiobook(
+        m_selectedVoiceId, m_selectedVoiceName, generationScript(), m_generatedOutputPath);
     return true;
 }
 
@@ -758,18 +800,15 @@ BookSourceEntry AudiobookFlowDialog::selectedSource() const
 bool AudiobookFlowDialog::isTextCompatibleFormat(const QString &formatType) const
 {
     const QString type = formatType.toLower();
-    return type.startsWith(QLatin1String("epub"))
-        || type.startsWith(QLatin1String("txt"))
-        || type.startsWith(QLatin1String("text"))
-        || type.startsWith(QLatin1String("html"));
+    return type.startsWith(QLatin1String("epub")) || type.startsWith(QLatin1String("txt")) ||
+           type.startsWith(QLatin1String("text")) || type.startsWith(QLatin1String("html"));
 }
 
 QString AudiobookFlowDialog::previewScript() const
 {
     const QString title = m_bookTitle.isEmpty() ? QStringLiteral("this book") : m_bookTitle;
-    const QString voice = m_selectedVoiceName.isEmpty()
-        ? QStringLiteral("the selected voice")
-        : m_selectedVoiceName;
+    const QString voice =
+        m_selectedVoiceName.isEmpty() ? QStringLiteral("the selected voice") : m_selectedVoiceName;
     return QStringLiteral("%1 reading from %2. This is a short BookHub voice preview.")
         .arg(voice, title);
 }
@@ -779,13 +818,11 @@ QString AudiobookFlowDialog::generationScript() const
     const BookSourceEntry source = selectedSource();
     QStringList lines;
     lines << QStringLiteral("BookHub audiobook")
-          << QStringLiteral("Title: %1").arg(m_bookTitle.isEmpty()
-                                             ? QStringLiteral("Untitled book")
-                                             : m_bookTitle)
+          << QStringLiteral("Title: %1")
+                 .arg(m_bookTitle.isEmpty() ? QStringLiteral("Untitled book") : m_bookTitle)
           << QStringLiteral("Language: %1").arg(m_selectedLanguage)
-          << QStringLiteral("Format source: %1").arg(source.sourceName.isEmpty()
-                                                     ? m_selectedFormat
-                                                     : source.sourceName)
+          << QStringLiteral("Format source: %1")
+                 .arg(source.sourceName.isEmpty() ? m_selectedFormat : source.sourceName)
           << QStringLiteral("Voice: %1").arg(m_selectedVoiceName)
           << QStringLiteral("This MVP build creates a local sample narration file. "
                             "Full text extraction from downloaded editions will use the same "
@@ -808,7 +845,8 @@ QString AudiobookFlowDialog::defaultOutputPath() const
     dir.cd(QStringLiteral("audiobooks"));
 
     QString stem = m_bookTitle.simplified().toLower();
-    stem.replace(QRegularExpression(QStringLiteral("[^a-z0-9]+")), QStringLiteral("-"));
+    static const QRegularExpression kNonAlnum(QStringLiteral("[^a-z0-9]+"));
+    stem.replace(kNonAlnum, QStringLiteral("-"));
     stem = stem.trimmed();
     while (stem.startsWith(QLatin1Char('-')))
         stem.remove(0, 1);
@@ -817,17 +855,15 @@ QString AudiobookFlowDialog::defaultOutputPath() const
     if (stem.isEmpty())
         stem = QStringLiteral("audiobook");
 
-    const QString stamp = QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyyMMdd-hhmmss"));
+    const QString stamp =
+        QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyyMMdd-hhmmss"));
     return dir.filePath(QStringLiteral("%1-%2.wav").arg(stem, stamp));
 }
 
 void AudiobookFlowDialog::showErrorState(const QString &message)
 {
-    auto *box = new QMessageBox(QMessageBox::Warning,
-                                QStringLiteral("Error"),
-                                message,
-                                QMessageBox::Ok,
-                                this);
+    auto *box = new QMessageBox(
+        QMessageBox::Warning, QStringLiteral("Error"), message, QMessageBox::Ok, this);
     box->setAttribute(Qt::WA_DeleteOnClose);
     box->open();
 }

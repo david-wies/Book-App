@@ -1,6 +1,7 @@
 #pragma once
 
 #include "tts_service.h"
+
 #include <QString>
 
 namespace bookhub::gui {
@@ -18,7 +19,8 @@ namespace bookhub::gui {
 // Build with -DENABLE_SHERPA_ONNX=ON to link the sherpa-onnx library and
 // enable real synthesis. Without it, the service degrades gracefully.
 
-class SherpaOnnxTTSService final : public TTSService {
+class SherpaOnnxTTSService final : public TTSService
+{
     Q_OBJECT
 public:
     explicit SherpaOnnxTTSService(QObject *parent = nullptr);
@@ -33,9 +35,9 @@ public:
     // True when the model files for voiceId exist on disk.
     static bool modelAvailable(int voiceId);
 
-    void generatePreview(int voiceId, const QString &voiceName,
-                         const QString &text) override;
-    void generateAudiobook(int voiceId, const QString &voiceName,
+    void generatePreview(int voiceId, const QString &voiceName, const QString &text) override;
+    void generateAudiobook(int voiceId,
+                           const QString &voiceName,
                            const QString &text,
                            const QString &outputPath) override;
     void cancel() override;

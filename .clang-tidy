@@ -1,0 +1,94 @@
+---
+# .clang-tidy — BookHub project (C++23 / Qt6)
+#
+# Run:  run-clang-tidy -p build src/ tests/
+#       clang-tidy -p build src/foo/bar.cpp   (single file)
+#
+# Strategy: start from nothing (-*), opt in by category, then suppress
+# individual checks that conflict with Qt patterns or C++23 idioms.
+
+Checks: >-
+  -*,
+  bugprone-*,
+  clang-analyzer-*,
+  concurrency-*,
+  cppcoreguidelines-*,
+  misc-*,
+  modernize-*,
+  performance-*,
+  readability-*,
+  -abseil-*,
+  -altera-*,
+  -android-*,
+  -darwin-*,
+  -fuchsia-*,
+  -google-*,
+  -hicpp-*,
+  -linuxkernel-*,
+  -llvmlibc-*,
+  -mpi-*,
+  -objc-*,
+  -openmp-*,
+  -zircon-*,
+  -clang-analyzer-osx.*,
+  -clang-analyzer-webkit.*,
+  -bugprone-easily-swappable-parameters,
+  -cppcoreguidelines-avoid-c-arrays,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-owning-memory,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  -cppcoreguidelines-pro-type-vararg,
+  -cppcoreguidelines-special-member-functions,
+  -misc-include-cleaner,
+  -misc-non-private-member-variables-in-classes,
+  -modernize-use-nodiscard,
+  -modernize-use-trailing-return-type,
+  -readability-convert-member-functions-to-static,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-named-parameter
+
+# Leave empty here; pass --warnings-as-errors='*' on the CI command line so
+# local runs can still surface warnings without hard-failing.
+WarningsAsErrors: ''
+
+# Suppress diagnostics in Qt headers and system headers; only report inside src/.
+HeaderFilterRegex: '^.*/src/.*\.(h|hpp)$'
+
+CheckOptions:
+  # Naming conventions — mirror the project style observed in the codebase:
+  #   namespaces  → lower_case  (bookhub, bookhub::gui, …)
+  #   classes     → CamelCase   (QueryWorker, BookDiscoveryService, …)
+  #   methods     → camelCase   (onBookDetailsRequested, buildNavBar, …)
+  #   members     → m_camelCase (m_queryThread, m_activeFetches, …)
+  #   constants   → kCamelCase  (kConnectionName, …)
+  #   locals/params → camelCase
+  readability-identifier-naming.NamespaceCase:           lower_case
+  readability-identifier-naming.ClassCase:               CamelCase
+  readability-identifier-naming.StructCase:              CamelCase
+  readability-identifier-naming.EnumCase:                CamelCase
+  readability-identifier-naming.FunctionCase:            camelCase
+  readability-identifier-naming.MethodCase:              camelCase
+  readability-identifier-naming.PrivateMemberCase:       camelCase
+  readability-identifier-naming.PrivateMemberPrefix:     m_
+  readability-identifier-naming.ProtectedMemberCase:     camelCase
+  readability-identifier-naming.ProtectedMemberPrefix:   m_
+  readability-identifier-naming.ParameterCase:           camelCase
+  readability-identifier-naming.LocalVariableCase:       camelCase
+  readability-identifier-naming.StaticConstantCase:      camelCase
+  readability-identifier-naming.StaticConstantPrefix:    k
+  readability-identifier-naming.ClassConstantCase:       camelCase
+  readability-identifier-naming.ClassConstantPrefix:     k
+
+  # Cognitive complexity — flag functions that are hard to test; complements
+  # the Lizard cyclomatic-complexity gate in CLAUDE.md (CCN > 10).
+  readability-function-cognitive-complexity.Threshold:   25
+
+  # Suggest auto only when the replaced type is long enough to matter.
+  modernize-loop-convert.MinConfidence:                  reasonable
+  modernize-use-auto.MinTypeNameLength:                  5
+
+  # Warn when a trivially-copyable value is std::moved (copy is cheaper).
+  performance-move-const-arg.CheckTriviallyCopyableMove: true

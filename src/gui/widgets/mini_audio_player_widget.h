@@ -1,13 +1,14 @@
 #pragma once
 
-#include <QWidget>
-#include <QSlider>
-#include <QPushButton>
 #include <QLabel>
+#include <QPushButton>
+#include <QSlider>
+#include <QWidget>
 
 namespace bookhub::gui {
 
-class MiniAudioPlayerWidget : public QWidget {
+class MiniAudioPlayerWidget : public QWidget
+{
     Q_OBJECT
 
 public:

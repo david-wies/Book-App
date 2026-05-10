@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../services/book_details_service.h"
+
 #include <QByteArray>
 #include <QDialog>
 
@@ -26,14 +27,15 @@ class MiniAudioPlayerWidget;
 class VoiceUploadDialog;
 class AudiobookFlowDialogTest;
 
-class AudiobookFlowDialog : public QDialog {
+class AudiobookFlowDialog : public QDialog
+{
     Q_OBJECT
 
 public:
     explicit AudiobookFlowDialog(LibraryService *libraryService,
-                                 QueryWorker    *worker,
-                                 TTSService     *ttsService = nullptr,
-                                 QWidget        *parent    = nullptr);
+                                 QueryWorker *worker,
+                                 TTSService *ttsService = nullptr,
+                                 QWidget *parent = nullptr);
 
     void startForBook(const QString &bookId);
 
@@ -42,8 +44,7 @@ signals:
 
 private slots:
     void onDetailsCompleted(quint64 requestId, const bookhub::gui::BookDetails &details);
-    void onFormatsCompleted(quint64 requestId,
-                            const QList<bookhub::gui::BookFormatEntry> &formats);
+    void onFormatsCompleted(quint64 requestId, const QList<bookhub::gui::BookFormatEntry> &formats);
     void onLanguageSelectionChanged();
     void onFormatSelectionChanged();
     void onVoiceSelectionChanged(int voiceId, const QString &voiceName);
@@ -81,17 +82,17 @@ private:
 
     friend class ::bookhub::gui::AudiobookFlowDialogTest;
 
-    LibraryService        *m_libraryService{};
-    BookDetailsService    *m_detailsService{};
-    QueryWorker           *m_worker{};
-    TTSService            *m_ttsService{};
+    LibraryService *m_libraryService{};
+    BookDetailsService *m_detailsService{};
+    QueryWorker *m_worker{};
+    TTSService *m_ttsService{};
 
     QString m_bookId;
     QString m_bookTitle;
-    int     m_libraryItemId{0};
+    int m_libraryItemId{0};
     QList<BookEditionEntry> m_editions;
-    QList<BookFormatEntry>  m_formats;
-    bool    m_hasLanguageStep{false};
+    QList<BookFormatEntry> m_formats;
+    bool m_hasLanguageStep{false};
 
     quint64 m_requestCounter{1};
 
@@ -100,45 +101,45 @@ private:
     quint64 m_pendingVoicesId{0};
     // Set once voices have been loaded so back/forward navigation through
     // step 2 doesn't re-fire the query and clobber the user's selection.
-    bool    m_voicesLoaded{false};
+    bool m_voicesLoaded{false};
 
-    int     m_currentStep{0}; // 0=language, 1=format, 2=voice, 3=preview, 4=generate
+    int m_currentStep{0}; // 0=language, 1=format, 2=voice, 3=preview, 4=generate
 
     QString m_selectedLanguage;
     QString m_selectedFormat;
-    int     m_selectedVoiceId{-1};
+    int m_selectedVoiceId{-1};
     QString m_selectedVoiceName;
     QByteArray m_previewAudioData;
-    QString    m_previewTempPath;
-    bool       m_previewListened{false};
-    qint64     m_previewElapsedMs{0};  // accumulated playback ms for the 3-second gate
-    QTimer    *m_playbackTimer{};      // ticks while preview plays (non-Multimedia fallback)
-    QString    m_generatedOutputPath;
+    QString m_previewTempPath;
+    bool m_previewListened{false};
+    qint64 m_previewElapsedMs{0}; // accumulated playback ms for the 3-second gate
+    QTimer *m_playbackTimer{};    // ticks while preview plays (non-Multimedia fallback)
+    QString m_generatedOutputPath;
 #ifdef BOOKHUB_HAVE_MULTIMEDIA
     QMediaPlayer *m_mediaPlayer{};
     QAudioOutput *m_audioOutput{};
 #endif
 
-    QLabel               *m_titleLabel{};
-    StepIndicatorWidget  *m_stepIndicator{};
-    QStackedWidget       *m_stepsContainer{};
-    QProgressBar         *m_progressBar{};
-    QLabel               *m_progressText{};
-    QLabel               *m_resultLabel{};
-    QPushButton          *m_cancelGenBtn{};  // visible during generation
-    QPushButton          *m_openFileBtn{};   // visible after completion
-    QPushButton          *m_saveAsBtn{};     // visible after completion
-    QPushButton          *m_addToLibBtn{};   // visible after completion
-    QPushButton          *m_backBtn{};
-    QPushButton          *m_nextBtn{};
+    QLabel *m_titleLabel{};
+    StepIndicatorWidget *m_stepIndicator{};
+    QStackedWidget *m_stepsContainer{};
+    QProgressBar *m_progressBar{};
+    QLabel *m_progressText{};
+    QLabel *m_resultLabel{};
+    QPushButton *m_cancelGenBtn{}; // visible during generation
+    QPushButton *m_openFileBtn{};  // visible after completion
+    QPushButton *m_saveAsBtn{};    // visible after completion
+    QPushButton *m_addToLibBtn{};  // visible after completion
+    QPushButton *m_backBtn{};
+    QPushButton *m_nextBtn{};
 
     QListWidget *m_languageList{};
     QListWidget *m_formatList{};
-    VoiceSelectorWidget   *m_voiceSelector{};
-    QPushButton           *m_previewVoiceBtn{};
-    QLabel                *m_previewVoiceLabel{}; // shows selected voice name in step 4
+    VoiceSelectorWidget *m_voiceSelector{};
+    QPushButton *m_previewVoiceBtn{};
+    QLabel *m_previewVoiceLabel{}; // shows selected voice name in step 4
     MiniAudioPlayerWidget *m_previewPlayer{};
-    QLabel                *m_previewText{};
+    QLabel *m_previewText{};
 };
 
 } // namespace bookhub::gui

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "tts_service.h"
+
 #include <QString>
 
 namespace bookhub::gui {
@@ -17,7 +18,8 @@ namespace bookhub::gui {
 // Build with -DENABLE_POCKET_TTS=ON to link PocketTTS.cpp and enable real
 // synthesis. Without it the service degrades gracefully to a failure signal.
 
-class PocketTTSService final : public TTSService {
+class PocketTTSService final : public TTSService
+{
     Q_OBJECT
 public:
     // language:          BCP-47 language tag for the book (e.g. "en", "fr").
@@ -39,9 +41,9 @@ public:
     // Root directory for the shared PocketTTS model files.
     static QString modelDir();
 
-    void generatePreview(int voiceId, const QString &voiceName,
-                         const QString &text) override;
-    void generateAudiobook(int voiceId, const QString &voiceName,
+    void generatePreview(int voiceId, const QString &voiceName, const QString &text) override;
+    void generateAudiobook(int voiceId,
+                           const QString &voiceName,
                            const QString &text,
                            const QString &outputPath) override;
     void cancel() override;

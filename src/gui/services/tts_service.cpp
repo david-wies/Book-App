@@ -2,6 +2,7 @@
 
 #include <QSaveFile>
 #include <QTimer>
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -10,17 +11,14 @@ namespace bookhub::gui {
 
 TTSService::~TTSService() = default;
 
-NativeTTSService::NativeTTSService(QObject *parent)
-    : TTSService(parent)
-{
-}
+NativeTTSService::NativeTTSService(QObject *parent) : TTSService(parent) {}
 
 void NativeTTSService::generatePreview(int voiceId, const QString &voiceName, const QString &text)
 {
     const VoiceProfile profile = profileForVoice(voiceId, voiceName);
     const QString sample = text.trimmed().isEmpty()
-        ? QStringLiteral("This is a short preview of %1.").arg(voiceName)
-        : text;
+                               ? QStringLiteral("This is a short preview of %1.").arg(voiceName)
+                               : text;
 
     // NOTE: synthesizeWav runs on the GUI thread. Fast enough for the sinusoidal
     // MVP (~88 K samples); move to QThreadPool when integrating Sherpa-ONNX.
@@ -29,15 +27,18 @@ void NativeTTSService::generatePreview(int voiceId, const QString &voiceName, co
     });
 }
 
-void NativeTTSService::generateAudiobook(int voiceId, const QString &voiceName, const QString &text,
+void NativeTTSService::generateAudiobook(int voiceId,
+                                         const QString &voiceName,
+                                         const QString &text,
                                          const QString &outputPath)
 {
     cancel();
 
     const VoiceProfile profile = profileForVoice(voiceId, voiceName);
-    const QString script = text.trimmed().isEmpty()
-        ? QStringLiteral("BookHub audiobook generated with %1.").arg(voiceName)
-        : text;
+    const QString script =
+        text.trimmed().isEmpty()
+            ? QStringLiteral("BookHub audiobook generated with %1.").arg(voiceName)
+            : text;
 
     m_generationStep = 0;
     m_generationTimer = new QTimer(this);
@@ -56,9 +57,8 @@ void NativeTTSService::generateAudiobook(int voiceId, const QString &voiceName, 
         QSaveFile file(outputPath);
         const int duration = std::clamp(static_cast<int>(script.size()) * 65, 7000, 45000);
         const QByteArray wav = synthesizeWav(script, profile, duration);
-        const bool success = file.open(QIODevice::WriteOnly)
-            && file.write(wav) == wav.size()
-            && file.commit();
+        const bool success =
+            file.open(QIODevice::WriteOnly) && file.write(wav) == wav.size() && file.commit();
 
         if (success)
             emit generationProgress(100);
@@ -92,7 +92,8 @@ NativeTTSService::VoiceProfile NativeTTSService::profileForVoice(int voiceId,
     return {190.0 + offset, 7.5, 0.35};
 }
 
-QByteArray NativeTTSService::synthesizeWav(const QString &text, const VoiceProfile &profile,
+QByteArray NativeTTSService::synthesizeWav(const QString &text,
+                                           const VoiceProfile &profile,
                                            int durationMs)
 {
     constexpr int kSampleRate = 22050;
@@ -107,23 +108,23 @@ QByteArray NativeTTSService::synthesizeWav(const QString &text, const VoiceProfi
     const QString source = text.isEmpty() ? QStringLiteral("BookHub") : text;
     for (int i = 0; i < sampleCount; ++i) {
         const double t = static_cast<double>(i) / static_cast<double>(kSampleRate);
-        const int charIndex = static_cast<int>(
-            (static_cast<qint64>(i) * source.size()) / sampleCount);
+        const int charIndex =
+            static_cast<int>((static_cast<qint64>(i) * source.size()) / sampleCount);
         const int safeIndex = std::clamp(charIndex, 0, static_cast<int>(source.size()) - 1);
         const ushort code = source.at(safeIndex).unicode();
         const double wordShape = 1.0 + static_cast<double>(code % 17) / 75.0;
         const double syllable = 0.62 + 0.38 * std::sin(kTwoPi * profile.cadence * t);
         const double phrase = 0.82 + 0.18 * std::sin(kTwoPi * 0.55 * t);
-        const double frequency = profile.baseFrequency * wordShape
-            + 18.0 * std::sin(kTwoPi * 1.7 * t);
+        const double frequency =
+            profile.baseFrequency * wordShape + 18.0 * std::sin(kTwoPi * 1.7 * t);
         const double carrier = std::sin(kTwoPi * frequency * t);
         const double overtone = std::sin(kTwoPi * frequency * 2.0 * t) * profile.brightness;
         const double consonant = std::sin(kTwoPi * frequency * 3.0 * t) * 0.08;
         const double envelope = std::clamp(syllable * phrase, 0.0, 1.0);
-        const double sample = std::clamp((carrier + overtone + consonant) * envelope * 0.28,
-                                         -0.95, 0.95);
-        const auto value = static_cast<qint16>(
-            sample * static_cast<double>(std::numeric_limits<qint16>::max()));
+        const double sample =
+            std::clamp((carrier + overtone + consonant) * envelope * 0.28, -0.95, 0.95);
+        const auto value =
+            static_cast<qint16>(sample * static_cast<double>(std::numeric_limits<qint16>::max()));
         appendUInt16LE(pcm, static_cast<quint16>(value));
     }
 

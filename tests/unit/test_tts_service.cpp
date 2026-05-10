@@ -1,16 +1,18 @@
-#include <QtTest>
+#include "gui/services/pocket_tts_service.h"
+#include "gui/services/sherpa_onnx_tts_service.h"
+#include "gui/services/tts_service.h"
+
 #include <QDir>
 #include <QFile>
 #include <QSignalSpy>
 #include <QTimer>
 
-#include "gui/services/tts_service.h"
-#include "gui/services/sherpa_onnx_tts_service.h"
-#include "gui/services/pocket_tts_service.h"
+#include <QtTest>
 
 namespace bookhub::gui {
 
-class TtsServiceTest : public QObject {
+class TtsServiceTest : public QObject
+{
     Q_OBJECT
 
 private slots:
@@ -55,8 +57,8 @@ void TtsServiceTest::native_generatePreview_emitsRiffData()
     NativeTTSService service;
     QSignalSpy spy(&service, &TTSService::previewGenerated);
 
-    service.generatePreview(1, QStringLiteral("Classic Storyteller"),
-                            QStringLiteral("A preview sentence."));
+    service.generatePreview(
+        1, QStringLiteral("Classic Storyteller"), QStringLiteral("A preview sentence."));
 
     QVERIFY(spy.wait(2000));
     QCOMPARE(spy.count(), 1);
@@ -71,19 +73,21 @@ void TtsServiceTest::native_generateAudiobook_writesWavFileAndEmitsSuccess()
     QSignalSpy completed(&service, &TTSService::generationCompleted);
     QSignalSpy progress(&service, &TTSService::generationProgress);
 
-    const QString path = QDir::tempPath()
-        + QStringLiteral("/bookhub-unit-tts-%1.wav").arg(QDateTime::currentMSecsSinceEpoch());
-    service.generateAudiobook(1, QStringLiteral("Warm Listener"),
-                              QStringLiteral("Short test."), path);
+    const QString path =
+        QDir::tempPath() +
+        QStringLiteral("/bookhub-unit-tts-%1.wav").arg(QDateTime::currentMSecsSinceEpoch());
+    service.generateAudiobook(
+        1, QStringLiteral("Warm Listener"), QStringLiteral("Short test."), path);
 
     QVERIFY(completed.wait(3000));
     QCOMPARE(completed.first().at(0).toBool(), true);
     QCOMPARE(completed.first().at(1).toString(), path);
 
     // Progress must have reached 100 on success.
-    const bool saw100 = std::any_of(progress.cbegin(), progress.cend(), [](const QList<QVariant> &args) {
-        return args.at(0).toInt() == 100;
-    });
+    const bool saw100 =
+        std::any_of(progress.cbegin(), progress.cend(), [](const QList<QVariant> &args) {
+            return args.at(0).toInt() == 100;
+        });
     QVERIFY(saw100);
 
     QFile f(path);
@@ -100,8 +104,8 @@ void TtsServiceTest::native_generateAudiobook_emitsNoProgressOnWriteFailure()
 
     // A path in a directory that doesn't exist will fail to write.
     const QString badPath = QStringLiteral("/nonexistent_dir_bookhub/audiobook.wav");
-    service.generateAudiobook(1, QStringLiteral("Classic Storyteller"),
-                              QStringLiteral("Test."), badPath);
+    service.generateAudiobook(
+        1, QStringLiteral("Classic Storyteller"), QStringLiteral("Test."), badPath);
 
     QVERIFY(completed.wait(3000));
     QCOMPARE(completed.first().at(0).toBool(), false);
@@ -123,10 +127,11 @@ void TtsServiceTest::native_cancel_duringGeneration_suppressesCompletion()
     NativeTTSService service;
     QSignalSpy completed(&service, &TTSService::generationCompleted);
 
-    const QString path = QDir::tempPath()
-        + QStringLiteral("/bookhub-cancel-test-%1.wav").arg(QDateTime::currentMSecsSinceEpoch());
-    service.generateAudiobook(1, QStringLiteral("Crisp Narrator"),
-                              QStringLiteral("Cancel test."), path);
+    const QString path =
+        QDir::tempPath() +
+        QStringLiteral("/bookhub-cancel-test-%1.wav").arg(QDateTime::currentMSecsSinceEpoch());
+    service.generateAudiobook(
+        1, QStringLiteral("Crisp Narrator"), QStringLiteral("Cancel test."), path);
 
     // Cancel immediately — before the simulated timer fires completion.
     service.cancel();
@@ -175,7 +180,8 @@ void TtsServiceTest::sherpa_generateAudiobook_whenUnavailable_emitsFailureNoProg
     QSignalSpy completed(&service, &TTSService::generationCompleted);
     QSignalSpy progress(&service, &TTSService::generationProgress);
 
-    service.generateAudiobook(1, QStringLiteral("Preset Voice"),
+    service.generateAudiobook(1,
+                              QStringLiteral("Preset Voice"),
                               QStringLiteral("Hello."),
                               QStringLiteral("/tmp/sherpa-test.wav"));
 
@@ -249,7 +255,8 @@ void TtsServiceTest::pocket_generateAudiobook_unsupportedLanguage_emitsFailure()
     QSignalSpy completed(&service, &TTSService::generationCompleted);
     QSignalSpy progress(&service, &TTSService::generationProgress);
 
-    service.generateAudiobook(1, QStringLiteral("My Voice"),
+    service.generateAudiobook(1,
+                              QStringLiteral("My Voice"),
                               QStringLiteral("Hello."),
                               QStringLiteral("/tmp/pocket-test.wav"));
 
@@ -264,7 +271,8 @@ void TtsServiceTest::pocket_generateAudiobook_missingModels_emitsFailure()
     QSignalSpy completed(&service, &TTSService::generationCompleted);
     QSignalSpy progress(&service, &TTSService::generationProgress);
 
-    service.generateAudiobook(1, QStringLiteral("My Voice"),
+    service.generateAudiobook(1,
+                              QStringLiteral("My Voice"),
                               QStringLiteral("Hello."),
                               QStringLiteral("/tmp/pocket-test.wav"));
 

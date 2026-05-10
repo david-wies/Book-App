@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# pre-commit hook: rejects staged C++/header files that are not clang-format clean.
+#
+# Install alongside the pre-push hook:
+#   git config core.hooksPath .githooks
+#
+# The check runs clang-format in dry-run mode (no files modified) and fails
+# the commit if any file would be reformatted. Fix with:
+#   clang-format -i --style=file <file>
+# Or reformat everything:
+#   clang-format -i --style=file $(find src/ tests/ -name '*.cpp' -o -name '*.h')
+
+set -euo pipefail
+
+CHANGED=$(git diff --name-only --cached | grep -E '\.(cpp|h)$' || true)
+[ -z "$CHANGED" ] && exit 0
+
+if ! command -v clang-format &>/dev/null; then
+    echo "WARNING: clang-format not found — skipping format check." >&2
+    exit 0
+fi
+
+FAILED=()
+for f in $CHANGED; do
+    [ -f "$f" ] || continue
+    if ! clang-format --style=file --dry-run -Werror "$f" 2>/dev/null; then
+        FAILED+=("$f")
+    fi
+done
+
+if [ ${#FAILED[@]} -gt 0 ]; then
+    echo "-----------------------------------------------------------" >&2
+    echo "ERROR: clang-format check failed for staged file(s):" >&2
+    for f in "${FAILED[@]}"; do
+        echo "  $f" >&2
+    done
+    echo "" >&2
+    echo "Fix with:" >&2
+    echo "  clang-format -i --style=file ${FAILED[*]}" >&2
+    echo "-----------------------------------------------------------" >&2
+    exit 1
+fi
+
+exit 0

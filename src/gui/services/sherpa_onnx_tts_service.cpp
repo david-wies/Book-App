@@ -14,10 +14,7 @@
 
 namespace bookhub::gui {
 
-SherpaOnnxTTSService::SherpaOnnxTTSService(QObject *parent)
-    : TTSService(parent)
-{
-}
+SherpaOnnxTTSService::SherpaOnnxTTSService(QObject *parent) : TTSService(parent) {}
 
 SherpaOnnxTTSService::~SherpaOnnxTTSService()
 {
@@ -35,8 +32,8 @@ bool SherpaOnnxTTSService::libraryAvailable() noexcept
 
 QString SherpaOnnxTTSService::modelDir(int voiceId)
 {
-    return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
-        + QStringLiteral("/models/sherpa/%1").arg(voiceId);
+    return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) +
+           QStringLiteral("/models/sherpa/%1").arg(voiceId);
 }
 
 bool SherpaOnnxTTSService::modelAvailable(int voiceId)
@@ -44,8 +41,9 @@ bool SherpaOnnxTTSService::modelAvailable(int voiceId)
     return QFileInfo::exists(modelDir(voiceId) + QStringLiteral("/model.onnx"));
 }
 
-void SherpaOnnxTTSService::generatePreview(int voiceId, const QString &voiceName,
-                                            const QString &text)
+void SherpaOnnxTTSService::generatePreview(int voiceId,
+                                           const QString &voiceName,
+                                           const QString &text)
 {
     Q_UNUSED(voiceName)
     Q_UNUSED(text)
@@ -61,14 +59,13 @@ void SherpaOnnxTTSService::generatePreview(int voiceId, const QString &voiceName
     // Emit empty data so the dialog shows the preview button in a ready state
     // without audio. The user will see duration 0:00 and can retry after
     // downloading models via ModelManager (Task 22).
-    QTimer::singleShot(0, this, [this, voiceId] {
-        emit previewGenerated(voiceId, QByteArray{});
-    });
+    QTimer::singleShot(0, this, [this, voiceId] { emit previewGenerated(voiceId, QByteArray{}); });
 }
 
-void SherpaOnnxTTSService::generateAudiobook(int voiceId, const QString &voiceName,
-                                              const QString &text,
-                                              const QString &outputPath)
+void SherpaOnnxTTSService::generateAudiobook(int voiceId,
+                                             const QString &voiceName,
+                                             const QString &text,
+                                             const QString &outputPath)
 {
     Q_UNUSED(voiceName)
     Q_UNUSED(text)
@@ -85,9 +82,7 @@ void SherpaOnnxTTSService::generateAudiobook(int voiceId, const QString &voiceNa
 #endif
 
     // Model not available — emit failure immediately so the dialog surfaces an error.
-    QTimer::singleShot(0, this, [this] {
-        emit generationCompleted(false, {});
-    });
+    QTimer::singleShot(0, this, [this] { emit generationCompleted(false, {}); });
 }
 
 void SherpaOnnxTTSService::cancel()

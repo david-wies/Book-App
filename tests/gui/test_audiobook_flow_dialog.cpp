@@ -1,4 +1,12 @@
-#include <QtTest>
+#include "gui/dialogs/audiobook_flow_dialog.h"
+#include "gui/dialogs/voice_upload_dialog.h"
+#include "gui/services/library_service.h"
+#include "gui/services/tts_service.h"
+#include "gui/widgets/voice_selector_widget.h"
+#include "support/test_database_utils.h"
+#include "support/test_query_worker.h"
+#include "support/wav_utils.h"
+
 #include <QApplication>
 #include <QDateTime>
 #include <QDir>
@@ -13,18 +21,12 @@
 #include <QSignalSpy>
 #include <QTimer>
 
-#include "gui/dialogs/audiobook_flow_dialog.h"
-#include "gui/dialogs/voice_upload_dialog.h"
-#include "gui/services/library_service.h"
-#include "gui/services/tts_service.h"
-#include "gui/widgets/voice_selector_widget.h"
-#include "support/test_database_utils.h"
-#include "support/test_query_worker.h"
-#include "support/wav_utils.h"
+#include <QtTest>
 
 namespace bookhub::gui {
 
-class FailingTTSService final : public TTSService {
+class FailingTTSService final : public TTSService
+{
 public:
     explicit FailingTTSService(QObject *parent = nullptr) : TTSService(parent) {}
 
@@ -45,7 +47,8 @@ public:
     int generationRequests{0};
 };
 
-class AudiobookFlowDialogTest : public QObject {
+class AudiobookFlowDialogTest : public QObject
+{
     Q_OBJECT
 
 private slots:
@@ -99,8 +102,8 @@ private slots:
     void startForBook_populatesLanguagesThroughWorkerChain();
 
 private:
-    TestQueryWorker     *m_worker{};
-    LibraryService      *m_libraryService{};
+    TestQueryWorker *m_worker{};
+    LibraryService *m_libraryService{};
     AudiobookFlowDialog *m_dialog{};
 };
 
@@ -128,9 +131,12 @@ void AudiobookFlowDialogTest::init()
 
 void AudiobookFlowDialogTest::cleanup()
 {
-    delete m_dialog;    m_dialog        = nullptr;
-    delete m_libraryService; m_libraryService = nullptr;
-    delete m_worker;    m_worker         = nullptr;
+    delete m_dialog;
+    m_dialog = nullptr;
+    delete m_libraryService;
+    m_libraryService = nullptr;
+    delete m_worker;
+    m_worker = nullptr;
 }
 
 // ---------------------------------------------------------------------------
@@ -179,7 +185,8 @@ void AudiobookFlowDialogTest::nextNavigation_incrementsStep()
     QCOMPARE(m_dialog->m_currentStep, 1); // skipped language step
 
     QList<BookFormatEntry> formats;
-    BookFormatEntry epub; epub.formatType = QStringLiteral("epub");
+    BookFormatEntry epub;
+    epub.formatType = QStringLiteral("epub");
     formats.append(epub);
     m_dialog->m_pendingFormatsId = 3;
     m_dialog->onFormatsCompleted(3, formats);
@@ -226,7 +233,8 @@ void AudiobookFlowDialogTest::staleFormatsRequest_isIgnored()
 {
     m_dialog->m_pendingFormatsId = 9;
     QList<BookFormatEntry> formats;
-    BookFormatEntry epub; epub.formatType = QStringLiteral("epub");
+    BookFormatEntry epub;
+    epub.formatType = QStringLiteral("epub");
     formats.append(epub);
     m_dialog->onFormatsCompleted(8, formats); // wrong ID
     QVERIFY(m_dialog->m_formats.isEmpty());
@@ -236,8 +244,10 @@ void AudiobookFlowDialogTest::populateFormatList_autoSelectsEpub()
 {
     // txt is first so the test verifies epub is preferred, not just "selects first"
     QList<BookFormatEntry> formats;
-    BookFormatEntry txt;  txt.formatType  = QStringLiteral("txt");
-    BookFormatEntry epub; epub.formatType = QStringLiteral("epub");
+    BookFormatEntry txt;
+    txt.formatType = QStringLiteral("txt");
+    BookFormatEntry epub;
+    epub.formatType = QStringLiteral("epub");
     formats.append(txt);
     formats.append(epub);
 
@@ -252,8 +262,10 @@ void AudiobookFlowDialogTest::populateFormatList_autoSelectsEpub()
 void AudiobookFlowDialogTest::populateFormatList_selectsFirstTextFormatWhenNoEpub()
 {
     QList<BookFormatEntry> formats;
-    BookFormatEntry txt; txt.formatType = QStringLiteral("txt");
-    BookFormatEntry pdf; pdf.formatType = QStringLiteral("pdf");
+    BookFormatEntry txt;
+    txt.formatType = QStringLiteral("txt");
+    BookFormatEntry pdf;
+    pdf.formatType = QStringLiteral("pdf");
     formats.append(txt);
     formats.append(pdf);
 
@@ -267,9 +279,12 @@ void AudiobookFlowDialogTest::populateFormatList_selectsFirstTextFormatWhenNoEpu
 void AudiobookFlowDialogTest::populateFormatList_filtersNonTextFormats()
 {
     QList<BookFormatEntry> formats;
-    BookFormatEntry pdf; pdf.formatType = QStringLiteral("pdf");
-    BookFormatEntry mobi; mobi.formatType = QStringLiteral("mobi");
-    BookFormatEntry html; html.formatType = QStringLiteral("html");
+    BookFormatEntry pdf;
+    pdf.formatType = QStringLiteral("pdf");
+    BookFormatEntry mobi;
+    mobi.formatType = QStringLiteral("mobi");
+    BookFormatEntry html;
+    html.formatType = QStringLiteral("html");
     formats.append(pdf);
     formats.append(mobi);
     formats.append(html);
@@ -313,20 +328,17 @@ void AudiobookFlowDialogTest::voiceUploadDialog_validatesFormatAndWavDuration()
     invalidFile.write("nope");
     invalidFile.close();
 
-    QVERIFY(QMetaObject::invokeMethod(&dialog, "onFileSelected",
-                                      Q_ARG(QString, invalidPath)));
+    QVERIFY(QMetaObject::invokeMethod(&dialog, "onFileSelected", Q_ARG(QString, invalidPath)));
     QVERIFY(!validateButton->isEnabled());
 
     const QString shortWav = bookhub::tests::writeSilentWav(5000);
     QVERIFY(!shortWav.isEmpty());
-    QVERIFY(QMetaObject::invokeMethod(&dialog, "onFileSelected",
-                                      Q_ARG(QString, shortWav)));
+    QVERIFY(QMetaObject::invokeMethod(&dialog, "onFileSelected", Q_ARG(QString, shortWav)));
     QVERIFY(!validateButton->isEnabled());
 
     const QString validWav = bookhub::tests::writeSilentWav(12000);
     QVERIFY(!validWav.isEmpty());
-    QVERIFY(QMetaObject::invokeMethod(&dialog, "onFileSelected",
-                                      Q_ARG(QString, validWav)));
+    QVERIFY(QMetaObject::invokeMethod(&dialog, "onFileSelected", Q_ARG(QString, validWav)));
     QVERIFY(validateButton->isEnabled());
 
     QFile::remove(invalidPath);
@@ -370,9 +382,9 @@ void AudiobookFlowDialogTest::previewVoice_writesTempFile()
 
 void AudiobookFlowDialogTest::previewListened_gatesGenerateStep()
 {
-    m_dialog->m_selectedVoiceId   = 1;
+    m_dialog->m_selectedVoiceId = 1;
     m_dialog->m_selectedVoiceName = QStringLiteral("Classic Storyteller");
-    m_dialog->m_currentStep       = 3; // preview step
+    m_dialog->m_currentStep = 3; // preview step
 
     // Next is disabled until the user opens the preview.
     m_dialog->updateNextButtonEnabled();
@@ -391,11 +403,11 @@ void AudiobookFlowDialogTest::previewListened_gatesGenerateStep()
 
 void AudiobookFlowDialogTest::startGeneration_succeedsWithAllSelections()
 {
-    m_dialog->m_selectedLanguage  = QStringLiteral("en");
-    m_dialog->m_selectedFormat    = QStringLiteral("epub");
-    m_dialog->m_selectedVoiceId   = 1;
+    m_dialog->m_selectedLanguage = QStringLiteral("en");
+    m_dialog->m_selectedFormat = QStringLiteral("epub");
+    m_dialog->m_selectedVoiceId = 1;
     m_dialog->m_selectedVoiceName = QStringLiteral("Classic Storyteller");
-    m_dialog->m_currentStep       = 4;
+    m_dialog->m_currentStep = 4;
 
     m_dialog->onNextOrGenerateClicked();
 
@@ -406,11 +418,11 @@ void AudiobookFlowDialogTest::startGeneration_succeedsWithAllSelections()
 
 void AudiobookFlowDialogTest::startGeneration_showsSaveAsButton()
 {
-    m_dialog->m_selectedLanguage  = QStringLiteral("en");
-    m_dialog->m_selectedFormat    = QStringLiteral("epub");
-    m_dialog->m_selectedVoiceId   = 1;
+    m_dialog->m_selectedLanguage = QStringLiteral("en");
+    m_dialog->m_selectedFormat = QStringLiteral("epub");
+    m_dialog->m_selectedVoiceId = 1;
     m_dialog->m_selectedVoiceName = QStringLiteral("Classic Storyteller");
-    m_dialog->m_currentStep       = 4;
+    m_dialog->m_currentStep = 4;
 
     m_dialog->onNextOrGenerateClicked();
 
@@ -426,8 +438,8 @@ void AudiobookFlowDialogTest::startGeneration_writesWavFile()
 
     const QString outputPath = QDir::temp().filePath(
         QStringLiteral("bookhub-tts-test-%1.wav").arg(QDateTime::currentMSecsSinceEpoch()));
-    service.generateAudiobook(2, QStringLiteral("Warm Listener"),
-                              QStringLiteral("A small test audiobook."), outputPath);
+    service.generateAudiobook(
+        2, QStringLiteral("Warm Listener"), QStringLiteral("A small test audiobook."), outputPath);
 
     QVERIFY(done.wait(2000));
     QCOMPARE(done.first().at(0).toBool(), true);
@@ -445,7 +457,8 @@ void AudiobookFlowDialogTest::startGeneration_failsWithMissingSelections()
     // Dismiss the warning dialog that showErrorState() will block on.
     QTimer::singleShot(0, [] {
         auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget());
-        if (box) box->reject();
+        if (box)
+            box->reject();
     });
 
     m_dialog->onNextOrGenerateClicked();
@@ -457,11 +470,11 @@ void AudiobookFlowDialogTest::startGeneration_failsWithMissingSelections()
 
 void AudiobookFlowDialogTest::cancelGeneration_stopsAndEnablesRetry()
 {
-    m_dialog->m_selectedLanguage  = QStringLiteral("en");
-    m_dialog->m_selectedFormat    = QStringLiteral("epub");
-    m_dialog->m_selectedVoiceId   = 1;
+    m_dialog->m_selectedLanguage = QStringLiteral("en");
+    m_dialog->m_selectedFormat = QStringLiteral("epub");
+    m_dialog->m_selectedVoiceId = 1;
     m_dialog->m_selectedVoiceName = QStringLiteral("Classic Storyteller");
-    m_dialog->m_currentStep       = 4;
+    m_dialog->m_currentStep = 4;
 
     m_dialog->onNextOrGenerateClicked();
     QVERIFY(!m_dialog->m_cancelGenBtn->isHidden());
@@ -480,11 +493,11 @@ void AudiobookFlowDialogTest::generationFailure_exposesRetry()
 
     FailingTTSService failingService;
     m_dialog = new AudiobookFlowDialog(m_libraryService, m_worker, &failingService);
-    m_dialog->m_selectedLanguage  = QStringLiteral("en");
-    m_dialog->m_selectedFormat    = QStringLiteral("epub");
-    m_dialog->m_selectedVoiceId   = 1;
+    m_dialog->m_selectedLanguage = QStringLiteral("en");
+    m_dialog->m_selectedFormat = QStringLiteral("epub");
+    m_dialog->m_selectedVoiceId = 1;
     m_dialog->m_selectedVoiceName = QStringLiteral("Classic Storyteller");
-    m_dialog->m_currentStep       = 4;
+    m_dialog->m_currentStep = 4;
 
     m_dialog->onNextOrGenerateClicked();
 
@@ -504,7 +517,7 @@ void AudiobookFlowDialogTest::onGenerationComplete_updatesCloseButton()
 
 void AudiobookFlowDialogTest::onAddToLibraryClicked_emitsAudiobookReadyRequest()
 {
-    m_dialog->m_bookId        = QStringLiteral("gutenberg:1342");
+    m_dialog->m_bookId = QStringLiteral("gutenberg:1342");
     m_dialog->m_libraryItemId = 1; // non-zero triggers the status update path
 
     QSignalSpy spy(m_libraryService, &LibraryService::setAudiobookReadyRequested);
@@ -519,11 +532,11 @@ void AudiobookFlowDialogTest::onAddToLibraryClicked_emitsAudiobookReadyRequest()
 void AudiobookFlowDialogTest::resetState_rewiresToNextFromClose_afterGeneration()
 {
     // Drive to completion — onGenerationComplete() rewires Next to accept().
-    m_dialog->m_selectedLanguage  = QStringLiteral("en");
-    m_dialog->m_selectedFormat    = QStringLiteral("epub");
-    m_dialog->m_selectedVoiceId   = 1;
+    m_dialog->m_selectedLanguage = QStringLiteral("en");
+    m_dialog->m_selectedFormat = QStringLiteral("epub");
+    m_dialog->m_selectedVoiceId = 1;
     m_dialog->m_selectedVoiceName = QStringLiteral("Classic Storyteller");
-    m_dialog->m_currentStep       = 4;
+    m_dialog->m_currentStep = 4;
     m_dialog->onNextOrGenerateClicked();
     QTRY_COMPARE(m_dialog->m_nextBtn->text(), QStringLiteral("Close"));
 
@@ -534,7 +547,7 @@ void AudiobookFlowDialogTest::resetState_rewiresToNextFromClose_afterGeneration(
 
     // Verify the step actually advances on click rather than accepting the dialog.
     m_dialog->m_selectedLanguage = QStringLiteral("en");
-    m_dialog->m_hasLanguageStep  = true;
+    m_dialog->m_hasLanguageStep = true;
     m_dialog->updateStepUi();
     m_dialog->onNextOrGenerateClicked();
     QCOMPARE(m_dialog->m_currentStep, 1);
