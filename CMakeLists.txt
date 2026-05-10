@@ -126,6 +126,25 @@ if(ENABLE_POCKET_TTS)
     message(STATUS "PocketTTS.cpp voice cloning enabled")
 endif()
 
+# ---------------------------------------------------------------------------
+# CUDA / GPU acceleration — auto-detected, no opt-in required
+# ---------------------------------------------------------------------------
+# When CUDA Toolkit ≥11 is present on the host, BOOKHUB_HAVE_CUDA is defined
+# and the ONNX Runtime sessions in SherpaOnnxTTSService and PocketTTSService
+# will be configured to use the CUDA execution provider once synthesis is
+# wired in (Task 22).
+#
+# IMPORTANT: the TTS library must itself be a CUDA-enabled build — detecting
+# the toolkit is a necessary but not sufficient condition for GPU inference to
+# work at runtime. CPU inference is used as a fallback when CUDA is absent.
+find_package(CUDAToolkit 11 QUIET)
+if(CUDAToolkit_FOUND)
+    message(STATUS "CUDA ${CUDAToolkit_VERSION} found — GPU inference enabled for ONNX-based TTS engines (BOOKHUB_HAVE_CUDA)")
+    target_compile_definitions(bookhub_gui PUBLIC BOOKHUB_HAVE_CUDA)
+else()
+    message(STATUS "CUDA Toolkit not found — TTS engines will use CPU inference")
+endif()
+
 add_executable(bookhub
     src/main.cpp
     resources.qrc

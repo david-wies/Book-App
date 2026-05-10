@@ -101,6 +101,10 @@ void PocketTTSService::generatePreview(int voiceId, const QString &voiceName, co
 #ifdef BOOKHUB_HAVE_POCKET_TTS
     // TODO (Task 22 + Task 14): run PocketTTS inference with m_referenceAudioPath as the
     // conditioning signal. Emit previewGenerated(voiceId, wavBytes) and return.
+#ifdef BOOKHUB_HAVE_CUDA
+    // TODO (Task 22): call sessionOptions.AppendExecutionProvider_CUDA(OrtCUDAProviderOptions{})
+    // before creating the ONNX Runtime session to enable GPU inference.
+#endif
     Q_UNUSED(voiceId)
     // Prevent fall-through to the failure emit below once synthesis is wired in.
     return;
@@ -126,6 +130,10 @@ void PocketTTSService::generateAudiobook(int voiceId,
 #ifdef BOOKHUB_HAVE_POCKET_TTS
     // TODO (Task 22 + Task 14): run PocketTTS full-document synthesis.
     // Emit generationProgress() updates and generationCompleted(true, outputPath). Return.
+#ifdef BOOKHUB_HAVE_CUDA
+    // TODO (Task 22): call sessionOptions.AppendExecutionProvider_CUDA(OrtCUDAProviderOptions{})
+    // before creating the ONNX Runtime session to enable GPU inference.
+#endif
     Q_UNUSED(voiceId)
     // Prevent fall-through to the failure emit below once synthesis is wired in.
     return;
