@@ -7,6 +7,7 @@
 #include <QFileDialog>
 #include <QFile>
 #include <QFileInfo>
+#include <limits>
 
 namespace bookhub::gui {
 
@@ -18,6 +19,10 @@ int wavDurationMs(const QString &filePath)
     if (!file.open(QIODevice::ReadOnly))
         return -1;
 
+    // NOTE: Reads a standard 44-byte PCM WAV header. Files that contain JUNK or
+    // LIST chunks between 'fmt ' and 'data' shift the data-chunk offset beyond
+    // byte 40, yielding an incorrect duration. Acceptable for MVP voice uploads
+    // which are expected to be simple recorder output.
     const QByteArray header = file.read(44);
     if (header.size() < 44 || header.mid(0, 4) != "RIFF" || header.mid(8, 4) != "WAVE")
         return -1;
@@ -33,14 +38,22 @@ int wavDurationMs(const QString &filePath)
             | (static_cast<quint32>(static_cast<uchar>(header[offset + 3])) << 24);
     };
 
-    const quint16 channels = readUInt16(22);
-    const quint32 sampleRate = readUInt32(24);
+    const quint16 channels      = readUInt16(22);
+    const quint32 sampleRate    = readUInt32(24);
     const quint16 bitsPerSample = readUInt16(34);
-    const quint32 dataBytes = readUInt32(40);
-    const quint32 bytesPerSecond = sampleRate * channels * bitsPerSample / 8;
+    const quint32 dataBytes     = readUInt32(40);
+
+    // Promote to quint64 before multiplying to prevent quint32 overflow for
+    // high sample-rate / multi-channel files (e.g. 192 kHz stereo 24-bit).
+    const quint64 bytesPerSecond =
+        static_cast<quint64>(sampleRate) * channels * bitsPerSample / 8;
     if (bytesPerSecond == 0)
         return -1;
-    return static_cast<int>((static_cast<quint64>(dataBytes) * 1000) / bytesPerSecond);
+
+    const quint64 durationMs = (static_cast<quint64>(dataBytes) * 1000) / bytesPerSecond;
+    if (durationMs > static_cast<quint64>(std::numeric_limits<int>::max()))
+        return -1;
+    return static_cast<int>(durationMs);
 }
 
 } // namespace

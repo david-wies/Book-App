@@ -9,6 +9,8 @@
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDir>
+#include <QFile>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QRegularExpression>
 #include <QStandardPaths>
@@ -27,8 +29,8 @@ namespace bookhub::gui {
 
 AudiobookFlowDialog::AudiobookFlowDialog(LibraryService *libraryService,
                                          QueryWorker    *worker,
-                                         QWidget        *parent,
-                                         TTSService     *ttsService)
+                                         TTSService     *ttsService,
+                                         QWidget        *parent)
     : QDialog(parent)
     , m_libraryService(libraryService)
     , m_worker(worker)
@@ -149,6 +151,8 @@ void AudiobookFlowDialog::buildUi()
     m_progressBar = new QProgressBar(this);
     m_progressBar->setRange(0, 100);
     m_progressBar->setValue(0);
+    m_progressBar->setAccessibleName(QStringLiteral("Audiobook generation progress"));
+    m_progressBar->setAccessibleDescription(QStringLiteral("Generating audiobook, 0 percent complete"));
     genLayout->addWidget(m_progressBar);
     m_progressText = new QLabel("Estimated time: ~4 minutes", this);
     m_progressText->setAlignment(Qt::AlignCenter);
@@ -168,11 +172,16 @@ void AudiobookFlowDialog::buildUi()
     m_openFileBtn->hide();
     connect(m_openFileBtn, &QPushButton::clicked,
             this, &AudiobookFlowDialog::onOpenFileClicked);
+    m_saveAsBtn = new QPushButton("Save as…", this);
+    m_saveAsBtn->hide();
+    connect(m_saveAsBtn, &QPushButton::clicked,
+            this, &AudiobookFlowDialog::onSaveAsClicked);
     m_addToLibBtn = new QPushButton("Add to library", this);
     m_addToLibBtn->hide();
     connect(m_addToLibBtn, &QPushButton::clicked,
             this, &AudiobookFlowDialog::onAddToLibraryClicked);
     postGenLayout->addWidget(m_openFileBtn);
+    postGenLayout->addWidget(m_saveAsBtn);
     postGenLayout->addWidget(m_addToLibBtn);
     genLayout->addLayout(postGenLayout);
     genLayout->addStretch();
@@ -213,6 +222,11 @@ void AudiobookFlowDialog::resetState()
     m_selectedVoiceId = -1;
     m_selectedVoiceName.clear();
     m_previewAudioData.clear();
+    m_previewListened = false;
+    if (!m_previewTempPath.isEmpty()) {
+        QFile::remove(m_previewTempPath);
+        m_previewTempPath.clear();
+    }
     m_generatedOutputPath.clear();
     m_pendingDetailsId = 0;
     m_pendingFormatsId = 0;
@@ -236,6 +250,7 @@ void AudiobookFlowDialog::resetState()
     m_resultLabel->clear();
     m_cancelGenBtn->hide();
     m_openFileBtn->hide();
+    m_saveAsBtn->hide();
     m_addToLibBtn->hide();
     m_nextBtn->setEnabled(true);
 
@@ -314,6 +329,11 @@ void AudiobookFlowDialog::onVoiceSelectionChanged(int voiceId, const QString &vo
         : QStringLiteral("Listening to: —"));
     m_previewText->setText(previewScript());
     m_previewAudioData.clear();
+    m_previewListened = false;
+    if (!m_previewTempPath.isEmpty()) {
+        QFile::remove(m_previewTempPath);
+        m_previewTempPath.clear();
+    }
     m_previewPlayer->setDuration(0);
     m_previewPlayer->setCurrentTime(0);
     updateNextButtonEnabled();
@@ -352,13 +372,22 @@ void AudiobookFlowDialog::onNextOrGenerateClicked()
 
 void AudiobookFlowDialog::onPlayPreview()
 {
-    if (m_previewAudioData.isEmpty())
+    if (m_previewAudioData.isEmpty()) {
         onPreviewVoiceClicked();
+        return;
+    }
+    if (!m_previewTempPath.isEmpty()) {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(m_previewTempPath));
+        m_previewListened = true;
+        updateNextButtonEnabled();
+    }
 }
 
 void AudiobookFlowDialog::onGenerationProgress(int percent)
 {
     m_progressBar->setValue(percent);
+    m_progressBar->setAccessibleDescription(
+        QStringLiteral("Generating audiobook, %1 percent complete").arg(percent));
 }
 
 void AudiobookFlowDialog::onGenerationComplete()
@@ -366,7 +395,8 @@ void AudiobookFlowDialog::onGenerationComplete()
     m_resultLabel->setText("✓ Audiobook ready!");
     m_progressText->hide();
     m_cancelGenBtn->hide();
-    m_openFileBtn->show();   // Phase 3: open generated audio file
+    m_openFileBtn->show();
+    m_saveAsBtn->show();
     // Add-to-library only writes a row that already exists; if the book is not
     // in the library, the SQL UPDATE silently affects 0 rows. Hide the button
     // in that case so the click cannot misleadingly succeed.
@@ -397,9 +427,19 @@ void AudiobookFlowDialog::onPreviewGenerated(int voiceId, const QByteArray &audi
         return;
 
     m_previewAudioData = audioData;
+
+    // Write to a temp file so the system audio player can open it via onPlayPreview.
+    if (!m_previewTempPath.isEmpty())
+        QFile::remove(m_previewTempPath);
+    m_previewTempPath = QDir::tempPath()
+        + QStringLiteral("/bookhub-preview-%1.wav").arg(QDateTime::currentMSecsSinceEpoch());
+    QFile previewFile(m_previewTempPath);
+    if (!previewFile.open(QIODevice::WriteOnly) || previewFile.write(audioData) != audioData.size())
+        m_previewTempPath.clear();
+
     m_previewVoiceBtn->setEnabled(true);
     m_previewVoiceBtn->setText("Regenerate preview");
-    m_previewPlayer->setDuration(4000);
+    m_previewPlayer->setDuration(NativeTTSService::kPreviewDurationMs);
     m_previewPlayer->setCurrentTime(0);
     m_resultLabel->clear();
 }
@@ -423,6 +463,19 @@ void AudiobookFlowDialog::onOpenFileClicked()
 {
     if (!m_generatedOutputPath.isEmpty())
         QDesktopServices::openUrl(QUrl::fromLocalFile(m_generatedOutputPath));
+}
+
+void AudiobookFlowDialog::onSaveAsClicked()
+{
+    if (m_generatedOutputPath.isEmpty())
+        return;
+    const QString dest = QFileDialog::getSaveFileName(
+        this,
+        QStringLiteral("Save Audiobook As"),
+        QDir::homePath() + QLatin1Char('/') + QFileInfo(m_generatedOutputPath).fileName(),
+        QStringLiteral("WAV audio (*.wav);;All files (*)"));
+    if (!dest.isEmpty())
+        QFile::copy(m_generatedOutputPath, dest);
 }
 
 void AudiobookFlowDialog::onAddToLibraryClicked()
@@ -523,6 +576,7 @@ void AudiobookFlowDialog::updateNextButtonEnabled()
         case 0: enabled = !m_selectedLanguage.isEmpty(); break;
         case 1: enabled = !m_selectedFormat.isEmpty();   break;
         case 2: enabled = m_selectedVoiceId >= 0;        break;
+        case 3: enabled = m_previewListened;             break;
         default: enabled = true;                         break;
     }
     m_nextBtn->setEnabled(enabled);
@@ -551,6 +605,7 @@ bool AudiobookFlowDialog::startGeneration()
     m_resultLabel->clear();
     m_cancelGenBtn->show();
     m_openFileBtn->hide();
+    m_saveAsBtn->hide();
     m_addToLibBtn->hide();
     m_nextBtn->setEnabled(false);
     if (m_libraryItemId > 0 && m_libraryService)

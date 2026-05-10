@@ -20,6 +20,7 @@
 #include "gui/widgets/voice_selector_widget.h"
 #include "support/test_database_utils.h"
 #include "support/test_query_worker.h"
+#include "support/wav_utils.h"
 
 namespace bookhub::gui {
 
@@ -74,9 +75,12 @@ private slots:
     void voiceSelector_displaysPresetAndCustomSeparately();
     void voiceUploadDialog_validatesFormatAndWavDuration();
     void previewVoice_generatesWavData();
+    void previewVoice_writesTempFile();
+    void previewListened_gatesGenerateStep();
 
     // Generation flow
     void startGeneration_succeedsWithAllSelections();
+    void startGeneration_showsSaveAsButton();
     void startGeneration_writesWavFile();
     void startGeneration_failsWithMissingSelections();
     void cancelGeneration_stopsAndEnablesRetry();
@@ -101,58 +105,6 @@ private:
 };
 
 namespace {
-
-void appendAscii(QByteArray &data, const char *text)
-{
-    data.append(text, 4);
-}
-
-void appendUInt16LE(QByteArray &data, quint16 value)
-{
-    data.append(static_cast<char>(value & 0xff));
-    data.append(static_cast<char>((value >> 8) & 0xff));
-}
-
-void appendUInt32LE(QByteArray &data, quint32 value)
-{
-    appendUInt16LE(data, static_cast<quint16>(value & 0xffff));
-    appendUInt16LE(data, static_cast<quint16>((value >> 16) & 0xffff));
-}
-
-QString writeSilentWav(int durationMs)
-{
-    constexpr int sampleRate = 8000;
-    constexpr int channels = 1;
-    constexpr int bitsPerSample = 16;
-    const int sampleCount = sampleRate * durationMs / 1000;
-    QByteArray pcm(sampleCount * 2, '\0');
-
-    QByteArray wav;
-    appendAscii(wav, "RIFF");
-    appendUInt32LE(wav, static_cast<quint32>(36 + pcm.size()));
-    appendAscii(wav, "WAVE");
-    appendAscii(wav, "fmt ");
-    appendUInt32LE(wav, 16);
-    appendUInt16LE(wav, 1);
-    appendUInt16LE(wav, channels);
-    appendUInt32LE(wav, sampleRate);
-    appendUInt32LE(wav, sampleRate * channels * bitsPerSample / 8);
-    appendUInt16LE(wav, channels * bitsPerSample / 8);
-    appendUInt16LE(wav, bitsPerSample);
-    appendAscii(wav, "data");
-    appendUInt32LE(wav, static_cast<quint32>(pcm.size()));
-    wav.append(pcm);
-
-    const QString path = QDir::temp().filePath(
-        QStringLiteral("bookhub-voice-%1-%2.wav")
-            .arg(durationMs)
-            .arg(QDateTime::currentMSecsSinceEpoch()));
-    QFile file(path);
-    if (!file.open(QIODevice::WriteOnly))
-        return {};
-    file.write(wav);
-    return path;
-}
 
 QPushButton *buttonByText(QWidget &widget, const QString &text)
 {
@@ -366,13 +318,13 @@ void AudiobookFlowDialogTest::voiceUploadDialog_validatesFormatAndWavDuration()
                                       Q_ARG(QString, invalidPath)));
     QVERIFY(!validateButton->isEnabled());
 
-    const QString shortWav = writeSilentWav(5000);
+    const QString shortWav = bookhub::tests::writeSilentWav(5000);
     QVERIFY(!shortWav.isEmpty());
     QVERIFY(QMetaObject::invokeMethod(&dialog, "onFileSelected",
                                       Q_ARG(QString, shortWav)));
     QVERIFY(!validateButton->isEnabled());
 
-    const QString validWav = writeSilentWav(12000);
+    const QString validWav = bookhub::tests::writeSilentWav(12000);
     QVERIFY(!validWav.isEmpty());
     QVERIFY(QMetaObject::invokeMethod(&dialog, "onFileSelected",
                                       Q_ARG(QString, validWav)));
@@ -396,6 +348,46 @@ void AudiobookFlowDialogTest::previewVoice_generatesWavData()
     QCOMPARE(m_dialog->m_previewVoiceBtn->text(), QStringLiteral("Regenerate preview"));
 }
 
+void AudiobookFlowDialogTest::previewVoice_writesTempFile()
+{
+    m_dialog->m_bookTitle = QStringLiteral("Pride and Prejudice");
+    m_dialog->m_selectedVoiceId = 1;
+    m_dialog->m_selectedVoiceName = QStringLiteral("Classic Storyteller");
+
+    m_dialog->onPreviewVoiceClicked();
+
+    QTRY_VERIFY(!m_dialog->m_previewTempPath.isEmpty());
+    QVERIFY(QFileInfo::exists(m_dialog->m_previewTempPath));
+    QCOMPARE(m_dialog->m_previewAudioData.left(4), QByteArray("RIFF"));
+
+    // Temp file is cleaned up when voice changes.
+    const QString oldPath = m_dialog->m_previewTempPath;
+    m_dialog->onVoiceSelectionChanged(-1, {});
+    QVERIFY(!QFileInfo::exists(oldPath));
+    QVERIFY(m_dialog->m_previewTempPath.isEmpty());
+}
+
+void AudiobookFlowDialogTest::previewListened_gatesGenerateStep()
+{
+    m_dialog->m_selectedVoiceId   = 1;
+    m_dialog->m_selectedVoiceName = QStringLiteral("Classic Storyteller");
+    m_dialog->m_currentStep       = 3; // preview step
+
+    // Next is disabled until the user opens the preview.
+    m_dialog->updateNextButtonEnabled();
+    QVERIFY(!m_dialog->m_nextBtn->isEnabled());
+
+    // Simulate the user clicking play — sets m_previewListened.
+    m_dialog->m_previewListened = true;
+    m_dialog->updateNextButtonEnabled();
+    QVERIFY(m_dialog->m_nextBtn->isEnabled());
+
+    // Changing voice resets the gate.
+    m_dialog->onVoiceSelectionChanged(2, QStringLiteral("Warm Listener"));
+    m_dialog->updateNextButtonEnabled();
+    QVERIFY(!m_dialog->m_nextBtn->isEnabled());
+}
+
 void AudiobookFlowDialogTest::startGeneration_succeedsWithAllSelections()
 {
     m_dialog->m_selectedLanguage  = QStringLiteral("en");
@@ -409,6 +401,21 @@ void AudiobookFlowDialogTest::startGeneration_succeedsWithAllSelections()
     QTRY_COMPARE(m_dialog->m_progressBar->value(), 100);
     QCOMPARE(m_dialog->m_nextBtn->text(), QStringLiteral("Close"));
     QVERIFY(QFileInfo::exists(m_dialog->m_generatedOutputPath));
+}
+
+void AudiobookFlowDialogTest::startGeneration_showsSaveAsButton()
+{
+    m_dialog->m_selectedLanguage  = QStringLiteral("en");
+    m_dialog->m_selectedFormat    = QStringLiteral("epub");
+    m_dialog->m_selectedVoiceId   = 1;
+    m_dialog->m_selectedVoiceName = QStringLiteral("Classic Storyteller");
+    m_dialog->m_currentStep       = 4;
+
+    m_dialog->onNextOrGenerateClicked();
+
+    QTRY_COMPARE(m_dialog->m_nextBtn->text(), QStringLiteral("Close"));
+    QVERIFY(!m_dialog->m_openFileBtn->isHidden());
+    QVERIFY(!m_dialog->m_saveAsBtn->isHidden());
 }
 
 void AudiobookFlowDialogTest::startGeneration_writesWavFile()
@@ -471,7 +478,7 @@ void AudiobookFlowDialogTest::generationFailure_exposesRetry()
     delete m_dialog;
 
     FailingTTSService failingService;
-    m_dialog = new AudiobookFlowDialog(m_libraryService, m_worker, nullptr, &failingService);
+    m_dialog = new AudiobookFlowDialog(m_libraryService, m_worker, &failingService);
     m_dialog->m_selectedLanguage  = QStringLiteral("en");
     m_dialog->m_selectedFormat    = QStringLiteral("epub");
     m_dialog->m_selectedVoiceId   = 1;

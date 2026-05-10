@@ -61,11 +61,57 @@ This upgrades an existing `bookhub.db` to the current schema version. See `src/s
 
 The test suite uses Qt Test. Ten targets are registered with CTest across `unit`, `integration`, and `gui` categories; the `sanity` label marks the fast-gate subset. Run with `ctest -L sanity` (fast) or `ctest` (full suite) from the build directory.
 
-**Static analysis:** clang-tidy is used for linting. Run it from the build directory before opening a PR:
+**During active development — build-time analysis:**
+Opt into inline clang-tidy and clazy warnings while you build so issues surface immediately rather than at PR time. Always generate `compile_commands.json` so both tools find Qt includes:
 ```bash
-run-clang-tidy -p build src/ tests/
+cmake -B build \
+  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+  -DCMAKE_CXX_CLANG_TIDY="clang-tidy" ..
+cmake --build build
 ```
-Fix all warnings before creating the PR. Common checks enforced: `const &` on value-by-copy parameters, `qsizetype` for Qt string index returns, `static_cast` for signed/unsigned conversions, and `std::move` on last-use locals passed to `emit`.
+To add clazy on top, replace the tidy value with `"clazy-standalone;-checks=level1"`. This is opt-in — the default `cmake -B build ..` stays fast.
+
+**When running tests — sanitizers:**
+Run the test suite under ASan+UBSan habitually during development, not only in CI:
+```bash
+cmake -B build-san -DENABLE_SANITIZERS=ON ..
+cmake --build build-san
+cd build-san && ctest --output-on-failure
+```
+Run TSan in its own build whenever you touch code that crosses the GUI/Query/Collector thread boundaries — it is incompatible with ASan:
+```bash
+cmake -B build-tsan -DENABLE_TSAN=ON ..
+cmake --build build-tsan
+cd build-tsan && ctest --output-on-failure
+```
+The CMake options (`ENABLE_SANITIZERS`, `ENABLE_TSAN`, etc.) are defined in `docs/static-analysis-tools.md` — add them to `CMakeLists.txt` if not yet present.
+
+**Before starting a refactor — complexity check:**
+Run Lizard on the area you are about to modify. Functions with cyclomatic complexity > 10 or length > 60 lines are high-risk targets — understand them before adding more:
+```bash
+source tools/venv/bin/activate
+lizard src/path/to/target/ --CCN 10 --length 60 --warnings_only
+```
+
+**After adding or removing code — include audit:**
+Run IWYU after any change that adds, removes, or restructures `#include` directives to keep compile times and dependency footprint minimal:
+```bash
+iwyu_tool.py -p build src/ | fix_includes.py --dry_run
+```
+Review the suggestions before applying; IWYU can be aggressive with Qt headers.
+
+**Pre-PR — full static analysis** (details in Git workflow below)**:**
+clang-tidy, clazy, cppcheck. See the numbered checklist in the Git workflow convention.
+
+**Python-based tools** (lizard, iwyu_tool.py, codechecker, etc.) must use the project venv at `tools/venv/`. Activate it before running any Python analysis tool:
+```bash
+python3 -m venv tools/venv        # once
+source tools/venv/bin/activate
+pip install -r tools/requirements.txt lizard codechecker
+```
+Add any new Python tool dependencies to `tools/requirements.txt`.
+
+Full tool reference: `docs/static-analysis-tools.md`.
 
 ## Architecture
 
@@ -112,7 +158,21 @@ Full ID model: `docs/design/book-identity-model.md`. Schema DDL: `src/shared/dat
 - **Namespaces:** All code lives under `bookhub::`, with sub-namespaces `bookhub::db`, `bookhub::collector`, and `bookhub::gui`.
 - **Shutdown coordination:** Uses `std::atomic_bool` flags (`m_shutdownRequested`, `m_updateInProgress`) and a mix of `Qt::QueuedConnection` / `Qt::DirectConnection` for safe cross-thread teardown.
 - **Comments:** Explain *why*, not *what*. Use tags: `TODO:`, `FIXME:`, `HACK:`, `NOTE:`, `WARNING:`, `PERF:`, `SECURITY:`.
-- **Git workflow:** Every piece of work — feature, bugfix, or chore — gets its own short-lived branch cut from `develop` (e.g. `feature/task-7-search-screen`, `fix/collector-crash`, `chore/update-deps`). Keep branches small and focused: one task per branch. Merge back to `develop` via PR; never commit directly to `develop` or `master`. Both branches are protected and require PRs (0 approvals — bump to 1 in GitHub settings when a second contributor joins). **Before creating a PR, always run clang-tidy (`run-clang-tidy -p build src/ tests/`) and fix all warnings, then run `/review` to perform a code review of the branch changes and address any issues found. If the `/review` finds any issues — even minor ones — post a comment on the PR summarising the findings using `gh pr comment <number> --body "..."`. If the PR description includes a test plan, execute every step of it and confirm each item passes before marking the review complete.** The only permitted paths into `master` are a PR from `develop` (standard) or a PR from `release/vX.Y.Z` (release prep via `tools/prepare-release.sh`) — both enforced by the `.githooks/pre-push` hook (local) and GitHub branch protection (server-side). No other branch may target `master` directly.
+- **Debugging:** Match the tool to the symptom. For memory errors (crash, corruption, leak): ASan. For undefined behaviour (integer overflow, bad cast, misaligned access): UBSan. For uninitialized reads: MSan (clang-only build). For race conditions in the 3-thread model: TSan (separate build from ASan). For allocation growth or hotspots without recompiling: `heaptrack`. For deep cross-function analysis without a special build: Valgrind (slow but zero recompile). See `docs/static-analysis-tools.md` for build flags and run commands.
+- **Git workflow:** Every piece of work — feature, bugfix, or chore — gets its own short-lived branch cut from `develop` (e.g. `feature/task-7-search-screen`, `fix/collector-crash`, `chore/update-deps`). Keep branches small and focused: one task per branch. Merge back to `develop` via PR; never commit directly to `develop` or `master`. Both branches are protected and require PRs (0 approvals — bump to 1 in GitHub settings when a second contributor joins). **When starting a task** that modifies existing code, run Lizard on the target area first. Functions above the complexity threshold are high-risk — understand them before changing them, and avoid increasing their score:
+```bash
+source tools/venv/bin/activate && lizard src/path/to/target/ --CCN 10 --length 60 --warnings_only
+```
+
+**Before creating a PR, complete all of the following steps in order:**
+1. **Design comparison** — for every changed source file, check whether a corresponding design doc exists under `docs/design/` or a spec under `spec/`. If one does, read it and verify the implementation matches the specified behaviour, interfaces, and constraints. Flag any divergence before proceeding.
+2. **clang-tidy** — `run-clang-tidy -p build src/ tests/`; fix all warnings.
+3. **clazy** — `clazy-standalone -checks=level1 -p build $(find src/ -name '*.cpp')`; fix all warnings.
+4. **cppcheck** — `cppcheck --enable=all --std=c++23 --error-exitcode=1 --suppress=missingIncludeSystem --suppress=missingInclude -I src/ src/`; fix all errors.
+5. **`/review`** — run the slash command to perform a full code review of the branch changes and address any issues found. If `/review` finds any issues — even minor ones — post a comment on the PR summarising the findings: `gh pr comment <number> --body "..."`.
+6. **Test plan** — if the PR description includes a test plan, execute every step and confirm each item passes before marking the review complete.
+
+Python-based analysis tools must run inside `tools/venv/` — see the Testing & Linting section above. The only permitted paths into `master` are a PR from `develop` (standard) or a PR from `release/vX.Y.Z` (release prep via `tools/prepare-release.sh`) — both enforced by the `.githooks/pre-push` hook (local) and GitHub branch protection (server-side). No other branch may target `master` directly.
 - **Issue linking:** If a PR resolves a GitHub issue, link the issue in the PR description (e.g. `Closes #42`). Once the PR is merged, post a comment on the issue with a short paragraph explaining what was implemented and a note that the issue is now closed as part of completing the PR, then close the issue with `gh issue close <number>`.
 - **GitHub task checkboxes:** When a PR or issue contains a task list (markdown checkboxes), mark each item `[x]` as soon as it is done — do not batch them at the end. Use `gh api` to edit the body in place: fetch the current body, replace `[ ]` with `[x]` for the completed item, then PATCH it back.
 - **Branch cleanup:** After any PR that is not `develop → master` is merged, delete the source branch — it is no longer needed. Use `gh pr view <number> --json headRefName` to get the branch name, then `git push origin --delete <branch>` (or `gh api` equivalent) to remove it from the remote.
@@ -125,7 +185,7 @@ Full ID model: `docs/design/book-identity-model.md`. Schema DDL: `src/shared/dat
   To add or remove a file from the strip list, edit `.github/release-strip.txt` and update `.gitattributes` (the `export-ignore` entries) to match.
 - **Build artifacts:** The icon is embedded as a Qt resource (`.qrc`). The database is stored in `QStandardPaths::AppDataLocation`. The `build/` directory is git-ignored.
 - **Docs:** When changing a public API, adding a feature, or altering architecture, update the relevant files in `docs/`. The `docs/` directory is for internal use and will be removed before release. When creating or modifying a file in `docs/design/` or `spec/`, review all other docs and spec files for any content that references or overlaps with the changed area and update them to stay consistent — DDL blocks, thread counts, architecture descriptions, and status fields are common drift points.
-- **License:** All third-party dependencies must be MIT, BSD, Apache 2.0, or similarly permissive. GPL and LGPL dependencies are forbidden — they would force the application to be GPL-licensed. Always verify a library's license before adding it. TTS uses [Sherpa-ONNX](https://github.com/k2-fsa/sherpa-onnx) (Apache 2.0) for preset voices and [PocketTTS.cpp](https://github.com/VolgaGerm/PocketTTS.cpp) (MIT) for custom voice cloning. Do not introduce the Piper GPL fork (`OHF-Voice/piper1-gpl`).
+- **License:** All third-party dependencies must be MIT, BSD, Apache 2.0, or similarly permissive. GPL and LGPL dependencies are forbidden — they would force the application to be GPL-licensed. Always verify a library's license before adding it. TTS uses three engines behind the `TTSService` interface: `NativeTTSService` (built-in, no external dependencies) as the active fallback while model packaging is prepared; [Sherpa-ONNX](https://github.com/k2-fsa/sherpa-onnx) (Apache 2.0) as the target engine for preset voices; and [PocketTTS.cpp](https://github.com/VolgaGerm/PocketTTS.cpp) (MIT) for custom voice cloning. Do not introduce the Piper GPL fork (`OHF-Voice/piper1-gpl`).
 - **QProcess:** Do not use `QProcess` anywhere in the codebase. The earlier `tar` subprocess in `GutenbergAdapter` was replaced with a direct libarchive link. Prefer linking against libraries directly, using Qt's networking/IO APIs, or `QThread`/`QThreadPool` for background work.
 
 ## Custom Commands

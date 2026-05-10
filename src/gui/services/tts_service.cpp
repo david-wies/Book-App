@@ -22,8 +22,10 @@ void NativeTTSService::generatePreview(int voiceId, const QString &voiceName, co
         ? QStringLiteral("This is a short preview of %1.").arg(voiceName)
         : text;
 
+    // NOTE: synthesizeWav runs on the GUI thread. Fast enough for the sinusoidal
+    // MVP (~88 K samples); move to QThreadPool when integrating Sherpa-ONNX.
     QTimer::singleShot(0, this, [this, voiceId, sample, profile] {
-        emit previewGenerated(voiceId, synthesizeWav(sample, profile, 4000));
+        emit previewGenerated(voiceId, synthesizeWav(sample, profile, kPreviewDurationMs));
     });
 }
 

@@ -27,8 +27,8 @@ class AudiobookFlowDialog : public QDialog {
 public:
     explicit AudiobookFlowDialog(LibraryService *libraryService,
                                  QueryWorker    *worker,
-                                 QWidget        *parent = nullptr,
-                                 TTSService     *ttsService = nullptr);
+                                 TTSService     *ttsService = nullptr,
+                                 QWidget        *parent    = nullptr);
 
     void startForBook(const QString &bookId);
 
@@ -52,6 +52,7 @@ private slots:
     void onGenerationFinished(bool success, const QString &outputPath);
     void onPreviewVoiceClicked();
     void onOpenFileClicked();
+    void onSaveAsClicked();
     void onAddToLibraryClicked();
     void onCancelGenerationClicked();
 
@@ -102,6 +103,8 @@ private:
     int     m_selectedVoiceId{-1};
     QString m_selectedVoiceName;
     QByteArray m_previewAudioData;
+    QString    m_previewTempPath;
+    bool       m_previewListened{false};
     QString    m_generatedOutputPath;
 
     QLabel               *m_titleLabel{};
@@ -112,6 +115,7 @@ private:
     QLabel               *m_resultLabel{};
     QPushButton          *m_cancelGenBtn{};  // visible during generation
     QPushButton          *m_openFileBtn{};   // visible after completion
+    QPushButton          *m_saveAsBtn{};     // visible after completion
     QPushButton          *m_addToLibBtn{};   // visible after completion
     QPushButton          *m_backBtn{};
     QPushButton          *m_nextBtn{};
@@ -119,7 +123,7 @@ private:
     QListWidget *m_languageList{};
     QListWidget *m_formatList{};
     VoiceSelectorWidget   *m_voiceSelector{};
-    QPushButton           *m_previewVoiceBtn{};  // preview selected voice (Phase 3)
+    QPushButton           *m_previewVoiceBtn{};
     QLabel                *m_previewVoiceLabel{}; // shows selected voice name in step 4
     MiniAudioPlayerWidget *m_previewPlayer{};
     QLabel                *m_previewText{};
