@@ -17,6 +17,11 @@ namespace bookhub::gui {
 //
 // Build with -DENABLE_POCKET_TTS=ON to link PocketTTS.cpp and enable real
 // synthesis. Without it the service degrades gracefully to a failure signal.
+//
+// NOTE: GPU acceleration — inference runs on CPU by default. Enabling CUDA
+// requires (a) a CUDA-enabled ONNX Runtime build and (b) passing
+// OrtCUDAProviderOptions when constructing the inference session. Wire
+// this in during Task 22; a GPU present on the host is not sufficient alone.
 
 class PocketTTSService final : public TTSService
 {

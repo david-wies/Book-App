@@ -18,6 +18,11 @@ namespace bookhub::gui {
 //
 // Build with -DENABLE_SHERPA_ONNX=ON to link the sherpa-onnx library and
 // enable real synthesis. Without it, the service degrades gracefully.
+//
+// NOTE: GPU acceleration — inference runs on CPU by default. Enabling CUDA
+// requires (a) a CUDA-enabled sherpa-onnx build and (b) passing
+// OrtCUDAProviderOptions when constructing the ONNX Runtime session. Wire
+// this in during Task 22; a GPU present on the host is not sufficient alone.
 
 class SherpaOnnxTTSService final : public TTSService
 {
