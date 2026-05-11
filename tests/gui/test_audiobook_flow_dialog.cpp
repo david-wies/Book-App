@@ -437,8 +437,11 @@ void AudiobookFlowDialogTest::startGeneration_succeedsWithAllSelections()
 
     QTRY_COMPARE(m_dialog->m_progressBar->value(), 100);
     QCOMPARE(m_dialog->m_nextBtn->text(), QStringLiteral("Close"));
-    QVERIFY(QFileInfo::exists(m_dialog->m_generatedOutputPath));
-    QFile::remove(m_dialog->m_generatedOutputPath);
+
+    QFile out(m_dialog->m_generatedOutputPath);
+    QVERIFY(out.open(QIODevice::ReadOnly));
+    QCOMPARE(out.read(4), QByteArray("RIFF"));
+    out.remove();
 }
 
 void AudiobookFlowDialogTest::startGeneration_showsSaveAsButton()

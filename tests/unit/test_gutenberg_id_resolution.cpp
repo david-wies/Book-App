@@ -21,6 +21,7 @@ private slots:
     void normalizeLccn_handlesUriAndPadding();
     void resolveBookId_honorsPriorityAndIsbnConversion();
     void parseSingleRdf_ignoresImagesAndStoresIdentifiers();
+    void normalizeFormatName_mapsKnownMimeTypesAndIgnoresImages();
 };
 
 void GutenbergIdResolutionTest::normalizeLccn_handlesUriAndPadding()
@@ -44,6 +45,12 @@ void GutenbergIdResolutionTest::resolveBookId_honorsPriorityAndIsbnConversion()
                   QStringLiteral("1234567890")},
                  QStringLiteral("1342")),
              QStringLiteral("lccn:n78095332"));
+
+    // ISBN-10 alone falls back to isbn: after conversion to ISBN-13.
+    QCOMPARE(GutenbergAdapter::resolveBookId(
+                 {QStringLiteral("1234567890")},
+                 QStringLiteral("1342")),
+             QStringLiteral("isbn:9781234567897"));
 
     QCOMPARE(GutenbergAdapter::resolveBookId({}, QStringLiteral("1342")),
              QStringLiteral("gutenberg:1342"));
@@ -93,6 +100,31 @@ void GutenbergIdResolutionTest::parseSingleRdf_ignoresImagesAndStoresIdentifiers
     QVERIFY(hasIdentifier(book.identifiers, QStringLiteral("lccn"), QStringLiteral("n78095332")));
     QVERIFY(hasIdentifier(book.identifiers, QStringLiteral("isbn"), QStringLiteral("9781234567897")));
     QVERIFY(hasIdentifier(book.identifiers, QStringLiteral("gutenberg"), QStringLiteral("1342")));
+}
+
+void GutenbergIdResolutionTest::normalizeFormatName_mapsKnownMimeTypesAndIgnoresImages()
+{
+    GutenbergAdapter adapter;
+    auto normalize = [&adapter](const QString &mime) {
+        return adapter.normalizeFormatName(QString(), mime);
+    };
+
+    QVERIFY(normalize(QString()).isEmpty());
+    QVERIFY(normalize(QStringLiteral("image/jpeg")).isEmpty());
+    QVERIFY(normalize(QStringLiteral("image/png")).isEmpty());
+    QVERIFY(normalize(QStringLiteral("image/webp")).isEmpty());
+
+    QCOMPARE(normalize(QStringLiteral("application/epub+zip")), QStringLiteral("epub"));
+    QCOMPARE(normalize(QStringLiteral("application/pdf")), QStringLiteral("pdf"));
+    QCOMPARE(normalize(QStringLiteral("application/x-mobipocket-ebook")), QStringLiteral("mobi"));
+    QCOMPARE(normalize(QStringLiteral("text/plain")), QStringLiteral("text_plain"));
+    QCOMPARE(normalize(QStringLiteral("text/html")), QStringLiteral("html"));
+    QCOMPARE(normalize(QStringLiteral("text/rtf")), QStringLiteral("rtf"));
+    QCOMPARE(normalize(QStringLiteral("text/xml")), QStringLiteral("xml"));
+    QCOMPARE(normalize(QStringLiteral("application/octet-stream")), QStringLiteral("octet_stream"));
+
+    QCOMPARE(normalize(QStringLiteral("application/x-unknown")), QStringLiteral("x_unknown"));
+    QCOMPARE(normalize(QStringLiteral("application/custom+format")), QStringLiteral("custom_format"));
 }
 
 QTEST_GUILESS_MAIN(GutenbergIdResolutionTest)

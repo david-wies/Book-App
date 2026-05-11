@@ -38,6 +38,7 @@ private slots:
     // ---------------------------------------------------------------------------
     // PocketTTSService
     // ---------------------------------------------------------------------------
+    void pocket_libraryAvailable_matchesCompiledIn();
     void pocket_languageSupported_acceptsAllSixLanguages();
     void pocket_languageSupported_rejectsUnsupportedLanguage();
     void pocket_languageSupported_isCaseInsensitive();
@@ -199,6 +200,15 @@ void TtsServiceTest::sherpa_cancel_isSafe()
 // ---------------------------------------------------------------------------
 // PocketTTSService tests
 // ---------------------------------------------------------------------------
+
+void TtsServiceTest::pocket_libraryAvailable_matchesCompiledIn()
+{
+#ifdef BOOKHUB_HAVE_POCKET_TTS
+    QVERIFY(PocketTTSService::libraryAvailable());
+#else
+    QVERIFY(!PocketTTSService::libraryAvailable());
+#endif
+}
 
 void TtsServiceTest::pocket_languageSupported_acceptsAllSixLanguages()
 {
