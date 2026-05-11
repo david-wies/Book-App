@@ -184,7 +184,7 @@ void TtsServiceTest::sherpa_generateAudiobook_whenUnavailable_emitsFailureNoProg
     service.generateAudiobook(1,
                               QStringLiteral("Preset Voice"),
                               QStringLiteral("Hello."),
-                              QStringLiteral("/tmp/sherpa-test.wav"));
+                              QDir::tempPath() + QStringLiteral("/sherpa-test.wav"));
 
     QVERIFY(completed.wait(1000));
     QCOMPARE(completed.first().at(0).toBool(), false);
@@ -268,7 +268,7 @@ void TtsServiceTest::pocket_generateAudiobook_unsupportedLanguage_emitsFailure()
     service.generateAudiobook(1,
                               QStringLiteral("My Voice"),
                               QStringLiteral("Hello."),
-                              QStringLiteral("/tmp/pocket-test.wav"));
+                              QDir::tempPath() + QStringLiteral("/pocket-test.wav"));
 
     QVERIFY(completed.wait(1000));
     QCOMPARE(completed.first().at(0).toBool(), false);
@@ -284,7 +284,7 @@ void TtsServiceTest::pocket_generateAudiobook_missingModels_emitsFailure()
     service.generateAudiobook(1,
                               QStringLiteral("My Voice"),
                               QStringLiteral("Hello."),
-                              QStringLiteral("/tmp/pocket-test.wav"));
+                              QDir::tempPath() + QStringLiteral("/pocket-test.wav"));
 
     QVERIFY(completed.wait(1000));
     QCOMPARE(completed.first().at(0).toBool(), false);

@@ -174,6 +174,7 @@ source tools/venv/bin/activate && lizard src/path/to/target/ --CCN 10 --length 6
 3. **clazy** — `clazy-standalone -checks=level1 -p build $(find src/ -name '*.cpp')`; fix all warnings.
 4. **cppcheck** — `cppcheck --suppressions-list=cppcheck-suppressions.txt --enable=all --std=c++23 --error-exitcode=1 --suppress=missingIncludeSystem --suppress=missingInclude -I src/ src/`; fix all errors.
 5. **`/review`** — run the slash command to perform a full code review of the branch changes and address any issues found. If `/review` finds any issues — even minor ones — post a comment on the PR summarising the findings: `gh pr comment <number> --body "..."`.
+   After applying fixes: re-read every changed file and compare each edit against the specific finding it was meant to address. Confirm the fix resolves the finding exactly — no more, no less — and that no new issues were introduced. Do not mark the review complete until this verification pass is done.
 6. **Test plan** — if the PR description includes a test plan, execute every step and confirm each item passes before marking the review complete.
 
 Python-based analysis tools must run inside `tools/venv/` — see the Testing & Linting section above. The only permitted paths into `master` are a PR from `develop` (standard) or a PR from `release/vX.Y.Z` (release prep via `tools/prepare-release.sh`) — both enforced by the `.githooks/pre-push` hook (local) and GitHub branch protection (server-side). No other branch may target `master` directly.

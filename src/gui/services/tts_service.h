@@ -59,6 +59,7 @@ class NativeTTSService final : public TTSService
     Q_OBJECT
 public:
     explicit NativeTTSService(QObject *parent = nullptr);
+    ~NativeTTSService() override { cancel(); }
 
     void generatePreview(int voiceId, const QString &voiceName, const QString &text) override;
     void generateAudiobook(int voiceId,

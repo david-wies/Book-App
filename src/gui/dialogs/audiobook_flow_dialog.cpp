@@ -612,9 +612,6 @@ void AudiobookFlowDialog::onSaveAsClicked()
 
 void AudiobookFlowDialog::onAddToLibraryClicked()
 {
-    // TODO: Phase 3 — wait for audiobookConversionCompleted signal before
-    // closing so a failed DB write surfaces an error rather than silently
-    // dropping the status update.
     markAudiobookReady();
     accept();
 }
