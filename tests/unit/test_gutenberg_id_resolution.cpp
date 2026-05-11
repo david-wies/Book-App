@@ -22,6 +22,10 @@ private slots:
     void resolveBookId_honorsPriorityAndIsbnConversion();
     void parseSingleRdf_ignoresImagesAndStoresIdentifiers();
     void normalizeFormatName_mapsKnownMimeTypesAndIgnoresImages();
+    void parseSingleRdf_titleCollapsesEmbeddedWhitespace();
+    void parseSingleRdf_titleIgnoredOutsideEbookContext();
+    void parseSingleRdf_languageCodeStoredRaw();
+    void parseSingleRdf_multipleFormatsOfSameType_useSuffixedKeys();
 };
 
 void GutenbergIdResolutionTest::normalizeLccn_handlesUriAndPadding()
@@ -125,6 +129,111 @@ void GutenbergIdResolutionTest::normalizeFormatName_mapsKnownMimeTypesAndIgnores
 
     QCOMPARE(normalize(QStringLiteral("application/x-unknown")), QStringLiteral("x_unknown"));
     QCOMPARE(normalize(QStringLiteral("application/custom+format")), QStringLiteral("custom_format"));
+}
+
+void GutenbergIdResolutionTest::parseSingleRdf_titleCollapsesEmbeddedWhitespace()
+{
+    // Gutenberg RDF entries sometimes store titles with embedded newlines and
+    // leading whitespace on continuation lines.  simplified() must collapse
+    // all interior whitespace to single spaces.
+    GutenbergAdapter adapter;
+    QList<DiscoveredBook> batch;
+
+    const QByteArray rdf = R"(
+        <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+          <ebook rdf:about="https://www.gutenberg.org/ebooks/2350">
+            <title>His Last Bow:
+      Some Later Reminiscences of Sherlock Holmes</title>
+          </ebook>
+        </rdf:RDF>
+    )";
+
+    adapter.parseSingleRdf(rdf, QStringLiteral("cache/epub/2350/pg2350.rdf"), batch);
+
+    QCOMPARE(batch.size(), 1);
+    QCOMPARE(batch.first().title,
+             QStringLiteral("His Last Bow: Some Later Reminiscences of Sherlock Holmes"));
+}
+
+void GutenbergIdResolutionTest::parseSingleRdf_titleIgnoredOutsideEbookContext()
+{
+    // A <title> element that is not a direct child of <ebook> must not
+    // overwrite the real book title.  This guards against hypothetical RDF
+    // structures where a secondary description element also carries a <title>.
+    GutenbergAdapter adapter;
+    QList<DiscoveredBook> batch;
+
+    const QByteArray rdf = R"(
+        <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+          <ebook rdf:about="https://www.gutenberg.org/ebooks/1342">
+            <title>Pride and Prejudice</title>
+            <description>
+              <title>Ignored nested title</title>
+            </description>
+          </ebook>
+        </rdf:RDF>
+    )";
+
+    adapter.parseSingleRdf(rdf, QStringLiteral("cache/epub/1342/pg1342.rdf"), batch);
+
+    QCOMPARE(batch.size(), 1);
+    QCOMPARE(batch.first().title, QStringLiteral("Pride and Prejudice"));
+}
+
+void GutenbergIdResolutionTest::parseSingleRdf_languageCodeStoredRaw()
+{
+    // The adapter stores whatever language string appears in the RDF verbatim.
+    // ISO code normalisation happens later in BookDiscoveryService, not here.
+    GutenbergAdapter adapter;
+    QList<DiscoveredBook> batch;
+
+    const QByteArray rdf = R"(
+        <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+          <ebook rdf:about="https://www.gutenberg.org/ebooks/9999">
+            <title>A Dutch Book</title>
+            <language><value>nl</value></language>
+          </ebook>
+        </rdf:RDF>
+    )";
+
+    adapter.parseSingleRdf(rdf, QStringLiteral("cache/epub/9999/pg9999.rdf"), batch);
+
+    QCOMPARE(batch.size(), 1);
+    QCOMPARE(batch.first().languages, QStringList{QStringLiteral("nl")});
+}
+
+void GutenbergIdResolutionTest::parseSingleRdf_multipleFormatsOfSameType_useSuffixedKeys()
+{
+    // When a book has two files with the same MIME type (e.g. epub with images
+    // and epub without), the adapter assigns _1 / _2 suffixed keys so neither
+    // URL is lost before BookDiscoveryService merges them into the DB.
+    GutenbergAdapter adapter;
+    QList<DiscoveredBook> batch;
+
+    const QByteArray rdf = R"(
+        <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+          <ebook rdf:about="https://www.gutenberg.org/ebooks/1342">
+            <title>Pride and Prejudice</title>
+            <file rdf:about="https://example.test/1342.epub.images">
+              <format><value>application/epub+zip</value></format>
+            </file>
+            <file rdf:about="https://example.test/1342.epub.noimages">
+              <format><value>application/epub+zip</value></format>
+            </file>
+          </ebook>
+        </rdf:RDF>
+    )";
+
+    adapter.parseSingleRdf(rdf, QStringLiteral("cache/epub/1342/pg1342.rdf"), batch);
+
+    QCOMPARE(batch.size(), 1);
+    const QMap<QString, QString> &fmts = batch.first().formats;
+    QVERIFY(fmts.contains(QStringLiteral("epub_1")));
+    QVERIFY(fmts.contains(QStringLiteral("epub_2")));
+    QCOMPARE(fmts.value(QStringLiteral("epub_1")),
+             QStringLiteral("https://example.test/1342.epub.images"));
+    QCOMPARE(fmts.value(QStringLiteral("epub_2")),
+             QStringLiteral("https://example.test/1342.epub.noimages"));
 }
 
 QTEST_GUILESS_MAIN(GutenbergIdResolutionTest)
