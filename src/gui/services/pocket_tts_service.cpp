@@ -152,11 +152,7 @@ void PocketTTSService::generateAudiobook(int voiceId,
 
 void PocketTTSService::cancel()
 {
-    if (m_generationTimer) {
-        m_generationTimer->stop();
-        m_generationTimer->deleteLater();
-        m_generationTimer = nullptr;
-    }
+    // Task 22: stop and null m_generationTimer here once real synthesis is wired in.
 }
 
 } // namespace bookhub::gui

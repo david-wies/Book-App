@@ -69,33 +69,33 @@ void SherpaOnnxTTSService::generateAudiobook(int voiceId,
                                              const QString &text,
                                              const QString &outputPath)
 {
-    Q_UNUSED(voiceId)
     Q_UNUSED(voiceName)
     Q_UNUSED(text)
     Q_UNUSED(outputPath)
     cancel();
 
 #ifdef BOOKHUB_HAVE_SHERPA_ONNX
-    // TODO (Task 22): synthesize full audiobook using sherpa-onnx inference.
-    // Check modelAvailable(voiceId), load model, report progress via generationProgress(),
-    // and emit generationCompleted() on finish.
-#ifdef BOOKHUB_HAVE_GPU
-    // TODO (Task 22): set SherpaOnnxOfflineTtsConfig::provider based on backend:
-    //   CUDA→"cuda"  CoreML→"coreml"  DirectML→"dml"  ROCm→"rocm"  OpenVINO→"openvino"
-#endif
+    if (modelAvailable(voiceId)) {
+        // TODO (Task 22): load model from modelDir(voiceId), synthesize the full audiobook,
+        // report progress via generationProgress(), and emit generationCompleted().
+#    ifdef BOOKHUB_HAVE_GPU
+        // TODO (Task 22): set SherpaOnnxOfflineTtsConfig::provider based on backend:
+        //   CUDA→"cuda"  CoreML→"coreml"  DirectML→"dml"  ROCm→"rocm"  OpenVINO→"openvino"
+#    endif
+        return; // placeholder — remove once Task 22 synthesis is wired in
+    }
+    // Model not downloaded yet — fall through to failure.
+#else
+    Q_UNUSED(voiceId)
 #endif
 
-    // Model not available — emit failure immediately so the dialog surfaces an error.
+    // Library not linked or model absent — surface an error so the user can trigger a download.
     QTimer::singleShot(0, this, [this] { emit generationCompleted(false, {}); });
 }
 
 void SherpaOnnxTTSService::cancel()
 {
-    if (m_generationTimer) {
-        m_generationTimer->stop();
-        m_generationTimer->deleteLater();
-        m_generationTimer = nullptr;
-    }
+    // Task 22: stop and null m_generationTimer here once real synthesis is wired in.
 }
 
 } // namespace bookhub::gui

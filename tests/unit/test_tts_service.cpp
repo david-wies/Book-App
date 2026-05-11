@@ -101,7 +101,7 @@ void TtsServiceTest::native_generateAudiobook_emitsNoProgressOnWriteFailure()
     QSignalSpy completed(&service, &TTSService::generationCompleted);
     QSignalSpy progress(&service, &TTSService::generationProgress);
 
-    // A path in a directory that doesn't exist will fail to write.
+    // A path in a non-existent directory will fail the file write.
     const QString badPath = QStringLiteral("/nonexistent_dir_bookhub/audiobook.wav");
     service.generateAudiobook(
         1, QStringLiteral("Classic Storyteller"), QStringLiteral("Test."), badPath);
@@ -109,10 +109,11 @@ void TtsServiceTest::native_generateAudiobook_emitsNoProgressOnWriteFailure()
     QVERIFY(completed.wait(3000));
     QCOMPARE(completed.first().at(0).toBool(), false);
 
-    // No generationProgress(0) should be emitted on failure.
-    for (const auto &call : progress) {
-        QVERIFY(call.at(0).toInt() != 0);
-    }
+    // generationProgress(100) must NOT be emitted on write failure — only on success.
+    // Intermediate values (10..90) are emitted by the progress-animation timer regardless.
+    const bool saw100 = std::ranges::any_of(
+        progress, [](const QList<QVariant> &args) { return args.at(0).toInt() == 100; });
+    QVERIFY(!saw100);
 }
 
 void TtsServiceTest::native_cancel_beforeGeneration_isSafe()

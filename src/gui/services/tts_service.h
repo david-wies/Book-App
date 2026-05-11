@@ -8,6 +8,9 @@
 #include <QObject>
 #include <QString>
 
+#include <atomic>
+#include <memory>
+
 class QTimer;
 
 namespace bookhub::gui {
@@ -82,8 +85,14 @@ private:
     static void appendUInt16LE(QByteArray &data, quint16 value);
     static void appendUInt32LE(QByteArray &data, quint32 value);
 
+    // Owned progress-animation timer. Runs on the GUI thread while the thread-pool
+    // synthesis task executes. Null when no generation is in progress.
     QTimer *m_generationTimer{};
     int m_generationStep{0};
+    // Shared cancel flag between the GUI thread (cancel/generate calls) and the
+    // QThreadPool task (synthesis + file write). Written on the GUI thread,
+    // read on the pool thread — std::atomic guarantees the cross-thread read.
+    std::shared_ptr<std::atomic_bool> m_cancelFlag;
 };
 
 } // namespace bookhub::gui

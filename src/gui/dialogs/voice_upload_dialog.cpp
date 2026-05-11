@@ -1,6 +1,7 @@
 #include "voice_upload_dialog.h"
 
-#include <QFile>
+#include "../utils/wav_utils.h"
+
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QHBoxLayout>
@@ -9,60 +10,7 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 
-#include <limits>
-
 namespace bookhub::gui {
-
-namespace {
-
-int wavDurationMs(const QString &filePath)
-{
-    QFile file(filePath);
-    if (!file.open(QIODevice::ReadOnly))
-        return -1;
-
-    // NOTE: Reads a standard 44-byte PCM WAV header. Files that contain JUNK or
-    // LIST chunks between 'fmt ' and 'data' shift the data-chunk offset beyond
-    // byte 40, yielding an incorrect duration. Acceptable for MVP voice uploads
-    // which are expected to be simple recorder output.
-    const QByteArray header = file.read(44);
-    if (header.size() < 44 || header.mid(0, 4) != "RIFF" || header.mid(8, 4) != "WAVE")
-        return -1;
-    // Verify 'fmt ' subchunk and PCM audio format (1). Non-PCM encodings
-    // (ADPCM, IEEE float) produce incorrect durations from this fixed formula.
-    if (header.mid(12, 4) != "fmt " || header.mid(20, 2) != QByteArray("\x01\x00", 2))
-        return -1;
-
-    auto readUInt16 = [&header](int offset) {
-        return static_cast<quint16>(
-            static_cast<quint32>(static_cast<uchar>(header[offset])) |
-            (static_cast<quint32>(static_cast<uchar>(header[offset + 1])) << 8));
-    };
-    auto readUInt32 = [&header](int offset) {
-        return static_cast<quint32>(static_cast<uchar>(header[offset])) |
-               (static_cast<quint32>(static_cast<uchar>(header[offset + 1])) << 8) |
-               (static_cast<quint32>(static_cast<uchar>(header[offset + 2])) << 16) |
-               (static_cast<quint32>(static_cast<uchar>(header[offset + 3])) << 24);
-    };
-
-    const quint16 channels = readUInt16(22);
-    const quint32 sampleRate = readUInt32(24);
-    const quint16 bitsPerSample = readUInt16(34);
-    const quint32 dataBytes = readUInt32(40);
-
-    // Promote to quint64 before multiplying to prevent quint32 overflow for
-    // high sample-rate / multi-channel files (e.g. 192 kHz stereo 24-bit).
-    const quint64 bytesPerSecond = static_cast<quint64>(sampleRate) * channels * bitsPerSample / 8;
-    if (bytesPerSecond == 0)
-        return -1;
-
-    const quint64 durationMs = (static_cast<quint64>(dataBytes) * 1000) / bytesPerSecond;
-    if (durationMs > static_cast<quint64>(std::numeric_limits<int>::max()))
-        return -1;
-    return static_cast<int>(durationMs);
-}
-
-} // namespace
 
 VoiceUploadDialog::VoiceUploadDialog(QWidget *parent) : QDialog(parent)
 {
@@ -196,7 +144,7 @@ void VoiceUploadDialog::validateFile(const QString &filePath)
     }
 
     if (suffix == QLatin1String("wav")) {
-        const int durationMs = wavDurationMs(filePath);
+        const int durationMs = bookhub::gui::wav::durationMsFromFile(filePath);
         m_isDurationValid = durationMs >= 10'000 && durationMs <= 120'000;
         if (m_isDurationValid) {
             m_durationLabel->setText(

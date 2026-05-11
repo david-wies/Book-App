@@ -3,6 +3,7 @@
 #include "../query_worker.h"
 #include "../services/library_service.h"
 #include "../services/tts_service.h"
+#include "../utils/wav_utils.h"
 #include "../widgets/mini_audio_player_widget.h"
 #include "../widgets/step_indicator_widget.h"
 #include "../widgets/voice_selector_widget.h"
@@ -22,6 +23,7 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QSet>
 #include <QStackedWidget>
 #include <QStandardPaths>
 #include <QTimer>
@@ -33,45 +35,6 @@
 #endif
 
 namespace bookhub::gui {
-
-namespace {
-
-// Parse duration from a standard PCM WAV byte array (44-byte header assumed).
-// Returns 0 on malformed or missing data.
-qint64 wavDurationMsFromBytes(const QByteArray &wav)
-{
-    if (wav.size() < 44)
-        return 0;
-    if (wav.mid(0, 4) != "RIFF" || wav.mid(8, 4) != "WAVE")
-        return 0;
-    // Verify 'fmt ' subchunk and PCM audio format (1). Non-PCM encodings
-    // (ADPCM, IEEE float) produce incorrect durations from this fixed formula.
-    if (wav.mid(12, 4) != "fmt " || wav.mid(20, 2) != QByteArray("\x01\x00", 2))
-        return 0;
-
-    auto u16 = [&wav](int off) -> quint32 {
-        return static_cast<quint32>(static_cast<uchar>(wav[off])) |
-               (static_cast<quint32>(static_cast<uchar>(wav[off + 1])) << 8);
-    };
-    auto u32 = [&wav](int off) -> quint32 {
-        return static_cast<quint32>(static_cast<uchar>(wav[off])) |
-               (static_cast<quint32>(static_cast<uchar>(wav[off + 1])) << 8) |
-               (static_cast<quint32>(static_cast<uchar>(wav[off + 2])) << 16) |
-               (static_cast<quint32>(static_cast<uchar>(wav[off + 3])) << 24);
-    };
-
-    const quint32 sampleRate = u32(24);
-    const quint32 channels = u16(22);
-    const quint32 bitsPerSample = u16(34);
-    const quint32 dataBytes = u32(40);
-
-    const quint64 bytesPerSecond = static_cast<quint64>(sampleRate) * channels * bitsPerSample / 8;
-    if (bytesPerSecond == 0)
-        return 0;
-    return static_cast<qint64>(static_cast<quint64>(dataBytes) * 1000 / bytesPerSecond);
-}
-
-} // namespace
 
 AudiobookFlowDialog::AudiobookFlowDialog(LibraryService *libraryService,
                                          QueryWorker *worker,
@@ -596,7 +559,7 @@ void AudiobookFlowDialog::onPreviewGenerated(int voiceId, const QByteArray &audi
     m_previewVoiceBtn->setEnabled(true);
     m_previewVoiceBtn->setText(QStringLiteral("▶ Preview selected voice"));
 
-    const qint64 durationMs = wavDurationMsFromBytes(audioData);
+    const qint64 durationMs = bookhub::gui::wav::durationMsFromBytes(audioData);
     m_previewPlayer->setDuration(durationMs);
     m_previewPlayer->setCurrentTime(0);
 
@@ -811,9 +774,18 @@ BookSourceEntry AudiobookFlowDialog::selectedSource() const
 
 bool AudiobookFlowDialog::isTextCompatibleFormat(const QString &formatType) const
 {
-    const QString type = formatType.toLower();
-    return type.startsWith(QLatin1String("epub")) || type.startsWith(QLatin1String("txt")) ||
-           type.startsWith(QLatin1String("text")) || type.startsWith(QLatin1String("html"));
+    // Exact allowlist: only formats whose text can be extracted for TTS.
+    // epub2/epub3 are matched by their canonical Gutenberg type strings.
+    static const QSet<QString> kTextFormats{
+        QStringLiteral("epub"),
+        QStringLiteral("epub2"),
+        QStringLiteral("epub3"),
+        QStringLiteral("txt"),
+        QStringLiteral("text"),
+        QStringLiteral("html"),
+        QStringLiteral("htm"),
+    };
+    return kTextFormats.contains(formatType.toLower());
 }
 
 QString AudiobookFlowDialog::previewScript() const

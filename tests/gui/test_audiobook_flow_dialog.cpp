@@ -80,6 +80,7 @@ private slots:
     void previewVoice_generatesWavData();
     void previewVoice_writesTempFile();
     void previewListened_gatesGenerateStep();
+    void onPlayPreview_nonMultimediaFallback_setsPreviewListened();
 
     // Generation flow
     void startGeneration_succeedsWithAllSelections();
@@ -399,6 +400,29 @@ void AudiobookFlowDialogTest::previewListened_gatesGenerateStep()
     m_dialog->onVoiceSelectionChanged(2, QStringLiteral("Warm Listener"));
     m_dialog->updateNextButtonEnabled();
     QVERIFY(!m_dialog->m_nextBtn->isEnabled());
+}
+
+void AudiobookFlowDialogTest::onPlayPreview_nonMultimediaFallback_setsPreviewListened()
+{
+#ifndef BOOKHUB_HAVE_MULTIMEDIA
+    const QString tempWav = bookhub::tests::writeSilentWav(1000);
+    QVERIFY(!tempWav.isEmpty());
+
+    m_dialog->m_previewAudioData = QByteArray("fake-non-empty");
+    m_dialog->m_previewTempPath = tempWav;
+    m_dialog->m_currentStep = 3;
+    m_dialog->m_previewListened = false;
+
+    m_dialog->onPlayPreview();
+
+    QVERIFY(m_dialog->m_previewListened);
+    m_dialog->updateNextButtonEnabled();
+    QVERIFY(m_dialog->m_nextBtn->isEnabled());
+
+    QFile::remove(tempWav);
+#else
+    QSKIP("Non-multimedia fallback path not compiled in this build");
+#endif
 }
 
 void AudiobookFlowDialogTest::startGeneration_succeedsWithAllSelections()
