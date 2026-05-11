@@ -217,8 +217,12 @@ void GutenbergAdapter::parseSingleRdf(const QByteArray& data, const QString& ent
             } else if (name == "file") {
                 currentFormatUrl = xml.attributes().value("rdf:about").toString();
                 currentFormatMime.clear();
-            } else if (name == "title") {
-                book.title = xml.readElementText().trimmed();
+            } else if (name == "title" && path.size() >= 2
+                       && path.at(path.size() - 2) == QLatin1String("ebook")) {
+                // Restrict to <pgterms:ebook>/<dcterms:title> to avoid picking up
+                // title-like elements in nested file descriptions.  Use simplified()
+                // to collapse embedded newlines/whitespace that appear in some RDF entries.
+                book.title = xml.readElementText().simplified();
                 if (!path.isEmpty()) path.removeLast(); // text read moves past EndElement
             } else if (name == "identifier") {
                 rawIdentifiers.append(xml.readElementText().trimmed());

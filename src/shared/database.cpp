@@ -304,8 +304,76 @@ bool verifySchemaVersion(const QString &connectionName)
             }
         }
         qDebug() << "Migration to schema version 3 complete.";
-        // Chain into any future migration so a single startup advances the DB
-        // all the way to kSchemaVersion. Today this just returns true.
+        // Chain into the next migration so a single startup lands at kSchemaVersion.
+        return verifySchemaVersion(connectionName);
+    }
+
+    // Migration: version 3 → 4
+    // (a) Normalise language codes stored as ISO 639-1/2 ("en", "fr", "nl", …)
+    //     to their English full names ("English", "French", "Dutch", …).
+    // (b) Strip the _N de-collision suffix that the Gutenberg adapter appended to
+    //     format keys ("epub_1" → "epub", "pdf_1" → "pdf", …).  Higher-count
+    //     variants (_2, _3, …) are deleted first so their sources cascade-delete;
+    //     then _1 rows are renamed with OR IGNORE in case the bare name already
+    //     exists; any _1 row that cannot be renamed is removed as a true duplicate.
+    if (version == 3) {
+        qDebug() << "Migrating database schema from version 3 to 4...";
+        QStringList migration = {
+            "BEGIN",
+            "UPDATE editions SET language = 'English'          WHERE language = 'en'",
+            "UPDATE editions SET language = 'French'           WHERE language = 'fr'",
+            "UPDATE editions SET language = 'German'           WHERE language = 'de'",
+            "UPDATE editions SET language = 'Dutch'            WHERE language = 'nl'",
+            "UPDATE editions SET language = 'Spanish'          WHERE language = 'es'",
+            "UPDATE editions SET language = 'Italian'          WHERE language = 'it'",
+            "UPDATE editions SET language = 'Portuguese'       WHERE language = 'pt'",
+            "UPDATE editions SET language = 'Latin'            WHERE language = 'la'",
+            "UPDATE editions SET language = 'Finnish'          WHERE language = 'fi'",
+            "UPDATE editions SET language = 'Danish'           WHERE language = 'da'",
+            "UPDATE editions SET language = 'Swedish'          WHERE language = 'sv'",
+            "UPDATE editions SET language = 'Norwegian Bokmål' WHERE language IN ('nb', 'no')",
+            "UPDATE editions SET language = 'Chinese'          WHERE language IN ('zh', 'zho')",
+            "UPDATE editions SET language = 'Russian'          WHERE language IN ('ru', 'rus')",
+            "UPDATE editions SET language = 'Japanese'         WHERE language IN ('ja', 'jpn')",
+            "UPDATE editions SET language = 'Arabic'           WHERE language IN ('ar', 'ara')",
+            "UPDATE editions SET language = 'Ancient Greek'    WHERE language = 'grc'",
+            "UPDATE editions SET language = 'Greek'            WHERE language = 'el'",
+            "UPDATE editions SET language = 'Hebrew'           WHERE language = 'he'",
+            "UPDATE editions SET language = 'Hungarian'        WHERE language = 'hu'",
+            "UPDATE editions SET language = 'Czech'            WHERE language = 'cs'",
+            "UPDATE editions SET language = 'Polish'           WHERE language = 'pl'",
+            "UPDATE editions SET language = 'Romanian'         WHERE language = 'ro'",
+            "UPDATE editions SET language = 'Ukrainian'        WHERE language = 'uk'",
+            "UPDATE editions SET language = 'Serbian'          WHERE language = 'sr'",
+            "UPDATE editions SET language = 'Bulgarian'        WHERE language = 'bg'",
+            "UPDATE editions SET language = 'Croatian'         WHERE language = 'hr'",
+            "UPDATE editions SET language = 'Slovak'           WHERE language = 'sk'",
+            "UPDATE editions SET language = 'Slovenian'        WHERE language = 'sl'",
+            "UPDATE editions SET language = 'Catalan'          WHERE language = 'ca'",
+            "UPDATE editions SET language = 'Tagalog'          WHERE language = 'tl'",
+            // Delete _2+ format variants first; ON DELETE CASCADE removes their sources.
+            "DELETE FROM formats WHERE format_type GLOB '*_[2-9]'",
+            // Rename remaining _1 entries to the bare format name.
+            "UPDATE OR IGNORE formats "
+            "   SET format_type = SUBSTR(format_type, 1, LENGTH(format_type) - 2) "
+            "   WHERE format_type GLOB '*_1'",
+            // Any _1 row that could not be renamed (UNIQUE conflict) is a true
+            // duplicate of the now-renamed bare row — delete it.
+            "DELETE FROM formats WHERE format_type GLOB '*_1'",
+            "PRAGMA user_version = 4",
+            "COMMIT"
+        };
+
+        QSqlQuery mq(db);
+        for (const QString &sql : migration) {
+            if (!mq.exec(sql)) {
+                qCritical() << "Migration v3→v4 failed at:" << sql
+                            << "\nError:" << mq.lastError().text();
+                mq.exec("ROLLBACK");
+                return false;
+            }
+        }
+        qDebug() << "Migration to schema version 4 complete.";
         return verifySchemaVersion(connectionName);
     }
 

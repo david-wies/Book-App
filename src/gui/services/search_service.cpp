@@ -5,6 +5,7 @@
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QDebug>
+#include <QLocale>
 #include <QStringList>
 
 namespace bookhub::gui {
@@ -344,6 +345,15 @@ int runCount(const SearchParams &params, const QString &connectionName)
     return query.value(0).toInt();
 }
 
+static QString normalizeLanguage(const QString &lang)
+{
+    if (lang.isEmpty()) return lang;
+    QLocale locale(lang);
+    if (locale.language() != QLocale::C)
+        return QLocale::languageToString(locale.language());
+    return lang;
+}
+
 QStringList fetchLanguages(const QString &connectionName)
 {
     QSqlQuery query(QSqlDatabase::database(connectionName));
@@ -354,7 +364,9 @@ QStringList fetchLanguages(const QString &connectionName)
     }
     QStringList result;
     while (query.next())
-        result.append(query.value(0).toString());
+        result.append(normalizeLanguage(query.value(0).toString()));
+    result.sort();
+    result.removeDuplicates();
     return result;
 }
 

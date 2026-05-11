@@ -8,13 +8,36 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLocale>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QScrollArea>
 #include <QSignalBlocker>
 #include <QStackedWidget>
 #include <QVBoxLayout>
 
 namespace bookhub::gui {
+
+namespace {
+
+static QString normalizeLanguageName(const QString &lang)
+{
+    if (lang.isEmpty()) return lang;
+    QLocale locale(lang);
+    if (locale.language() != QLocale::C)
+        return QLocale::languageToString(locale.language());
+    return lang;
+}
+
+static QString displayFormatType(const QString &rawType)
+{
+    static const QRegularExpression re(QStringLiteral("_\\d+$"));
+    QString result = rawType;
+    result.remove(re);
+    return result;
+}
+
+} // anonymous namespace
 
 // ---------------------------------------------------------------------------
 // Construction
@@ -451,7 +474,7 @@ void BookDetailsPanel::populateDetails(const BookDetails &details)
         QSignalBlocker blocker(m_langCombo);
         m_langCombo->clear();
         for (const auto &ed : details.editions)
-            m_langCombo->addItem(ed.language);
+            m_langCombo->addItem(normalizeLanguageName(ed.language));
     }
 
     const qsizetype edCount = details.editions.size();
@@ -460,7 +483,7 @@ void BookDetailsPanel::populateDetails(const BookDetails &details)
     m_singleLangLabel->setVisible(!multiLang && edCount == 1);
     m_langLabel->setVisible(edCount > 0);
     if (!multiLang && edCount == 1)
-        m_singleLangLabel->setText(details.editions.first().language);
+        m_singleLangLabel->setText(normalizeLanguageName(details.editions.first().language));
 
     // Summary
     m_fullSummary    = details.summary.isEmpty()
@@ -518,8 +541,8 @@ void BookDetailsPanel::populateFormats(const QList<BookFormatEntry> &formats)
         rowLayout->setContentsMargins(0, SpacingXS, 0, SpacingXS);
         rowLayout->setSpacing(SpacingSM);
 
-        auto *fmtLabel = new QLabel(fmt.formatType, row);
-        fmtLabel->setFixedWidth(36);
+        auto *fmtLabel = new QLabel(displayFormatType(fmt.formatType), row);
+        fmtLabel->setFixedWidth(72);
         fmtLabel->setStyleSheet(QStringLiteral(
             "font-size: %1pt; font-weight: bold; color: %2;")
             .arg(FontSizeBody).arg(ColorTextPrimary));
