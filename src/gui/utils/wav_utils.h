@@ -55,7 +55,8 @@ namespace bookhub::gui::wav {
 
 // Read the WAV header from filePath and return the PCM duration in milliseconds.
 // Returns -1 if the file cannot be opened, is too short, has an invalid header,
-// or the computed duration would overflow int. Returns 0 for a valid but empty WAV.
+// the claimed data size exceeds the actual file size, or the computed duration
+// would overflow int. Returns 0 for a valid but empty WAV.
 [[nodiscard]] inline int durationMsFromFile(const QString &filePath)
 {
     QFile file(filePath);
@@ -63,6 +64,17 @@ namespace bookhub::gui::wav {
         return -1;
     const QByteArray header = file.read(44);
     if (header.size() < 44)
+        return -1;
+
+    // A crafted header can claim a large dataBytes value to inflate the computed
+    // duration past the 120-second gate while the actual file is nearly empty.
+    // Cross-check against the real file size before trusting the header field.
+    const auto claimedDataBytes =
+        static_cast<quint32>(static_cast<uchar>(header[40])) |
+        (static_cast<quint32>(static_cast<uchar>(header[41])) << 8) |
+        (static_cast<quint32>(static_cast<uchar>(header[42])) << 16) |
+        (static_cast<quint32>(static_cast<uchar>(header[43])) << 24);
+    if (static_cast<qint64>(claimedDataBytes) > file.size() - 44)
         return -1;
 
     const qint64 ms = durationMsFromBytes(header);

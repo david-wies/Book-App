@@ -2,9 +2,11 @@
 #include "gui/services/sherpa_onnx_tts_service.h"
 #include "gui/services/tts_service.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QSignalSpy>
+#include <QThreadPool>
 #include <QTimer>
 
 #include <QtTest>
@@ -134,11 +136,15 @@ void TtsServiceTest::native_cancel_duringGeneration_suppressesCompletion()
     service.generateAudiobook(
         1, QStringLiteral("Crisp Narrator"), QStringLiteral("Cancel test."), path);
 
-    // Cancel immediately — before the simulated timer fires completion.
+    // Cancel immediately — before the pool task can post its result.
     service.cancel();
 
-    // Process events briefly; the completion signal must not arrive.
-    QTest::qWait(200);
+    // Wait for the pool task to finish (it will check the cancel flag and skip
+    // the file write), then drain the event queue.  This is deterministic: we
+    // know the task has returned and any queued invokeMethod callbacks have
+    // been processed before the assertion runs — no fixed time delay needed.
+    QThreadPool::globalInstance()->waitForDone(1000);
+    QCoreApplication::processEvents();
     QCOMPARE(completed.count(), 0);
 
     QFile::remove(path);

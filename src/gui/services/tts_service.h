@@ -69,7 +69,7 @@ public:
     void cancel() override;
 
 private:
-    static constexpr int kPreviewDurationMs = 4000;
+    static constexpr int kPreviewDurationMs = 10000;
     struct VoiceProfile
     {
         double baseFrequency{180.0};

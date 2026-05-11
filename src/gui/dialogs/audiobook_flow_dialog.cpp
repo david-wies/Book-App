@@ -123,6 +123,17 @@ AudiobookFlowDialog::AudiobookFlowDialog(LibraryService *libraryService,
                 if (state == QMediaPlayer::StoppedState)
                     m_previewPlayer->setCurrentTime(0);
             });
+    connect(m_mediaPlayer,
+            &QMediaPlayer::errorOccurred,
+            this,
+            [this](QMediaPlayer::Error, const QString &errorString) {
+                m_previewVoiceBtn->setEnabled(!m_previewAudioData.isEmpty());
+                m_previewVoiceBtn->setText(QStringLiteral("▶ Preview selected voice"));
+                m_previewPlayer->setPlaying(false);
+                m_previewPlaying = false;
+                showErrorState(
+                    QStringLiteral("Preview playback failed: %1").arg(errorString));
+            });
 #endif
 
     resetState();
@@ -186,7 +197,6 @@ void AudiobookFlowDialog::buildUi()
             this,
             &AudiobookFlowDialog::onVoiceUploadRequested);
     voiceLayout->addWidget(m_voiceSelector);
-    // Generates a 4-second preview clip via TTSService; see kPreviewDurationMs.
     m_previewVoiceBtn = new QPushButton("▶ Preview selected voice", this);
     m_previewVoiceBtn->setEnabled(false); // enabled once a voice is selected
     connect(m_previewVoiceBtn,
@@ -577,6 +587,7 @@ void AudiobookFlowDialog::onPreviewGenerated(int voiceId, const QByteArray &audi
 void AudiobookFlowDialog::onGenerationFinished(bool success, const QString &outputPath)
 {
     if (!success) {
+        m_progressBar->setValue(0);
         m_cancelGenBtn->hide();
         m_progressText->setText("Generation failed.");
         m_resultLabel->setText("Could not generate audiobook.");
@@ -667,6 +678,9 @@ void AudiobookFlowDialog::populateFormatList()
 
 void AudiobookFlowDialog::populateVoiceList()
 {
+    // TODO (Task 14): once PocketTTS is active, hide the custom-voice section
+    // of m_voiceSelector when !PocketTTSService::languageSupported(m_selectedLanguage).
+
     // Voices are global, not per-book — load once per dialog session so
     // navigating back/forward through step 2 doesn't reset the selection.
     if (m_worker && !m_voicesLoaded) {

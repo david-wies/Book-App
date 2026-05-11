@@ -289,6 +289,11 @@ add_bookhub_test(test_tts_service
 )
 label_bookhub_test(test_tts_service sanity unit tts)
 
+add_bookhub_test(test_wav_utils
+    tests/unit/test_wav_utils.cpp
+)
+label_bookhub_test(test_wav_utils sanity unit tts)
+
 # ---------------------------------------------------------------------------
 # clang-format target — reformat all sources in-place
 #   cmake --build build --target format
