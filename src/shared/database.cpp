@@ -259,6 +259,14 @@ QString languageNameForCode(const QString &isoCode)
     return (it != kMap.constEnd()) ? *it : isoCode;
 }
 
+QString stripFormatTypeSuffix(const QString &key)
+{
+    static const QRegularExpression re(QStringLiteral("_\\d+$"));
+    QString result = key;
+    result.remove(re);
+    return result;
+}
+
 bool verifySchemaVersion(const QString &connectionName)
 {
     QSqlDatabase db = QSqlDatabase::database(connectionName);

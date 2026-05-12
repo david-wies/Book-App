@@ -4,19 +4,6 @@
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QDebug>
-#include <QRegularExpression>
-
-namespace {
-
-QString stripFormatSuffix(const QString &key)
-{
-    static const QRegularExpression re(QStringLiteral("_\\d+$"));
-    QString result = key;
-    result.remove(re);
-    return result;
-}
-
-} // anonymous namespace
 
 namespace bookhub::collector {
 
@@ -188,7 +175,7 @@ void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, co
     const int editionId = query.value(0).toInt();
 
     for (auto it = book.formats.constBegin(); it != book.formats.constEnd(); ++it) {
-        const QString formatType = stripFormatSuffix(it.key());
+        const QString formatType = bookhub::db::stripFormatTypeSuffix(it.key());
         query.prepare("INSERT OR IGNORE INTO formats (edition_id, format_type) VALUES (?, ?)");
         query.addBindValue(editionId);
         query.addBindValue(formatType);

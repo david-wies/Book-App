@@ -10,25 +10,12 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
-#include <QRegularExpression>
 #include <QScrollArea>
 #include <QSignalBlocker>
 #include <QStackedWidget>
 #include <QVBoxLayout>
 
 namespace bookhub::gui {
-
-namespace {
-
-QString displayFormatType(const QString &rawType)
-{
-    static const QRegularExpression re(QStringLiteral("_\\d+$"));
-    QString result = rawType;
-    result.remove(re);
-    return result;
-}
-
-} // anonymous namespace
 
 // ---------------------------------------------------------------------------
 // Construction
@@ -532,7 +519,7 @@ void BookDetailsPanel::populateFormats(const QList<BookFormatEntry> &formats)
         rowLayout->setContentsMargins(0, SpacingXS, 0, SpacingXS);
         rowLayout->setSpacing(SpacingSM);
 
-        auto *fmtLabel = new QLabel(displayFormatType(fmt.formatType), row);
+        auto *fmtLabel = new QLabel(bookhub::db::stripFormatTypeSuffix(fmt.formatType), row);
         fmtLabel->setFixedWidth(72);
         fmtLabel->setStyleSheet(QStringLiteral(
             "font-size: %1pt; font-weight: bold; color: %2;")
