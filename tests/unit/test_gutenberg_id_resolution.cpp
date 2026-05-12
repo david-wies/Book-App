@@ -186,11 +186,14 @@ void GutenbergIdResolutionTest::parseSingleRdf_noLccnFromAuthoritiesNames()
 void GutenbergIdResolutionTest::parseSingleRdf_stripsMarc21SubfieldMarkers()
 {
     // Gutenberg RDF sometimes stores MARC 21 subfield markers verbatim in title
-    // strings (e.g. "His Last Bow $b Some Later Reminiscences").  The parser must
-    // replace them with ": " so the stored title is human-readable.
+    // strings.  Two common forms:
+    // (a) bare marker:  "Main title $b Subtitle"
+    // (b) with MARC punctuation before the marker: "Main title : $b Subtitle"
+    // Both must produce "Main title: Subtitle" with a single colon, not ":: ".
     GutenbergAdapter adapter;
     QList<DiscoveredBook> batch;
 
+    // Case (a): bare $b marker — no preceding MARC punctuation
     const QByteArray rdf = R"(
         <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
           <ebook rdf:about="https://www.gutenberg.org/ebooks/2350">
@@ -200,7 +203,21 @@ void GutenbergIdResolutionTest::parseSingleRdf_stripsMarc21SubfieldMarkers()
     )";
 
     adapter.parseSingleRdf(rdf, QStringLiteral("cache/epub/2350/pg2350.rdf"), batch);
+    QCOMPARE(batch.size(), 1);
+    QCOMPARE(batch.first().title,
+             QStringLiteral("His Last Bow: Some Later Reminiscences of Sherlock Holmes"));
 
+    // Case (b): MARC punctuation (" : ") already present before $b — must not produce "::"
+    batch.clear();
+    const QByteArray rdf2 = R"(
+        <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+          <ebook rdf:about="https://www.gutenberg.org/ebooks/2350">
+            <title>His Last Bow : $b Some Later Reminiscences of Sherlock Holmes</title>
+          </ebook>
+        </rdf:RDF>
+    )";
+
+    adapter.parseSingleRdf(rdf2, QStringLiteral("cache/epub/2350/pg2350.rdf"), batch);
     QCOMPARE(batch.size(), 1);
     QCOMPARE(batch.first().title,
              QStringLiteral("His Last Bow: Some Later Reminiscences of Sherlock Holmes"));

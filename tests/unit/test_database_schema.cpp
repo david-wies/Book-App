@@ -17,6 +17,7 @@ private slots:
     void verifySchemaVersion_mismatchedVersionIsRejected();
     void constraints_andSampleData_behaveAsExpected();
     void migration_v4ToV5_stripsFormatSuffixAndMarcTitles();
+    void migration_v5ToV6_stripesMimePamarsAndFixesDoubleColon();
 };
 
 void DatabaseSchemaTest::databaseFilePath_resolvesToAppDataLocation()
@@ -143,6 +144,50 @@ void DatabaseSchemaTest::migration_v4ToV5_stripsFormatSuffixAndMarcTitles()
         "SELECT COUNT(*) FROM formats WHERE format_type LIKE 'epub_%'")), 0);
 
     // Schema version must be at the current target.
+    QCOMPARE(testDb.scalarInt(QStringLiteral("PRAGMA user_version")), db::kSchemaVersion);
+}
+
+void DatabaseSchemaTest::migration_v5ToV6_stripesMimePamarsAndFixesDoubleColon()
+{
+    bookhub::tests::TestDatabase testDb;
+    QVERIFY(testDb.open(QStringLiteral("v5tov6")));
+    QVERIFY(testDb.createSchema());
+
+    // Downgrade to v5 to simulate a pre-migration database.
+    QVERIFY(bookhub::tests::execSql(testDb.database(),
+        QStringLiteral("PRAGMA user_version = 5")));
+
+    // Insert a book whose title has double-colon artefact from old MARC regex.
+    QVERIFY(bookhub::tests::execSql(testDb.database(),
+        QStringLiteral("INSERT INTO books (book_id, title) "
+                       "VALUES ('gb:1', 'His Last Bow : : Some Later Reminiscences')")));
+
+    // Insert an edition with a parameterised MIME format type.
+    QVERIFY(bookhub::tests::execSql(testDb.database(),
+        QStringLiteral("INSERT INTO editions (id, book_id, language) "
+                       "VALUES (1, 'gb:1', 'English')")));
+    QVERIFY(bookhub::tests::execSql(testDb.database(),
+        QStringLiteral("INSERT INTO formats (id, edition_id, format_type) "
+                       "VALUES (1, 1, 'plain; charset=us_ascii'), (2, 1, 'plain; charset=utf_8')")));
+    QVERIFY(bookhub::tests::execSql(testDb.database(),
+        QStringLiteral("INSERT INTO sources (format_id, source_name, download_link) "
+                       "VALUES (1, 'G', 'http://a'), (2, 'G', 'http://b')")));
+
+    // Run the migration chain.
+    QVERIFY(db::verifySchemaVersion(testDb.connection()));
+
+    // Double-colon title must be cleaned.
+    QCOMPARE(testDb.scalarString(QStringLiteral(
+        "SELECT title FROM books WHERE book_id = 'gb:1'")),
+        QStringLiteral("His Last Bow: Some Later Reminiscences"));
+
+    // Only one 'plain' format row must remain; no parameterised rows.
+    QCOMPARE(testDb.scalarInt(QStringLiteral(
+        "SELECT COUNT(*) FROM formats WHERE format_type = 'plain'")), 1);
+    QCOMPARE(testDb.scalarInt(QStringLiteral(
+        "SELECT COUNT(*) FROM formats WHERE format_type LIKE '%;%'")), 0);
+
+    // Schema must be at the current target.
     QCOMPARE(testDb.scalarInt(QStringLiteral("PRAGMA user_version")), db::kSchemaVersion);
 }
 

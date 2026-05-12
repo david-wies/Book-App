@@ -567,7 +567,7 @@ bool verifySchemaVersion(const QString &connectionName)
                 return false;
             }
 
-            static const QRegularExpression reMarc(QStringLiteral("\\s*\\$[a-z]\\s*"));
+            static const QRegularExpression reMarc(QStringLiteral("[\\s:;/,]*\\$[a-z]\\s*"));
             QSqlQuery titleUpdate(db);
             titleUpdate.prepare(
                 QStringLiteral("UPDATE books SET title = ? WHERE book_id = ?"));
@@ -605,6 +605,121 @@ bool verifySchemaVersion(const QString &connectionName)
         mq.exec("DROP TABLE IF EXISTS temp.bookid_remap");
         mq.exec("PRAGMA foreign_keys = ON");
         qDebug() << "Migration to schema version 5 complete.";
+        return verifySchemaVersion(connectionName);
+    }
+
+    // Migration: version 5 → 6
+    // Two fixes for data-quality issues discovered by running the app:
+    //
+    // (a) Re-clean MARC-contaminated titles using the corrected regex that also
+    //     strips preceding MARC punctuation (e.g. " : $b " → ": " rather than
+    //     leaving " : " untouched and producing double-colon output like "Foo :: Bar").
+    //
+    // (b) Normalise format_type values that contain MIME parameters — the collector
+    //     was storing "plain; charset=us_ascii" instead of "plain" because
+    //     normalizeFormatName() did not strip "; charset=…" before matching.
+    //     Strip the parameter suffix and deduplicate rows where stripping would
+    //     create a UNIQUE(edition_id, format_type) conflict.
+    if (version == 5) {
+        qDebug() << "Migrating database schema from version 5 to 6...";
+
+        QSqlQuery mq(db);
+
+        // ----------------------------------------------------------------
+        // Part A: re-clean titles (same C++ loop, corrected regex)
+        // ----------------------------------------------------------------
+        {
+            QSqlQuery titleSelect(db);
+            if (!titleSelect.exec(
+                    QStringLiteral("SELECT book_id, title FROM books WHERE title LIKE '%$%'"
+                                   " OR title LIKE '%: :%'"))) {
+                qCritical() << "Migration v5→v6 (title select) failed:"
+                            << titleSelect.lastError().text();
+                return false;
+            }
+
+            static const QRegularExpression reMarc(QStringLiteral("[\\s:;/,]*\\$[a-z]\\s*"));
+            // Collapses double-colon artefacts left by the old MARC regex (" : :") → ": ".
+            // The leading \s* also consumes the space before the first colon.
+            static const QRegularExpression reDoubleColon(QStringLiteral("\\s*:\\s*:\\s*"));
+            QSqlQuery titleUpdate(db);
+            titleUpdate.prepare(
+                QStringLiteral("UPDATE books SET title = ? WHERE book_id = ?"));
+
+            while (titleSelect.next()) {
+                const QString bookId   = titleSelect.value(0).toString();
+                const QString rawTitle = titleSelect.value(1).toString();
+                QString cleaned = rawTitle;
+                cleaned.replace(reMarc, QStringLiteral(": "));
+                cleaned.replace(reDoubleColon, QStringLiteral(":"));
+                cleaned = cleaned.simplified();
+                if (cleaned == rawTitle)
+                    continue;
+                titleUpdate.addBindValue(cleaned);
+                titleUpdate.addBindValue(bookId);
+                if (!titleUpdate.exec())
+                    qWarning() << "Migration v5→v6: failed to clean title for" << bookId;
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // Part B: strip MIME parameters from format_type (e.g. "plain; charset=us_ascii" → "plain")
+        // ----------------------------------------------------------------
+        if (!mq.exec(QStringLiteral("PRAGMA foreign_keys = OFF"))
+                || !mq.exec(QStringLiteral("BEGIN"))) {
+            qCritical() << "Migration v5→v6 (format MIME param) preamble failed:"
+                        << mq.lastError().text();
+            return false;
+        }
+
+        const QStringList partB = {
+            // Delete sources for format rows whose type would collide after stripping.
+            R"(DELETE FROM sources
+               WHERE format_id IN (
+                   SELECT f.id FROM formats f
+                    WHERE f.format_type LIKE '%;%'
+                      AND EXISTS (
+                          SELECT 1 FROM formats f2
+                           WHERE f2.edition_id = f.edition_id
+                             AND f2.format_type = SUBSTR(f.format_type, 1, INSTR(f.format_type, ';') - 1)
+                      )
+               ))",
+            // Delete the colliding format rows themselves.
+            R"(DELETE FROM formats
+               WHERE format_type LIKE '%;%'
+                 AND EXISTS (
+                     SELECT 1 FROM formats f2
+                      WHERE f2.edition_id = formats.edition_id
+                        AND f2.format_type = SUBSTR(formats.format_type, 1, INSTR(formats.format_type, ';') - 1)
+                 ))",
+            // Rename remaining parameterised rows to the bare type.
+            R"(UPDATE OR IGNORE formats
+               SET format_type = SUBSTR(format_type, 1, INSTR(format_type, ';') - 1)
+               WHERE format_type LIKE '%;%')",
+            // Any rows still containing ';' failed OR IGNORE — delete them as duplicates.
+            R"(DELETE FROM formats WHERE format_type LIKE '%;%')",
+        };
+
+        for (const QString &sql : partB) {
+            if (!mq.exec(sql)) {
+                qCritical() << "Migration v5→v6 (format MIME param) failed at:" << sql
+                            << "\nError:" << mq.lastError().text();
+                mq.exec("ROLLBACK");
+                mq.exec("PRAGMA foreign_keys = ON");
+                return false;
+            }
+        }
+
+        if (!mq.exec(QStringLiteral("PRAGMA user_version = 6"))
+                || !mq.exec(QStringLiteral("COMMIT"))) {
+            qCritical() << "Migration v5→v6: commit failed:" << mq.lastError().text();
+            mq.exec("ROLLBACK");
+            mq.exec("PRAGMA foreign_keys = ON");
+            return false;
+        }
+
+        mq.exec("PRAGMA foreign_keys = ON");
+        qDebug() << "Migration to schema version 6 complete.";
         return verifySchemaVersion(connectionName);
     }
 

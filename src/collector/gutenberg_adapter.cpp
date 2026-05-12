@@ -161,13 +161,19 @@ QString GutenbergAdapter::normalizeFormatName(const QString& url, const QString&
         return QString();
     }
 
-    QString lowerMime = mimeType.toLower();
+    // Strip MIME parameters (e.g. "; charset=us-ascii") before matching — Gutenberg
+    // sometimes uses parameterised MIME types that would otherwise leak into format_type.
+    QString lowerMime = mimeType.toLower().trimmed();
+    const int semiPos = lowerMime.indexOf(';');
+    if (semiPos >= 0)
+        lowerMime = lowerMime.left(semiPos).trimmed();
+
     if (lowerMime.contains("image")) {
         return QString();
     }
 
     if (lowerMime == "application/epub+zip") return "epub";
-    if (lowerMime == "text/plain") return "text_plain";
+    if (lowerMime == "text/plain") return "plain";
     if (lowerMime == "text/html") return "html";
     if (lowerMime == "application/pdf") return "pdf";
     if (lowerMime == "application/x-mobipocket-ebook") return "mobi";
@@ -223,10 +229,12 @@ void GutenbergAdapter::parseSingleRdf(const QByteArray& data, const QString& ent
                 // title-like elements in nested file descriptions.  Use simplified()
                 // to collapse embedded newlines/whitespace that appear in some RDF entries.
                 book.title = xml.readElementText().simplified();
-                // Strip MARC 21 subfield markers (e.g. " $b Subtitle") that Gutenberg
-                // embeds verbatim in some title strings; replace with ": " to preserve
-                // subtitle semantics rather than just deleting the content.
-                static const QRegularExpression reMarc(QStringLiteral("\\s*\\$[a-z]\\s*"));
+                // Strip MARC 21 subfield markers that Gutenberg embeds verbatim in some
+                // title strings.  The RDF often includes MARC punctuation immediately
+                // before the marker (e.g. "Main title : $b Subtitle"), so the regex also
+                // consumes any trailing MARC punctuation chars (:;/,) to avoid producing
+                // double colons like "Main title :: Subtitle".
+                static const QRegularExpression reMarc(QStringLiteral("[\\s:;/,]*\\$[a-z]\\s*"));
                 book.title.replace(reMarc, QStringLiteral(": "));
                 book.title = book.title.simplified();
                 if (!path.isEmpty()) path.removeLast(); // text read moves past EndElement
