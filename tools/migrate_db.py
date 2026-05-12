@@ -7,12 +7,13 @@ Schema v1: book_id-keyed books table with book_identifiers for cross-source dedu
 Schema v2: Adds download-flow tables and library_items.status values.
 Schema v3: Adds voices table (preset/custom TTS voices) and a CHECK constraint on
            library_items.status to prevent invalid state values.
-Schema v4: Normalises language codes to ISO 639-1 (e.g. "English" → "en").
+Schema v4: Normalises language codes from ISO 639-1/3 codes to full names (e.g. "en" → "English").
 Schema v5: Strips _N suffixes from format_type rows (epub_1 → epub) and fixes MARC
            subfield markers in book titles ($b → ": "); remaps lccn:n* book IDs that
            point to names-authority (person) records to gutenberg:<id>.
 Schema v6: Strips MIME parameters from format_type (e.g. "plain; charset=us-ascii"
            → "plain") and cleans up any double-colon artefacts in book titles.
+Schema v7: Renames format_type 'text_plain' → 'plain' to match normalizeFormatName().
 
 The v1→v2 migration and all migrations from v3 onward are handled automatically by
 the app at startup; launch the app once and it will upgrade the database in place.
@@ -282,16 +283,16 @@ def migrate(db_path: str) -> None:
             con.close()
             return
 
-        if user_version in (3, 4, 5):
+        if user_version in (3, 4, 5, 6):
             print(
                 f"Database is at v{user_version}. "
-                "Launch the app once to auto-migrate to v6 (current)."
+                "Launch the app once to auto-migrate to v7 (current)."
             )
             con.close()
             return
 
-        if user_version >= 6:
-            print("Already at version 6 (current), nothing to do.")
+        if user_version >= 7:
+            print("Already at version 7 (current), nothing to do.")
             con.close()
             return
 
@@ -562,12 +563,12 @@ def main() -> None:
         )
     parser = argparse.ArgumentParser(
         description=(
-            "Migrate bookhub.db to the current schema version (v6). "
+            "Migrate bookhub.db to the current schema version (v7). "
             "Handles v0→v1 (ISBN-keyed to book_id-keyed) and v2→v3 "
             "(voices table + library_items CHECK constraint) directly. "
-            "For v3→v6 (language normalisation, format-suffix cleanup, MARC title "
-            "fixes, MIME parameter stripping), launch the app — it auto-migrates "
-            "at startup.\n\n"
+            "For v3→v7 (language normalisation, format-suffix cleanup, MARC title "
+            "fixes, MIME parameter stripping, text_plain rename), launch the app — "
+            "it auto-migrates at startup.\n\n"
             "Platform default paths:\n"
             "  Linux:   ~/.local/share/BookHub/BookHub/bookhub.db\n"
             "  macOS:   ~/Library/Application Support/BookHub/BookHub/bookhub.db\n"

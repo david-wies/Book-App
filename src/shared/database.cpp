@@ -744,6 +744,15 @@ bool verifySchemaVersion(const QString &connectionName)
 
         QSqlQuery mq(db);
 
+        // Open a single transaction covering both Part A and Part B so that
+        // title re-cleaning and format-type stripping are committed atomically.
+        if (!mq.exec(QStringLiteral("PRAGMA foreign_keys = OFF"))
+                || !mq.exec(QStringLiteral("BEGIN"))) {
+            qCritical() << "Migration v5→v6 preamble failed:" << mq.lastError().text();
+            mq.exec("PRAGMA foreign_keys = ON");
+            return false;
+        }
+
         // ----------------------------------------------------------------
         // Part A: re-clean titles (same C++ loop, corrected regex)
         // ----------------------------------------------------------------
@@ -754,6 +763,8 @@ bool verifySchemaVersion(const QString &connectionName)
                                    " OR title LIKE '%: :%'"))) {
                 qCritical() << "Migration v5→v6 (title select) failed:"
                             << titleSelect.lastError().text();
+                mq.exec("ROLLBACK");
+                mq.exec("PRAGMA foreign_keys = ON");
                 return false;
             }
 
@@ -784,12 +795,6 @@ bool verifySchemaVersion(const QString &connectionName)
         // ----------------------------------------------------------------
         // Part B: strip MIME parameters from format_type (e.g. "plain; charset=us_ascii" → "plain")
         // ----------------------------------------------------------------
-        if (!mq.exec(QStringLiteral("PRAGMA foreign_keys = OFF"))
-                || !mq.exec(QStringLiteral("BEGIN"))) {
-            qCritical() << "Migration v5→v6 (format MIME param) preamble failed:"
-                        << mq.lastError().text();
-            return false;
-        }
 
         const QStringList partB = {
             // Delete sources for format rows whose type would collide after stripping.
