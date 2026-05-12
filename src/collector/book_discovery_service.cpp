@@ -1,23 +1,14 @@
 #include "book_discovery_service.h"
+#include "shared/database.h"
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QDebug>
-#include <QLocale>
 #include <QRegularExpression>
 
 namespace {
 
-static QString normalizeLanguage(const QString &lang)
-{
-    if (lang.isEmpty()) return lang;
-    QLocale locale(lang);
-    if (locale.language() != QLocale::C)
-        return QLocale::languageToString(locale.language());
-    return lang;
-}
-
-static QString stripFormatSuffix(const QString &key)
+QString stripFormatSuffix(const QString &key)
 {
     static const QRegularExpression re(QStringLiteral("_\\d+$"));
     QString result = key;
@@ -175,7 +166,7 @@ void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, co
     // Phase 4 — edition, formats, and sources
     const QString primaryLang = book.languages.isEmpty()
         ? QStringLiteral("Unknown")
-        : normalizeLanguage(book.languages.first());
+        : bookhub::db::languageNameForCode(book.languages.first());
 
     query.prepare("INSERT OR IGNORE INTO editions (book_id, language) VALUES (?, ?)");
     query.addBindValue(effectiveId);

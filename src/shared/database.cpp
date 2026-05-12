@@ -1,6 +1,7 @@
 #include "database.h"
 #include <QCoreApplication>
 #include <QDir>
+#include <QHash>
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <QSqlDatabase>
@@ -151,6 +152,111 @@ bool createSchema(const QString &connectionName)
 
     qDebug() << "Database schema created successfully.";
     return true;
+}
+
+QString languageNameForCode(const QString &isoCode)
+{
+    // ISO 639-1 (2-letter) and ISO 639-3 (3-letter) → ISO 639-3 Ref_Name.
+    // Source: https://iso639-3.sil.org/sites/iso639-3/files/downloads/iso-639-3.tab
+    // Both "no" (Norwegian macrolanguage, nor) and "nb" (Norwegian Bokmål, nob) are
+    // mapped to their own distinct ISO 639-3 reference names to avoid UNIQUE conflicts
+    // in the editions table — they resolve to "Norwegian" and "Norwegian Bokmål"
+    // respectively, not the same string as QLocale::languageToString() would produce.
+    static const QHash<QString, QString> kMap = {
+        // 2-letter ISO 639-1 codes
+        {QStringLiteral("af"), QStringLiteral("Afrikaans")},
+        {QStringLiteral("ar"), QStringLiteral("Arabic")},
+        {QStringLiteral("bg"), QStringLiteral("Bulgarian")},
+        {QStringLiteral("br"), QStringLiteral("Breton")},
+        {QStringLiteral("ca"), QStringLiteral("Catalan")},
+        {QStringLiteral("cs"), QStringLiteral("Czech")},
+        {QStringLiteral("cy"), QStringLiteral("Welsh")},
+        {QStringLiteral("da"), QStringLiteral("Danish")},
+        {QStringLiteral("de"), QStringLiteral("German")},
+        {QStringLiteral("el"), QStringLiteral("Modern Greek")},
+        {QStringLiteral("en"), QStringLiteral("English")},
+        {QStringLiteral("eo"), QStringLiteral("Esperanto")},
+        {QStringLiteral("es"), QStringLiteral("Spanish")},
+        {QStringLiteral("fi"), QStringLiteral("Finnish")},
+        {QStringLiteral("fr"), QStringLiteral("French")},
+        {QStringLiteral("fy"), QStringLiteral("Western Frisian")},
+        {QStringLiteral("ga"), QStringLiteral("Irish")},
+        {QStringLiteral("gl"), QStringLiteral("Galician")},
+        {QStringLiteral("he"), QStringLiteral("Hebrew")},
+        {QStringLiteral("hr"), QStringLiteral("Croatian")},
+        {QStringLiteral("hu"), QStringLiteral("Hungarian")},
+        {QStringLiteral("is"), QStringLiteral("Icelandic")},
+        {QStringLiteral("it"), QStringLiteral("Italian")},
+        {QStringLiteral("ja"), QStringLiteral("Japanese")},
+        {QStringLiteral("la"), QStringLiteral("Latin")},
+        {QStringLiteral("lt"), QStringLiteral("Lithuanian")},
+        {QStringLiteral("mi"), QStringLiteral("Māori")},
+        {QStringLiteral("nb"), QStringLiteral("Norwegian Bokmål")},
+        {QStringLiteral("nl"), QStringLiteral("Dutch")},
+        {QStringLiteral("nn"), QStringLiteral("Norwegian Nynorsk")},
+        {QStringLiteral("no"), QStringLiteral("Norwegian")},
+        {QStringLiteral("oc"), QStringLiteral("Occitan")},
+        {QStringLiteral("pl"), QStringLiteral("Polish")},
+        {QStringLiteral("pt"), QStringLiteral("Portuguese")},
+        {QStringLiteral("ro"), QStringLiteral("Romanian")},
+        {QStringLiteral("ru"), QStringLiteral("Russian")},
+        {QStringLiteral("sk"), QStringLiteral("Slovak")},
+        {QStringLiteral("sl"), QStringLiteral("Slovenian")},
+        {QStringLiteral("sr"), QStringLiteral("Serbian")},
+        {QStringLiteral("sv"), QStringLiteral("Swedish")},
+        {QStringLiteral("tl"), QStringLiteral("Tagalog")},
+        {QStringLiteral("uk"), QStringLiteral("Ukrainian")},
+        {QStringLiteral("yi"), QStringLiteral("Yiddish")},
+        {QStringLiteral("zh"), QStringLiteral("Chinese")},
+        // 3-letter ISO 639-3 codes
+        {QStringLiteral("afr"), QStringLiteral("Afrikaans")},
+        {QStringLiteral("ara"), QStringLiteral("Arabic")},
+        {QStringLiteral("bre"), QStringLiteral("Breton")},
+        {QStringLiteral("bul"), QStringLiteral("Bulgarian")},
+        {QStringLiteral("cat"), QStringLiteral("Catalan")},
+        {QStringLiteral("ces"), QStringLiteral("Czech")},
+        {QStringLiteral("cym"), QStringLiteral("Welsh")},
+        {QStringLiteral("dan"), QStringLiteral("Danish")},
+        {QStringLiteral("deu"), QStringLiteral("German")},
+        {QStringLiteral("ell"), QStringLiteral("Modern Greek")},
+        {QStringLiteral("eng"), QStringLiteral("English")},
+        {QStringLiteral("epo"), QStringLiteral("Esperanto")},
+        {QStringLiteral("fin"), QStringLiteral("Finnish")},
+        {QStringLiteral("fra"), QStringLiteral("French")},
+        {QStringLiteral("fry"), QStringLiteral("Western Frisian")},
+        {QStringLiteral("gle"), QStringLiteral("Irish")},
+        {QStringLiteral("glg"), QStringLiteral("Galician")},
+        {QStringLiteral("grc"), QStringLiteral("Ancient Greek")},
+        {QStringLiteral("heb"), QStringLiteral("Hebrew")},
+        {QStringLiteral("hrv"), QStringLiteral("Croatian")},
+        {QStringLiteral("hun"), QStringLiteral("Hungarian")},
+        {QStringLiteral("isl"), QStringLiteral("Icelandic")},
+        {QStringLiteral("ita"), QStringLiteral("Italian")},
+        {QStringLiteral("jpn"), QStringLiteral("Japanese")},
+        {QStringLiteral("lat"), QStringLiteral("Latin")},
+        {QStringLiteral("lit"), QStringLiteral("Lithuanian")},
+        {QStringLiteral("mri"), QStringLiteral("Māori")},
+        {QStringLiteral("nld"), QStringLiteral("Dutch")},
+        {QStringLiteral("nno"), QStringLiteral("Norwegian Nynorsk")},
+        {QStringLiteral("nob"), QStringLiteral("Norwegian Bokmål")},
+        {QStringLiteral("nor"), QStringLiteral("Norwegian")},
+        {QStringLiteral("oci"), QStringLiteral("Occitan")},
+        {QStringLiteral("pol"), QStringLiteral("Polish")},
+        {QStringLiteral("por"), QStringLiteral("Portuguese")},
+        {QStringLiteral("ron"), QStringLiteral("Romanian")},
+        {QStringLiteral("rus"), QStringLiteral("Russian")},
+        {QStringLiteral("slk"), QStringLiteral("Slovak")},
+        {QStringLiteral("slv"), QStringLiteral("Slovenian")},
+        {QStringLiteral("spa"), QStringLiteral("Spanish")},
+        {QStringLiteral("srp"), QStringLiteral("Serbian")},
+        {QStringLiteral("swe"), QStringLiteral("Swedish")},
+        {QStringLiteral("tgl"), QStringLiteral("Tagalog")},
+        {QStringLiteral("ukr"), QStringLiteral("Ukrainian")},
+        {QStringLiteral("yid"), QStringLiteral("Yiddish")},
+        {QStringLiteral("zho"), QStringLiteral("Chinese")},
+    };
+    const auto it = kMap.constFind(isoCode.toLower());
+    return (it != kMap.constEnd()) ? *it : isoCode;
 }
 
 bool verifySchemaVersion(const QString &connectionName)
@@ -310,133 +416,146 @@ bool verifySchemaVersion(const QString &connectionName)
     }
 
     // Migration: version 3 → 4
-    // Normalises language codes stored as ISO 639-1/2 ("en", "fr", "nl", …)
-    // to their English full names ("English", "French", "Dutch", …).
+    // Normalises language codes stored as ISO 639-1/2/3 ("en", "fr", "nob", …)
+    // to ISO 639-3 reference names ("English", "French", "Norwegian Bokmål", …).
     //
-    // Some databases may already contain a mix: the same book might have both
-    // an "en" edition (from the Gutenberg collector) and an "English" edition
-    // (from earlier test data or sample inserts).  The UNIQUE(book_id, language)
-    // constraint prevents a plain UPDATE from converting "en" → "English" when
-    // an "English" row already exists for that book.
-    //
-    // Strategy with FK checks off:
-    //   1. Redirect library_items that reference an ISO-coded edition to the
-    //      matching full-name edition (for books that have both).
-    //   2. Manually delete sources → formats → editions for the conflicting
-    //      ISO-coded editions (cascade is disabled, so we do it in order).
-    //   3. Plain UPDATE for all remaining ISO-coded editions (now conflict-free).
-    //
-    // Format-type suffix cleanup (_N, _NN, …) is handled at the display layer
-    // (book_details_panel) and at insert time (book_discovery_service), so no
-    // schema change is needed here.
+    // Implemented as a C++ loop using languageNameForCode() so the migration always
+    // produces the same strings as the runtime normalisation functions, with no
+    // risk of hardcoded-name vs QLocale drift.  Per-edition processing also handles
+    // the UNIQUE(book_id, language) constraint correctly:
+    //   - If a full-name edition already exists (or another ISO code in this batch
+    //     already claimed the slot), library_items are redirected to the surviving
+    //     edition and the duplicate is deleted along with its formats and sources.
+    //   - UPDATE OR IGNORE is used so FK-off + transactional isolation prevent any
+    //     constraint failure from aborting the migration.
     if (version == 3) {
         qDebug() << "Migrating database schema from version 3 to 4...";
 
-        // Build the temp mapping table outside the transaction so it is
-        // available regardless of whether BEGIN succeeds.
-        QSqlQuery prep(db);
-        const QStringList preStmts = {
-            "PRAGMA foreign_keys = OFF",
-            "DROP TABLE IF EXISTS temp.lang_map",
-            R"(CREATE TEMP TABLE lang_map (code TEXT PRIMARY KEY, name TEXT NOT NULL))",
-            R"(INSERT INTO lang_map VALUES
-               ('en','English'),('fr','French'),('de','German'),('nl','Dutch'),
-               ('es','Spanish'),('it','Italian'),('pt','Portuguese'),('la','Latin'),
-               ('fi','Finnish'),('da','Danish'),('sv','Swedish'),('nb','Norwegian Bokmål'),
-               ('no','Norwegian Bokmål'),('zh','Chinese'),('zho','Chinese'),
-               ('ru','Russian'),('rus','Russian'),('ja','Japanese'),('jpn','Japanese'),
-               ('ar','Arabic'),('ara','Arabic'),('grc','Ancient Greek'),('el','Greek'),
-               ('he','Hebrew'),('hu','Hungarian'),('cs','Czech'),('pl','Polish'),
-               ('ro','Romanian'),('uk','Ukrainian'),('sr','Serbian'),('bg','Bulgarian'),
-               ('hr','Croatian'),('sk','Slovak'),('sl','Slovenian'),('ca','Catalan'),
-               ('tl','Tagalog'),('eo','Esperanto'),('cy','Welsh'),('af','Afrikaans'),
-               ('ga','Irish'),('gl','Galician'),('is','Icelandic'),('lt','Lithuanian'),
-               ('oc','Occitan'),('yi','Yiddish'),('br','Breton'),('mi','Māori'),
-               ('fy','Western Frisian'))"
-        };
-        for (const QString &sql : preStmts) {
-            if (!prep.exec(sql)) {
-                qCritical() << "Migration v3→v4 pre-step failed at:" << sql
-                            << "\nError:" << prep.lastError().text();
-                prep.exec("PRAGMA foreign_keys = ON");
-                return false;
-            }
+        QSqlQuery mq(db);
+        if (!mq.exec(QStringLiteral("PRAGMA foreign_keys = OFF"))
+                || !mq.exec(QStringLiteral("BEGIN"))) {
+            qCritical() << "Migration v3→v4 preamble failed:" << mq.lastError().text();
+            mq.exec("PRAGMA foreign_keys = ON");
+            return false;
         }
 
-        // Now run the main migration inside a transaction.
-        QSqlQuery mq(db);
-        const QStringList migration = {
-            "BEGIN",
+        // Collect all editions whose language looks like a short ISO code.
+        QSqlQuery edSelect(db);
+        if (!edSelect.exec(QStringLiteral(
+                "SELECT id, book_id, language FROM editions "
+                "WHERE length(language) <= 3 AND language NOT LIKE '% %'"))) {
+            qCritical() << "Migration v3→v4: failed to read editions:"
+                        << edSelect.lastError().text();
+            mq.exec("ROLLBACK");
+            mq.exec("PRAGMA foreign_keys = ON");
+            return false;
+        }
 
-            // Step 1: Redirect library_items from ISO-coded edition to the full-name
-            // edition for books that have both (avoids dangling edition_id after deletion).
-            R"(UPDATE library_items
-               SET edition_id = (
-                   SELECT e2.id
-                     FROM editions e1
-                     JOIN lang_map lm ON lm.code = e1.language
-                     JOIN editions e2 ON e2.book_id = e1.book_id AND e2.language = lm.name
-                    WHERE e1.id = library_items.edition_id
-                    LIMIT 1
-               )
-               WHERE edition_id IN (
-                   SELECT e.id FROM editions e
-                     JOIN lang_map lm ON lm.code = e.language
-                    WHERE EXISTS (
-                          SELECT 1 FROM editions e2
-                           WHERE e2.book_id = e.book_id AND e2.language = lm.name
-                    )
-               ))",
+        struct EdRemap { int id; QString bookId; QString newName; };
+        QList<EdRemap> remaps;
+        while (edSelect.next()) {
+            const QString code = edSelect.value(2).toString();
+            const QString name = languageNameForCode(code);
+            if (name == code) continue;
+            remaps.append({edSelect.value(0).toInt(),
+                           edSelect.value(1).toString(),
+                           name});
+        }
 
-            // Step 2: Delete sources for conflicting ISO-coded editions.
-            R"(DELETE FROM sources
-               WHERE format_id IN (
-                   SELECT f.id FROM formats f
-                     JOIN editions e ON e.id = f.edition_id
-                     JOIN lang_map lm ON lm.code = e.language
-                    WHERE EXISTS (SELECT 1 FROM editions e2
-                                   WHERE e2.book_id = e.book_id AND e2.language = lm.name)
-               ))",
+        for (const auto &r : remaps) {
+            // Helper lambda: redirect library_items to targetId, then delete
+            // sources/formats/edition for the ISO-coded edition row r.id.
+            auto mergeInto = [&](int targetId) -> bool {
+                QSqlQuery q(db);
+                q.prepare(QStringLiteral(
+                    "UPDATE library_items SET edition_id = ? WHERE edition_id = ?"));
+                q.addBindValue(targetId);
+                q.addBindValue(r.id);
+                if (!q.exec()) {
+                    qWarning() << "Migration v3→v4: library_items redirect failed:"
+                               << q.lastError().text();
+                }
+                q.prepare(QStringLiteral(
+                    "DELETE FROM sources WHERE format_id IN "
+                    "(SELECT id FROM formats WHERE edition_id = ?)"));
+                q.addBindValue(r.id);
+                q.exec();
+                q.prepare(QStringLiteral("DELETE FROM formats WHERE edition_id = ?"));
+                q.addBindValue(r.id);
+                q.exec();
+                q.prepare(QStringLiteral("DELETE FROM editions WHERE id = ?"));
+                q.addBindValue(r.id);
+                if (!q.exec()) {
+                    qCritical() << "Migration v3→v4: edition delete failed:"
+                                << q.lastError().text();
+                    return false;
+                }
+                return true;
+            };
 
-            // Step 3: Delete formats for conflicting ISO-coded editions.
-            R"(DELETE FROM formats
-               WHERE edition_id IN (
-                   SELECT e.id FROM editions e
-                     JOIN lang_map lm ON lm.code = e.language
-                    WHERE EXISTS (SELECT 1 FROM editions e2
-                                   WHERE e2.book_id = e.book_id AND e2.language = lm.name)
-               ))",
-
-            // Step 4: Delete conflicting ISO-coded editions themselves.
-            R"(DELETE FROM editions
-               WHERE language IN (SELECT code FROM lang_map)
-                 AND EXISTS (
-                       SELECT 1 FROM editions e2
-                         JOIN lang_map lm ON lm.code = editions.language
-                        WHERE e2.book_id = editions.book_id AND e2.language = lm.name
-                 ))",
-
-            // Step 5: Rename all remaining ISO-coded editions (no conflicts left).
-            R"(UPDATE editions
-               SET language = (SELECT name FROM lang_map WHERE code = language)
-               WHERE language IN (SELECT code FROM lang_map))",
-
-            "PRAGMA user_version = 4",
-            "COMMIT"
-        };
-
-        for (const QString &sql : migration) {
-            if (!mq.exec(sql)) {
-                qCritical() << "Migration v3→v4 failed at:" << sql
-                            << "\nError:" << mq.lastError().text();
+            // Check for an existing full-name edition for this book.
+            QSqlQuery existsQ(db);
+            existsQ.prepare(QStringLiteral(
+                "SELECT id FROM editions WHERE book_id = ? AND language = ?"));
+            existsQ.addBindValue(r.bookId);
+            existsQ.addBindValue(r.newName);
+            if (!existsQ.exec()) {
+                qCritical() << "Migration v3→v4: exists check failed:"
+                            << existsQ.lastError().text();
                 mq.exec("ROLLBACK");
-                mq.exec("DROP TABLE IF EXISTS temp.lang_map");
                 mq.exec("PRAGMA foreign_keys = ON");
                 return false;
             }
+
+            if (existsQ.next()) {
+                // Full-name edition already present — merge this ISO row into it.
+                if (!mergeInto(existsQ.value(0).toInt())) {
+                    mq.exec("ROLLBACK");
+                    mq.exec("PRAGMA foreign_keys = ON");
+                    return false;
+                }
+            } else {
+                // Try to rename in place.
+                QSqlQuery upd(db);
+                upd.prepare(QStringLiteral(
+                    "UPDATE OR IGNORE editions SET language = ? WHERE id = ?"));
+                upd.addBindValue(r.newName);
+                upd.addBindValue(r.id);
+                if (!upd.exec()) {
+                    qCritical() << "Migration v3→v4: update failed:"
+                                << upd.lastError().text();
+                    mq.exec("ROLLBACK");
+                    mq.exec("PRAGMA foreign_keys = ON");
+                    return false;
+                }
+                if (upd.numRowsAffected() == 0) {
+                    // OR IGNORE absorbed a UNIQUE conflict: another remap in this
+                    // batch already claimed (bookId, newName).  Merge into that row.
+                    QSqlQuery findQ(db);
+                    findQ.prepare(QStringLiteral(
+                        "SELECT id FROM editions WHERE book_id = ? AND language = ?"));
+                    findQ.addBindValue(r.bookId);
+                    findQ.addBindValue(r.newName);
+                    findQ.exec();
+                    if (findQ.next()) {
+                        if (!mergeInto(findQ.value(0).toInt())) {
+                            mq.exec("ROLLBACK");
+                            mq.exec("PRAGMA foreign_keys = ON");
+                            return false;
+                        }
+                    }
+                }
+            }
         }
 
-        mq.exec("DROP TABLE IF EXISTS temp.lang_map");
+        if (!mq.exec(QStringLiteral("PRAGMA user_version = 4"))
+                || !mq.exec(QStringLiteral("COMMIT"))) {
+            qCritical() << "Migration v3→v4: commit failed:" << mq.lastError().text();
+            mq.exec("ROLLBACK");
+            mq.exec("PRAGMA foreign_keys = ON");
+            return false;
+        }
+
         mq.exec("PRAGMA foreign_keys = ON");
         qDebug() << "Migration to schema version 4 complete.";
         return verifySchemaVersion(connectionName);
@@ -723,6 +842,68 @@ bool verifySchemaVersion(const QString &connectionName)
         return verifySchemaVersion(connectionName);
     }
 
+    // Migration: version 6 → 7
+    // Renames format_type 'text_plain' → 'plain' to match the value that
+    // normalizeFormatName() now returns for text/plain MIME types.
+    // Rows that would collide with an existing 'plain' row are deleted along
+    // with their sources; the remaining rows are renamed with UPDATE OR IGNORE
+    // and any still-unconverted duplicates are removed.
+    if (version == 6) {
+        qDebug() << "Migrating database schema from version 6 to 7...";
+
+        QSqlQuery mq(db);
+        if (!mq.exec(QStringLiteral("PRAGMA foreign_keys = OFF"))
+                || !mq.exec(QStringLiteral("BEGIN"))) {
+            qCritical() << "Migration v6→v7 preamble failed:" << mq.lastError().text();
+            mq.exec("PRAGMA foreign_keys = ON");
+            return false;
+        }
+
+        const QStringList stmts = {
+            // Delete sources for text_plain rows that would collide with an existing 'plain' row.
+            R"(DELETE FROM sources
+               WHERE format_id IN (
+                   SELECT f.id FROM formats f
+                    WHERE f.format_type = 'text_plain'
+                      AND EXISTS (SELECT 1 FROM formats f2
+                                   WHERE f2.edition_id = f.edition_id
+                                     AND f2.format_type = 'plain')
+               ))",
+            // Delete the colliding text_plain format rows.
+            R"(DELETE FROM formats
+               WHERE format_type = 'text_plain'
+                 AND EXISTS (SELECT 1 FROM formats f2
+                              WHERE f2.edition_id = formats.edition_id
+                                AND f2.format_type = 'plain'))",
+            // Rename remaining text_plain rows to plain.
+            "UPDATE OR IGNORE formats SET format_type = 'plain' WHERE format_type = 'text_plain'",
+            // Delete any text_plain rows that OR IGNORE could not rename.
+            "DELETE FROM formats WHERE format_type = 'text_plain'",
+        };
+
+        for (const QString &sql : stmts) {
+            if (!mq.exec(sql)) {
+                qCritical() << "Migration v6→v7 failed at:" << sql
+                            << "\nError:" << mq.lastError().text();
+                mq.exec("ROLLBACK");
+                mq.exec("PRAGMA foreign_keys = ON");
+                return false;
+            }
+        }
+
+        if (!mq.exec(QStringLiteral("PRAGMA user_version = 7"))
+                || !mq.exec(QStringLiteral("COMMIT"))) {
+            qCritical() << "Migration v6→v7: commit failed:" << mq.lastError().text();
+            mq.exec("ROLLBACK");
+            mq.exec("PRAGMA foreign_keys = ON");
+            return false;
+        }
+
+        mq.exec("PRAGMA foreign_keys = ON");
+        qDebug() << "Migration to schema version 7 complete.";
+        return verifySchemaVersion(connectionName);
+    }
+
     qCritical("Database schema version mismatch: expected %d, found %d. "
               "Run tools/migrate_db.py to upgrade the database.",
               kSchemaVersion, version);
@@ -736,22 +917,22 @@ bool insertSampleData(const QString &connectionName)
 
     QStringList inserts = {
         R"(INSERT OR IGNORE INTO books (book_id, title, author, publish_year) VALUES
-            ('gutenberg:1342', 'Pride and Prejudice', 'Jane Austen', 1813),
-            ('lccn:n79025140', 'The Adventures of Huckleberry Finn', 'Mark Twain', 1884),
-            ('gutenberg:1184', 'The Count of Monte Cristo', 'Alexandre Dumas', 1844)
+            ('gutenberg:1342', 'Pride and Prejudice',                'Jane Austen',     1813),
+            ('gutenberg:76',   'The Adventures of Huckleberry Finn', 'Mark Twain',      1884),
+            ('gutenberg:1184', 'The Count of Monte Cristo',          'Alexandre Dumas', 1844)
         )",
+        // n78095332 and n79025140 are LOC names-authority IDs (Jane Austen and Mark Twain
+        // the persons), not work-level LCCNs — they are not stored as identifiers.
         R"(INSERT OR IGNORE INTO book_identifiers (book_id, type, value) VALUES
             ('gutenberg:1342', 'gutenberg', '1342'),
-            ('lccn:n79025140', 'lccn', 'n79025140'),
-            ('lccn:n79025140', 'gutenberg', '76'),
+            ('gutenberg:76',   'gutenberg', '76'),
             ('gutenberg:1184', 'gutenberg', '1184')
         )",
-        // French editions for books 1342 and 1184 are intentionally omitted:
-        // Gutenberg has only English content for these works, so French editions
-        // would be permanently empty and mislead the UI.
+        // French editions are intentionally omitted: Gutenberg carries only English
+        // content for these works, so French stubs would be permanently empty.
         R"(INSERT OR IGNORE INTO editions (id, book_id, language) VALUES
             (1, 'gutenberg:1342', 'English'),
-            (3, 'lccn:n79025140', 'English'),
+            (3, 'gutenberg:76',   'English'),
             (4, 'gutenberg:1184', 'English')
         )",
         R"(INSERT OR IGNORE INTO genres (id, genre_name) VALUES
@@ -762,7 +943,7 @@ bool insertSampleData(const QString &connectionName)
         )",
         R"(INSERT OR IGNORE INTO book_genres (book_id, genre_id) VALUES
             ('gutenberg:1342', 1), ('gutenberg:1342', 2),
-            ('lccn:n79025140', 3), ('lccn:n79025140', 2),
+            ('gutenberg:76',   3), ('gutenberg:76',   2),
             ('gutenberg:1184', 3), ('gutenberg:1184', 4), ('gutenberg:1184', 2)
         )",
         R"(INSERT OR IGNORE INTO formats (id, edition_id, format_type) VALUES
@@ -776,7 +957,7 @@ bool insertSampleData(const QString &connectionName)
         )",
         R"(INSERT OR IGNORE INTO library_items (book_id, edition_id, status) VALUES
             ('gutenberg:1342', 1, 'saved'),
-            ('lccn:n79025140', 3, 'downloaded')
+            ('gutenberg:76',   3, 'downloaded')
         )"
         // NOTE: preset voices are seeded by createSchema() so they exist in
         // production builds (which skip insertSampleData under !QT_DEBUG).

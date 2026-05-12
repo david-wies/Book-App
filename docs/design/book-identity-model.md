@@ -214,7 +214,7 @@ metadata (title, author, summary) is not overwritten — the first writer wins. 
 
 If Phase 1 finds an existing row keyed by a lower-priority fallback identifier (for example
 `gutenberg:1342`) and the incoming record resolves to a stronger canonical identifier (for example
-`lccn:n79025140` or `oclc:42707429`), the existing row is promoted to the stronger key. This update runs in a
+a work-level `lccn:` or `oclc:42707429`) arrives in a later discovery run, the existing row is promoted to the stronger key. This update runs in a
 transaction and cascades through all foreign-key tables. The old identifier remains in
 `book_identifiers`, so lookups by either identifier continue to resolve to the same work.
 
@@ -350,29 +350,29 @@ CREATE TABLE IF NOT EXISTS library_items (
 The following sample data is used by `insertSampleData()` in `src/shared/database.cpp`.
 
 **Notes on ID assignment:**
-- Huckleberry Finn uses `lccn:n79025140` — a genuine work-level LCCN from the LOC catalog.
-- Pride and Prejudice (Gutenberg 1342) and The Count of Monte Cristo (Gutenberg 1184) have no
-  work-level LCCN in Gutenberg's RDF — only a names-authority URI (which identifies Jane Austen
-  the person, not the novel). Both use the Gutenberg fallback ID.
-- French editions are intentionally omitted for books 1342 and 1184: Gutenberg carries only English
-  content for those works, so a French edition stub would be permanently empty.
+- All three books use the Gutenberg fallback ID. Gutenberg's RDF for these works contains only
+  LOC names-authority URIs (`/authorities/names/`) which identify the *author* (Jane Austen,
+  Mark Twain, Alexandre Dumas), not the work — these are rejected by `resolveBookId()` and do
+  not become book primary keys. No work-level LCCN is available in the Gutenberg RDF for any
+  of the three sample titles.
+- French editions are intentionally omitted: Gutenberg carries only English content for these
+  works, so French stubs would be permanently empty.
 
 ```sql
 INSERT OR IGNORE INTO books (book_id, title, author, publish_year) VALUES
-    ('gutenberg:1342',  'Pride and Prejudice',                'Jane Austen',     1813),
-    ('lccn:n79025140',  'The Adventures of Huckleberry Finn', 'Mark Twain',      1884),
-    ('gutenberg:1184',  'The Count of Monte Cristo',          'Alexandre Dumas', 1844);
+    ('gutenberg:1342', 'Pride and Prejudice',                'Jane Austen',     1813),
+    ('gutenberg:76',   'The Adventures of Huckleberry Finn', 'Mark Twain',      1884),
+    ('gutenberg:1184', 'The Count of Monte Cristo',          'Alexandre Dumas', 1844);
 
 INSERT OR IGNORE INTO book_identifiers (book_id, type, value) VALUES
-    ('gutenberg:1342',  'gutenberg', '1342'),
-    ('lccn:n79025140',  'lccn',      'n79025140'),
-    ('lccn:n79025140',  'gutenberg', '76'),
-    ('gutenberg:1184',  'gutenberg', '1184');
+    ('gutenberg:1342', 'gutenberg', '1342'),
+    ('gutenberg:76',   'gutenberg', '76'),
+    ('gutenberg:1184', 'gutenberg', '1184');
 
 INSERT OR IGNORE INTO editions (book_id, language) VALUES
-    ('gutenberg:1342',  'English'),
-    ('lccn:n79025140',  'English'),
-    ('gutenberg:1184',  'English');
+    ('gutenberg:1342', 'English'),
+    ('gutenberg:76',   'English'),
+    ('gutenberg:1184', 'English');
 ```
 
 ---

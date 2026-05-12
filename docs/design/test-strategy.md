@@ -137,7 +137,7 @@ foundation for future planned screens.
 
 - Inserts a new book when no identifiers match an existing row.
 - Reuses the existing `book_id` when any incoming identifier already exists.
-- Promotes a fallback key such as `gutenberg:1342` to a stronger identifier (e.g. `lccn:n79025140` or `oclc:42707429`) when one arrives in a later discovery run.
+- Promotes a fallback key such as `gutenberg:1342` to a stronger identifier (e.g. a work-level `lccn:` or `oclc:42707429`) when one arrives in a later discovery run.
 - Preserves related `editions`, `formats`, `sources`, and `library_items` after promotion.
 - Leaves the old fallback identifier searchable through `book_identifiers`.
 
@@ -396,7 +396,7 @@ Create a few reusable fixtures to keep tests readable.
 ### Fixture C: deduplication promotion case
 
 - existing DB row keyed as `gutenberg:1342`
-- incoming discovery record with matching Gutenberg identifier plus a stronger key (e.g. `lccn:n79025140` or `oclc:42707429`)
+- incoming discovery record with matching Gutenberg identifier plus a stronger key (e.g. a work-level `lccn:` or `oclc:42707429`)
 - existing dependent rows in `editions`, `formats`, `sources`, and `library_items`
 
 ### Fixture D: audiobook‑capable book

@@ -17,7 +17,8 @@ private slots:
     void verifySchemaVersion_mismatchedVersionIsRejected();
     void constraints_andSampleData_behaveAsExpected();
     void migration_v4ToV5_stripsFormatSuffixAndMarcTitles();
-    void migration_v5ToV6_stripesMimePamarsAndFixesDoubleColon();
+    void migration_v5ToV6_stripsMimeParamsAndFixesDoubleColon();
+    void migration_v6ToV7_renamesTextPlainToPlain();
 };
 
 void DatabaseSchemaTest::databaseFilePath_resolvesToAppDataLocation()
@@ -147,7 +148,7 @@ void DatabaseSchemaTest::migration_v4ToV5_stripsFormatSuffixAndMarcTitles()
     QCOMPARE(testDb.scalarInt(QStringLiteral("PRAGMA user_version")), db::kSchemaVersion);
 }
 
-void DatabaseSchemaTest::migration_v5ToV6_stripesMimePamarsAndFixesDoubleColon()
+void DatabaseSchemaTest::migration_v5ToV6_stripsMimeParamsAndFixesDoubleColon()
 {
     bookhub::tests::TestDatabase testDb;
     QVERIFY(testDb.open(QStringLiteral("v5tov6")));
@@ -188,6 +189,43 @@ void DatabaseSchemaTest::migration_v5ToV6_stripesMimePamarsAndFixesDoubleColon()
         "SELECT COUNT(*) FROM formats WHERE format_type LIKE '%;%'")), 0);
 
     // Schema must be at the current target.
+    QCOMPARE(testDb.scalarInt(QStringLiteral("PRAGMA user_version")), db::kSchemaVersion);
+}
+
+void DatabaseSchemaTest::migration_v6ToV7_renamesTextPlainToPlain()
+{
+    bookhub::tests::TestDatabase testDb;
+    QVERIFY(testDb.open(QStringLiteral("v6tov7")));
+    QVERIFY(testDb.createSchema());
+
+    QVERIFY(bookhub::tests::execSql(testDb.database(),
+        QStringLiteral("PRAGMA user_version = 6")));
+
+    // Book A: has both 'text_plain' and 'plain' — collision case.
+    // text_plain row must be deleted; the existing 'plain' row must survive.
+    QVERIFY(bookhub::tests::execSql(testDb.database(),
+        QStringLiteral("INSERT INTO books (book_id, title) VALUES ('gb:1', 'A'), ('gb:2', 'B')")));
+    QVERIFY(bookhub::tests::execSql(testDb.database(),
+        QStringLiteral("INSERT INTO editions (id, book_id, language) "
+                       "VALUES (1, 'gb:1', 'English'), (2, 'gb:2', 'English')")));
+    QVERIFY(bookhub::tests::execSql(testDb.database(),
+        QStringLiteral("INSERT INTO formats (id, edition_id, format_type) "
+                       "VALUES (1, 1, 'text_plain'), (2, 1, 'plain'), (3, 2, 'text_plain')")));
+    QVERIFY(bookhub::tests::execSql(testDb.database(),
+        QStringLiteral("INSERT INTO sources (format_id, source_name, download_link) "
+                       "VALUES (1, 'G', 'http://a'), (2, 'G', 'http://b'), (3, 'G', 'http://c')")));
+
+    QVERIFY(db::verifySchemaVersion(testDb.connection()));
+
+    // Collision case: edition 1 must have exactly one 'plain' row.
+    QCOMPARE(testDb.scalarInt(QStringLiteral(
+        "SELECT COUNT(*) FROM formats WHERE edition_id = 1 AND format_type = 'plain'")), 1);
+    // Simple rename case: edition 2 must have 'plain', no 'text_plain'.
+    QCOMPARE(testDb.scalarInt(QStringLiteral(
+        "SELECT COUNT(*) FROM formats WHERE edition_id = 2 AND format_type = 'plain'")), 1);
+    QCOMPARE(testDb.scalarInt(QStringLiteral(
+        "SELECT COUNT(*) FROM formats WHERE format_type = 'text_plain'")), 0);
+
     QCOMPARE(testDb.scalarInt(QStringLiteral("PRAGMA user_version")), db::kSchemaVersion);
 }
 
