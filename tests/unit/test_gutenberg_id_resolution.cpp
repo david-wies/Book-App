@@ -20,8 +20,11 @@ class GutenbergIdResolutionTest : public QObject
 private slots:
     void normalizeLccn_handlesUriAndPadding();
     void resolveBookId_honorsPriorityAndIsbnConversion();
+    void resolveBookId_ignoresAuthoritiesNamesUrls();
     void parseSingleRdf_ignoresImagesAndStoresIdentifiers();
     void normalizeFormatName_mapsKnownMimeTypesAndIgnoresImages();
+    void parseSingleRdf_noLccnFromAuthoritiesNames();
+    void parseSingleRdf_stripsMarc21SubfieldMarkers();
     void parseSingleRdf_titleCollapsesEmbeddedWhitespace();
     void parseSingleRdf_titleIgnoredOutsideEbookContext();
     void parseSingleRdf_languageCodeStoredRaw();
@@ -43,12 +46,14 @@ void GutenbergIdResolutionTest::resolveBookId_honorsPriorityAndIsbnConversion()
                  QStringLiteral("1342")),
              QStringLiteral("oclc:1234"));
 
+    // /authorities/names/ is a person record — must not be treated as LCCN.
+    // OCLC is next in priority and should win here.
     QCOMPARE(GutenbergAdapter::resolveBookId(
                  {QStringLiteral("http://id.loc.gov/authorities/names/n78095332"),
                   QStringLiteral("oclc:1234"),
                   QStringLiteral("1234567890")},
                  QStringLiteral("1342")),
-             QStringLiteral("lccn:n78095332"));
+             QStringLiteral("oclc:1234"));
 
     // ISBN-10 alone falls back to isbn: after conversion to ISBN-13.
     QCOMPARE(GutenbergAdapter::resolveBookId(
@@ -58,6 +63,23 @@ void GutenbergIdResolutionTest::resolveBookId_honorsPriorityAndIsbnConversion()
 
     QCOMPARE(GutenbergAdapter::resolveBookId({}, QStringLiteral("1342")),
              QStringLiteral("gutenberg:1342"));
+}
+
+void GutenbergIdResolutionTest::resolveBookId_ignoresAuthoritiesNamesUrls()
+{
+    // With only a names-authority URI and no other identifier, must fall back
+    // to gutenberg:<id> rather than producing lccn:n... as the book key.
+    QCOMPARE(GutenbergAdapter::resolveBookId(
+                 {QStringLiteral("http://id.loc.gov/authorities/names/n78095332")},
+                 QStringLiteral("1342")),
+             QStringLiteral("gutenberg:1342"));
+
+    // When a valid OCLC number accompanies the names-authority URI, OCLC wins.
+    QCOMPARE(GutenbergAdapter::resolveBookId(
+                 {QStringLiteral("http://id.loc.gov/authorities/names/n78095332"),
+                  QStringLiteral("oclc:5551234")},
+                 QStringLiteral("1342")),
+             QStringLiteral("oclc:5551234"));
 }
 
 void GutenbergIdResolutionTest::parseSingleRdf_ignoresImagesAndStoresIdentifiers()
@@ -98,10 +120,12 @@ void GutenbergIdResolutionTest::parseSingleRdf_ignoresImagesAndStoresIdentifiers
     QCOMPARE(batch.size(), 1);
     const DiscoveredBook &book = batch.first();
     QCOMPARE(book.sourceId, QStringLiteral("1342"));
-    QCOMPARE(book.resolvedId, QStringLiteral("lccn:n78095332"));
+    // n78095332 is Jane Austen's name-authority record, not the work — ISBN wins.
+    QCOMPARE(book.resolvedId, QStringLiteral("isbn:9781234567897"));
     QVERIFY(book.formats.contains(QStringLiteral("epub_1")));
     QVERIFY(!book.formats.values().contains(QStringLiteral("https://www.gutenberg.org/cache/epub/1342/cover.jpg")));
-    QVERIFY(hasIdentifier(book.identifiers, QStringLiteral("lccn"), QStringLiteral("n78095332")));
+    // The /authorities/names/ URI must not produce an 'lccn' identifier entry.
+    QVERIFY(!hasIdentifier(book.identifiers, QStringLiteral("lccn"), QStringLiteral("n78095332")));
     QVERIFY(hasIdentifier(book.identifiers, QStringLiteral("isbn"), QStringLiteral("9781234567897")));
     QVERIFY(hasIdentifier(book.identifiers, QStringLiteral("gutenberg"), QStringLiteral("1342")));
 }
@@ -129,6 +153,57 @@ void GutenbergIdResolutionTest::normalizeFormatName_mapsKnownMimeTypesAndIgnores
 
     QCOMPARE(normalize(QStringLiteral("application/x-unknown")), QStringLiteral("x_unknown"));
     QCOMPARE(normalize(QStringLiteral("application/custom+format")), QStringLiteral("custom_format"));
+}
+
+void GutenbergIdResolutionTest::parseSingleRdf_noLccnFromAuthoritiesNames()
+{
+    // A bare /authorities/names/ URI in the RDF identifiers list must not produce
+    // an 'lccn' entry in book.identifiers, and resolvedId must not start with "lccn:".
+    GutenbergAdapter adapter;
+    QList<DiscoveredBook> batch;
+
+    const QByteArray rdf = R"(
+        <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+          <ebook rdf:about="https://www.gutenberg.org/ebooks/1342">
+            <title>Pride and Prejudice</title>
+            <identifier>http://id.loc.gov/authorities/names/n78095332</identifier>
+          </ebook>
+        </rdf:RDF>
+    )";
+
+    adapter.parseSingleRdf(rdf, QStringLiteral("cache/epub/1342/pg1342.rdf"), batch);
+
+    QCOMPARE(batch.size(), 1);
+    const DiscoveredBook &book = batch.first();
+    QVERIFY(!book.resolvedId.startsWith(QStringLiteral("lccn:")));
+    QCOMPARE(book.resolvedId, QStringLiteral("gutenberg:1342"));
+
+    const bool hasLccn = std::any_of(book.identifiers.begin(), book.identifiers.end(),
+        [](const BookIdentifier &id) { return id.type == QStringLiteral("lccn"); });
+    QVERIFY(!hasLccn);
+}
+
+void GutenbergIdResolutionTest::parseSingleRdf_stripsMarc21SubfieldMarkers()
+{
+    // Gutenberg RDF sometimes stores MARC 21 subfield markers verbatim in title
+    // strings (e.g. "His Last Bow $b Some Later Reminiscences").  The parser must
+    // replace them with ": " so the stored title is human-readable.
+    GutenbergAdapter adapter;
+    QList<DiscoveredBook> batch;
+
+    const QByteArray rdf = R"(
+        <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+          <ebook rdf:about="https://www.gutenberg.org/ebooks/2350">
+            <title>His Last Bow $b Some Later Reminiscences of Sherlock Holmes</title>
+          </ebook>
+        </rdf:RDF>
+    )";
+
+    adapter.parseSingleRdf(rdf, QStringLiteral("cache/epub/2350/pg2350.rdf"), batch);
+
+    QCOMPARE(batch.size(), 1);
+    QCOMPARE(batch.first().title,
+             QStringLiteral("His Last Bow: Some Later Reminiscences of Sherlock Holmes"));
 }
 
 void GutenbergIdResolutionTest::parseSingleRdf_titleCollapsesEmbeddedWhitespace()

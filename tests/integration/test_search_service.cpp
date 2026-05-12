@@ -31,7 +31,7 @@ void SearchServiceTest::search_appliesAndSemanticsAcrossFilters()
     const QList<SearchResult> results =
         internal::runSearch(params, 0, 50, testDb.connection());
     QCOMPARE(results.size(), 1);
-    QCOMPARE(results.first().bookId, QStringLiteral("lccn:n78095332"));
+    QCOMPARE(results.first().bookId, QStringLiteral("gutenberg:1342"));
 }
 
 void SearchServiceTest::search_supportsAudiobookFilterAndSorting()

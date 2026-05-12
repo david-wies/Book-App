@@ -223,6 +223,12 @@ void GutenbergAdapter::parseSingleRdf(const QByteArray& data, const QString& ent
                 // title-like elements in nested file descriptions.  Use simplified()
                 // to collapse embedded newlines/whitespace that appear in some RDF entries.
                 book.title = xml.readElementText().simplified();
+                // Strip MARC 21 subfield markers (e.g. " $b Subtitle") that Gutenberg
+                // embeds verbatim in some title strings; replace with ": " to preserve
+                // subtitle semantics rather than just deleting the content.
+                static const QRegularExpression reMarc(QStringLiteral("\\s*\\$[a-z]\\s*"));
+                book.title.replace(reMarc, QStringLiteral(": "));
+                book.title = book.title.simplified();
                 if (!path.isEmpty()) path.removeLast(); // text read moves past EndElement
             } else if (name == "identifier") {
                 rawIdentifiers.append(xml.readElementText().trimmed());
@@ -268,8 +274,10 @@ void GutenbergAdapter::parseSingleRdf(const QByteArray& data, const QString& ent
 
     for (const QString& raw : rawIdentifiers) {
         QString lower = raw.toLower();
-        if (lower.startsWith("lccn:") || lower.startsWith("http://id.loc.gov/authorities/names/")) {
-            // Extract the raw LCCN value and normalize it; store only the digits+alpha, no prefix
+        if (lower.startsWith("lccn:")) {
+            // Extract the raw LCCN value and normalize it; store only the digits+alpha, no prefix.
+            // Note: /authorities/names/ URIs identify persons, not works — they are skipped here
+            // and in resolveBookId() so they never become book primary keys.
             QString lccnNormalized = normalizeLccn(raw);
             // lccnNormalized is "lccn:XYZ" — store just the part after the colon as value
             qsizetype colon = lccnNormalized.indexOf(':');
@@ -382,7 +390,9 @@ QString GutenbergAdapter::resolveBookId(const QStringList& rawIdentifiers, const
         QString lower = raw.toLower();
 
         if (lccnResult.isEmpty()) {
-            if (lower.startsWith("lccn:") || lower.startsWith("http://id.loc.gov/authorities/names/")) {
+            // /authorities/names/ URIs identify persons/corporate bodies, not works.
+            // Accept only explicit "lccn:" prefixed identifiers as work-level LCCNs.
+            if (lower.startsWith("lccn:")) {
                 lccnResult = normalizeLccn(raw);
                 continue;
             }

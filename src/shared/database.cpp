@@ -1,6 +1,7 @@
 #include "database.h"
 #include <QCoreApplication>
 #include <QDir>
+#include <QRegularExpression>
 #include <QStandardPaths>
 #include <QSqlDatabase>
 #include <QSqlError>
@@ -441,6 +442,172 @@ bool verifySchemaVersion(const QString &connectionName)
         return verifySchemaVersion(connectionName);
     }
 
+    // Migration: version 4 → 5
+    // Three concerns:
+    //
+    // (a) Rename book_ids that were assigned a LOC names-authority LCCN (e.g.
+    //     lccn:n78095332, which identifies Jane Austen the person, not the work).
+    //     For each such book that has a gutenberg identifier, the book_id is
+    //     replaced with gutenberg:<value>.  All FK-constrained tables are updated
+    //     inside a single transaction with FK checks disabled.
+    //
+    // (b) Strip the _N de-collision suffix from format_type values introduced by
+    //     earlier versions of the Gutenberg adapter ("epub_1" → "epub", etc.).
+    //     _2+ rows whose bare name already exists are deleted as true duplicates.
+    //
+    // (c) Strip MARC 21 subfield markers (e.g. " $b ") from book titles.
+    //     SQLite lacks native regex, so this is done in a C++ loop.
+    if (version == 4) {
+        qDebug() << "Migrating database schema from version 4 to 5...";
+
+        QSqlQuery mq(db);
+
+        // ----------------------------------------------------------------
+        // Part A: remap lccn:n... book_ids to gutenberg:<id> fallback
+        // ----------------------------------------------------------------
+        const QStringList preA = {
+            "PRAGMA foreign_keys = OFF",
+            // Build a temp mapping from old book_id to new book_id for every
+            // book whose book_id looks like a name-authority LCCN (prefix "lccn:n")
+            // AND that has a gutenberg identifier we can use as the new key.
+            "DROP TABLE IF EXISTS temp.bookid_remap",
+            R"(CREATE TEMP TABLE bookid_remap (old_id TEXT PRIMARY KEY, new_id TEXT NOT NULL))",
+            R"(INSERT INTO bookid_remap (old_id, new_id)
+               SELECT b.book_id,
+                      'gutenberg:' || bi.value
+                 FROM books b
+                 JOIN book_identifiers bi
+                   ON bi.book_id = b.book_id AND bi.type = 'gutenberg'
+                WHERE b.book_id LIKE 'lccn:n%')",
+            "BEGIN",
+            // Apply remapping to all FK-constrained tables then books itself.
+            R"(UPDATE OR IGNORE book_identifiers
+               SET book_id = (SELECT new_id FROM bookid_remap WHERE old_id = book_id)
+               WHERE book_id IN (SELECT old_id FROM bookid_remap))",
+            R"(DELETE FROM book_identifiers
+               WHERE book_id IN (SELECT old_id FROM bookid_remap))",
+            R"(UPDATE OR IGNORE editions
+               SET book_id = (SELECT new_id FROM bookid_remap WHERE old_id = book_id)
+               WHERE book_id IN (SELECT old_id FROM bookid_remap))",
+            R"(DELETE FROM editions
+               WHERE book_id IN (SELECT old_id FROM bookid_remap))",
+            R"(UPDATE OR IGNORE book_genres
+               SET book_id = (SELECT new_id FROM bookid_remap WHERE old_id = book_id)
+               WHERE book_id IN (SELECT old_id FROM bookid_remap))",
+            R"(DELETE FROM book_genres
+               WHERE book_id IN (SELECT old_id FROM bookid_remap))",
+            R"(UPDATE OR IGNORE library_items
+               SET book_id = (SELECT new_id FROM bookid_remap WHERE old_id = book_id)
+               WHERE book_id IN (SELECT old_id FROM bookid_remap))",
+            R"(DELETE FROM library_items
+               WHERE book_id IN (SELECT old_id FROM bookid_remap))",
+            R"(UPDATE OR IGNORE books
+               SET book_id = (SELECT new_id FROM bookid_remap WHERE old_id = book_id)
+               WHERE book_id IN (SELECT old_id FROM bookid_remap))",
+            R"(DELETE FROM books WHERE book_id IN (SELECT old_id FROM bookid_remap))",
+        };
+
+        for (const QString &sql : preA) {
+            if (!mq.exec(sql)) {
+                qCritical() << "Migration v4→v5 (book_id remap) failed at:" << sql
+                            << "\nError:" << mq.lastError().text();
+                mq.exec("ROLLBACK");
+                mq.exec("DROP TABLE IF EXISTS temp.bookid_remap");
+                mq.exec("PRAGMA foreign_keys = ON");
+                return false;
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // Part B: strip _N suffix from format_type (inside same transaction)
+        // ----------------------------------------------------------------
+        const QStringList partB = {
+            // Delete sources for _2+ format rows first (FK is off, so manual).
+            R"(DELETE FROM sources
+               WHERE format_id IN (
+                   SELECT id FROM formats
+                    WHERE format_type GLOB '*_[2-9]'
+                       OR format_type GLOB '*_[1-9][0-9]'
+               ))",
+            // Delete _2+ format rows.
+            R"(DELETE FROM formats
+               WHERE format_type GLOB '*_[2-9]'
+                  OR format_type GLOB '*_[1-9][0-9]')",
+            // Rename _1 rows to bare name; OR IGNORE skips conflicts silently.
+            R"(UPDATE OR IGNORE formats
+               SET format_type = SUBSTR(format_type, 1, LENGTH(format_type) - 2)
+               WHERE format_type GLOB '*_1')",
+            // Any _1 row still present is a duplicate of a bare row — drop it.
+            R"(DELETE FROM formats WHERE format_type GLOB '*_1')",
+        };
+
+        for (const QString &sql : partB) {
+            if (!mq.exec(sql)) {
+                qCritical() << "Migration v4→v5 (format suffix) failed at:" << sql
+                            << "\nError:" << mq.lastError().text();
+                mq.exec("ROLLBACK");
+                mq.exec("DROP TABLE IF EXISTS temp.bookid_remap");
+                mq.exec("PRAGMA foreign_keys = ON");
+                return false;
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // Part C: strip MARC subfield markers from titles (C++ loop)
+        // ----------------------------------------------------------------
+        {
+            QSqlQuery titleSelect(db);
+            if (!titleSelect.exec(
+                    QStringLiteral("SELECT book_id, title FROM books WHERE title LIKE '%$%'"))) {
+                qCritical() << "Migration v4→v5 (MARC title select) failed:"
+                            << titleSelect.lastError().text();
+                mq.exec("ROLLBACK");
+                mq.exec("DROP TABLE IF EXISTS temp.bookid_remap");
+                mq.exec("PRAGMA foreign_keys = ON");
+                return false;
+            }
+
+            static const QRegularExpression reMarc(QStringLiteral("\\s*\\$[a-z]\\s*"));
+            QSqlQuery titleUpdate(db);
+            titleUpdate.prepare(
+                QStringLiteral("UPDATE books SET title = ? WHERE book_id = ?"));
+
+            while (titleSelect.next()) {
+                const QString bookId   = titleSelect.value(0).toString();
+                const QString rawTitle = titleSelect.value(1).toString();
+                QString cleaned = rawTitle;
+                cleaned.replace(reMarc, QStringLiteral(": "));
+                cleaned = cleaned.simplified();
+                if (cleaned == rawTitle)
+                    continue;
+                titleUpdate.addBindValue(cleaned);
+                titleUpdate.addBindValue(bookId);
+                if (!titleUpdate.exec()) {
+                    qWarning() << "Migration v4→v5: failed to clean title for" << bookId
+                               << ":" << titleUpdate.lastError().text();
+                    // Non-fatal: a bad title is better than an aborted migration.
+                }
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // Commit
+        // ----------------------------------------------------------------
+        if (!mq.exec(QStringLiteral("PRAGMA user_version = 5"))
+                || !mq.exec(QStringLiteral("COMMIT"))) {
+            qCritical() << "Migration v4→v5: commit failed:" << mq.lastError().text();
+            mq.exec("ROLLBACK");
+            mq.exec("DROP TABLE IF EXISTS temp.bookid_remap");
+            mq.exec("PRAGMA foreign_keys = ON");
+            return false;
+        }
+
+        mq.exec("DROP TABLE IF EXISTS temp.bookid_remap");
+        mq.exec("PRAGMA foreign_keys = ON");
+        qDebug() << "Migration to schema version 5 complete.";
+        return verifySchemaVersion(connectionName);
+    }
+
     qCritical("Database schema version mismatch: expected %d, found %d. "
               "Run tools/migrate_db.py to upgrade the database.",
               kSchemaVersion, version);
@@ -454,23 +621,23 @@ bool insertSampleData(const QString &connectionName)
 
     QStringList inserts = {
         R"(INSERT OR IGNORE INTO books (book_id, title, author, publish_year) VALUES
-            ('lccn:n78095332', 'Pride and Prejudice', 'Jane Austen', 1813),
+            ('gutenberg:1342', 'Pride and Prejudice', 'Jane Austen', 1813),
             ('lccn:n79025140', 'The Adventures of Huckleberry Finn', 'Mark Twain', 1884),
             ('gutenberg:1184', 'The Count of Monte Cristo', 'Alexandre Dumas', 1844)
         )",
         R"(INSERT OR IGNORE INTO book_identifiers (book_id, type, value) VALUES
-            ('lccn:n78095332', 'lccn', 'n78095332'),
-            ('lccn:n78095332', 'gutenberg', '1342'),
+            ('gutenberg:1342', 'gutenberg', '1342'),
             ('lccn:n79025140', 'lccn', 'n79025140'),
             ('lccn:n79025140', 'gutenberg', '76'),
             ('gutenberg:1184', 'gutenberg', '1184')
         )",
+        // French editions for books 1342 and 1184 are intentionally omitted:
+        // Gutenberg has only English content for these works, so French editions
+        // would be permanently empty and mislead the UI.
         R"(INSERT OR IGNORE INTO editions (id, book_id, language) VALUES
-            (1, 'lccn:n78095332', 'English'),
-            (2, 'lccn:n78095332', 'French'),
+            (1, 'gutenberg:1342', 'English'),
             (3, 'lccn:n79025140', 'English'),
-            (4, 'gutenberg:1184', 'English'),
-            (5, 'gutenberg:1184', 'French')
+            (4, 'gutenberg:1184', 'English')
         )",
         R"(INSERT OR IGNORE INTO genres (id, genre_name) VALUES
             (1, 'Romance'),
@@ -479,12 +646,12 @@ bool insertSampleData(const QString &connectionName)
             (4, 'Historical Fiction')
         )",
         R"(INSERT OR IGNORE INTO book_genres (book_id, genre_id) VALUES
-            ('lccn:n78095332', 1), ('lccn:n78095332', 2),
+            ('gutenberg:1342', 1), ('gutenberg:1342', 2),
             ('lccn:n79025140', 3), ('lccn:n79025140', 2),
             ('gutenberg:1184', 3), ('gutenberg:1184', 4), ('gutenberg:1184', 2)
         )",
         R"(INSERT OR IGNORE INTO formats (id, edition_id, format_type) VALUES
-            (1, 1, 'epub_1'), (2, 1, 'pdf_1'), (3, 3, 'epub_1'), (4, 4, 'epub_1')
+            (1, 1, 'epub'), (2, 1, 'pdf'), (3, 3, 'epub'), (4, 4, 'epub')
         )",
         R"(INSERT OR IGNORE INTO sources (id, format_id, source_name, download_link) VALUES
             (1, 1, 'Gutenberg', 'https://www.gutenberg.org/ebooks/1342.epub.images'),
@@ -493,7 +660,7 @@ bool insertSampleData(const QString &connectionName)
             (4, 4, 'Gutenberg', 'https://www.gutenberg.org/ebooks/1184.epub.images')
         )",
         R"(INSERT OR IGNORE INTO library_items (book_id, edition_id, status) VALUES
-            ('lccn:n78095332', 1, 'saved'),
+            ('gutenberg:1342', 1, 'saved'),
             ('lccn:n79025140', 3, 'downloaded')
         )"
         // NOTE: preset voices are seeded by createSchema() so they exist in

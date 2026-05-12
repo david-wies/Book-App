@@ -6,7 +6,7 @@
 
 namespace bookhub::db {
 
-inline constexpr int kSchemaVersion = 4;
+inline constexpr int kSchemaVersion = 5;
 
 /// Returns the absolute path to the database file, located next to the executable.
 QString databaseFilePath();
