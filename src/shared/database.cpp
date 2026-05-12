@@ -309,70 +309,134 @@ bool verifySchemaVersion(const QString &connectionName)
     }
 
     // Migration: version 3 → 4
-    // (a) Normalise language codes stored as ISO 639-1/2 ("en", "fr", "nl", …)
-    //     to their English full names ("English", "French", "Dutch", …).
-    // (b) Strip the _N de-collision suffix that the Gutenberg adapter appended to
-    //     format keys ("epub_1" → "epub", "pdf_1" → "pdf", …).  Higher-count
-    //     variants (_2, _3, …) are deleted first so their sources cascade-delete;
-    //     then _1 rows are renamed with OR IGNORE in case the bare name already
-    //     exists; any _1 row that cannot be renamed is removed as a true duplicate.
+    // Normalises language codes stored as ISO 639-1/2 ("en", "fr", "nl", …)
+    // to their English full names ("English", "French", "Dutch", …).
+    //
+    // Some databases may already contain a mix: the same book might have both
+    // an "en" edition (from the Gutenberg collector) and an "English" edition
+    // (from earlier test data or sample inserts).  The UNIQUE(book_id, language)
+    // constraint prevents a plain UPDATE from converting "en" → "English" when
+    // an "English" row already exists for that book.
+    //
+    // Strategy with FK checks off:
+    //   1. Redirect library_items that reference an ISO-coded edition to the
+    //      matching full-name edition (for books that have both).
+    //   2. Manually delete sources → formats → editions for the conflicting
+    //      ISO-coded editions (cascade is disabled, so we do it in order).
+    //   3. Plain UPDATE for all remaining ISO-coded editions (now conflict-free).
+    //
+    // Format-type suffix cleanup (_N, _NN, …) is handled at the display layer
+    // (book_details_panel) and at insert time (book_discovery_service), so no
+    // schema change is needed here.
     if (version == 3) {
         qDebug() << "Migrating database schema from version 3 to 4...";
-        QStringList migration = {
+
+        // Build the temp mapping table outside the transaction so it is
+        // available regardless of whether BEGIN succeeds.
+        QSqlQuery prep(db);
+        const QStringList preStmts = {
+            "PRAGMA foreign_keys = OFF",
+            "DROP TABLE IF EXISTS temp.lang_map",
+            R"(CREATE TEMP TABLE lang_map (code TEXT PRIMARY KEY, name TEXT NOT NULL))",
+            R"(INSERT INTO lang_map VALUES
+               ('en','English'),('fr','French'),('de','German'),('nl','Dutch'),
+               ('es','Spanish'),('it','Italian'),('pt','Portuguese'),('la','Latin'),
+               ('fi','Finnish'),('da','Danish'),('sv','Swedish'),('nb','Norwegian Bokmål'),
+               ('no','Norwegian Bokmål'),('zh','Chinese'),('zho','Chinese'),
+               ('ru','Russian'),('rus','Russian'),('ja','Japanese'),('jpn','Japanese'),
+               ('ar','Arabic'),('ara','Arabic'),('grc','Ancient Greek'),('el','Greek'),
+               ('he','Hebrew'),('hu','Hungarian'),('cs','Czech'),('pl','Polish'),
+               ('ro','Romanian'),('uk','Ukrainian'),('sr','Serbian'),('bg','Bulgarian'),
+               ('hr','Croatian'),('sk','Slovak'),('sl','Slovenian'),('ca','Catalan'),
+               ('tl','Tagalog'),('eo','Esperanto'),('cy','Welsh'),('af','Afrikaans'),
+               ('ga','Irish'),('gl','Galician'),('is','Icelandic'),('lt','Lithuanian'),
+               ('oc','Occitan'),('yi','Yiddish'),('br','Breton'),('mi','Māori'),
+               ('fy','Western Frisian'))"
+        };
+        for (const QString &sql : preStmts) {
+            if (!prep.exec(sql)) {
+                qCritical() << "Migration v3→v4 pre-step failed at:" << sql
+                            << "\nError:" << prep.lastError().text();
+                prep.exec("PRAGMA foreign_keys = ON");
+                return false;
+            }
+        }
+
+        // Now run the main migration inside a transaction.
+        QSqlQuery mq(db);
+        const QStringList migration = {
             "BEGIN",
-            "UPDATE editions SET language = 'English'          WHERE language = 'en'",
-            "UPDATE editions SET language = 'French'           WHERE language = 'fr'",
-            "UPDATE editions SET language = 'German'           WHERE language = 'de'",
-            "UPDATE editions SET language = 'Dutch'            WHERE language = 'nl'",
-            "UPDATE editions SET language = 'Spanish'          WHERE language = 'es'",
-            "UPDATE editions SET language = 'Italian'          WHERE language = 'it'",
-            "UPDATE editions SET language = 'Portuguese'       WHERE language = 'pt'",
-            "UPDATE editions SET language = 'Latin'            WHERE language = 'la'",
-            "UPDATE editions SET language = 'Finnish'          WHERE language = 'fi'",
-            "UPDATE editions SET language = 'Danish'           WHERE language = 'da'",
-            "UPDATE editions SET language = 'Swedish'          WHERE language = 'sv'",
-            "UPDATE editions SET language = 'Norwegian Bokmål' WHERE language IN ('nb', 'no')",
-            "UPDATE editions SET language = 'Chinese'          WHERE language IN ('zh', 'zho')",
-            "UPDATE editions SET language = 'Russian'          WHERE language IN ('ru', 'rus')",
-            "UPDATE editions SET language = 'Japanese'         WHERE language IN ('ja', 'jpn')",
-            "UPDATE editions SET language = 'Arabic'           WHERE language IN ('ar', 'ara')",
-            "UPDATE editions SET language = 'Ancient Greek'    WHERE language = 'grc'",
-            "UPDATE editions SET language = 'Greek'            WHERE language = 'el'",
-            "UPDATE editions SET language = 'Hebrew'           WHERE language = 'he'",
-            "UPDATE editions SET language = 'Hungarian'        WHERE language = 'hu'",
-            "UPDATE editions SET language = 'Czech'            WHERE language = 'cs'",
-            "UPDATE editions SET language = 'Polish'           WHERE language = 'pl'",
-            "UPDATE editions SET language = 'Romanian'         WHERE language = 'ro'",
-            "UPDATE editions SET language = 'Ukrainian'        WHERE language = 'uk'",
-            "UPDATE editions SET language = 'Serbian'          WHERE language = 'sr'",
-            "UPDATE editions SET language = 'Bulgarian'        WHERE language = 'bg'",
-            "UPDATE editions SET language = 'Croatian'         WHERE language = 'hr'",
-            "UPDATE editions SET language = 'Slovak'           WHERE language = 'sk'",
-            "UPDATE editions SET language = 'Slovenian'        WHERE language = 'sl'",
-            "UPDATE editions SET language = 'Catalan'          WHERE language = 'ca'",
-            "UPDATE editions SET language = 'Tagalog'          WHERE language = 'tl'",
-            // Delete _2+ format variants first; ON DELETE CASCADE removes their sources.
-            "DELETE FROM formats WHERE format_type GLOB '*_[2-9]'",
-            // Rename remaining _1 entries to the bare format name.
-            "UPDATE OR IGNORE formats "
-            "   SET format_type = SUBSTR(format_type, 1, LENGTH(format_type) - 2) "
-            "   WHERE format_type GLOB '*_1'",
-            // Any _1 row that could not be renamed (UNIQUE conflict) is a true
-            // duplicate of the now-renamed bare row — delete it.
-            "DELETE FROM formats WHERE format_type GLOB '*_1'",
+
+            // Step 1: Redirect library_items from ISO-coded edition to the full-name
+            // edition for books that have both (avoids dangling edition_id after deletion).
+            R"(UPDATE library_items
+               SET edition_id = (
+                   SELECT e2.id
+                     FROM editions e1
+                     JOIN lang_map lm ON lm.code = e1.language
+                     JOIN editions e2 ON e2.book_id = e1.book_id AND e2.language = lm.name
+                    WHERE e1.id = library_items.edition_id
+                    LIMIT 1
+               )
+               WHERE edition_id IN (
+                   SELECT e.id FROM editions e
+                     JOIN lang_map lm ON lm.code = e.language
+                    WHERE EXISTS (
+                          SELECT 1 FROM editions e2
+                           WHERE e2.book_id = e.book_id AND e2.language = lm.name
+                    )
+               ))",
+
+            // Step 2: Delete sources for conflicting ISO-coded editions.
+            R"(DELETE FROM sources
+               WHERE format_id IN (
+                   SELECT f.id FROM formats f
+                     JOIN editions e ON e.id = f.edition_id
+                     JOIN lang_map lm ON lm.code = e.language
+                    WHERE EXISTS (SELECT 1 FROM editions e2
+                                   WHERE e2.book_id = e.book_id AND e2.language = lm.name)
+               ))",
+
+            // Step 3: Delete formats for conflicting ISO-coded editions.
+            R"(DELETE FROM formats
+               WHERE edition_id IN (
+                   SELECT e.id FROM editions e
+                     JOIN lang_map lm ON lm.code = e.language
+                    WHERE EXISTS (SELECT 1 FROM editions e2
+                                   WHERE e2.book_id = e.book_id AND e2.language = lm.name)
+               ))",
+
+            // Step 4: Delete conflicting ISO-coded editions themselves.
+            R"(DELETE FROM editions
+               WHERE language IN (SELECT code FROM lang_map)
+                 AND EXISTS (
+                       SELECT 1 FROM editions e2
+                         JOIN lang_map lm ON lm.code = editions.language
+                        WHERE e2.book_id = editions.book_id AND e2.language = lm.name
+                 ))",
+
+            // Step 5: Rename all remaining ISO-coded editions (no conflicts left).
+            R"(UPDATE editions
+               SET language = (SELECT name FROM lang_map WHERE code = language)
+               WHERE language IN (SELECT code FROM lang_map))",
+
             "PRAGMA user_version = 4",
             "COMMIT"
         };
 
-        QSqlQuery mq(db);
         for (const QString &sql : migration) {
             if (!mq.exec(sql)) {
                 qCritical() << "Migration v3→v4 failed at:" << sql
                             << "\nError:" << mq.lastError().text();
                 mq.exec("ROLLBACK");
+                mq.exec("DROP TABLE IF EXISTS temp.lang_map");
+                mq.exec("PRAGMA foreign_keys = ON");
                 return false;
             }
         }
+
+        mq.exec("DROP TABLE IF EXISTS temp.lang_map");
+        mq.exec("PRAGMA foreign_keys = ON");
         qDebug() << "Migration to schema version 4 complete.";
         return verifySchemaVersion(connectionName);
     }
