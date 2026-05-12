@@ -651,7 +651,7 @@ bool verifySchemaVersion(const QString &connectionName)
                 const QString rawTitle = titleSelect.value(1).toString();
                 QString cleaned = rawTitle;
                 cleaned.replace(reMarc, QStringLiteral(": "));
-                cleaned.replace(reDoubleColon, QStringLiteral(":"));
+                cleaned.replace(reDoubleColon, QStringLiteral(": "));
                 cleaned = cleaned.simplified();
                 if (cleaned == rawTitle)
                     continue;
