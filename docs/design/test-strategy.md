@@ -127,7 +127,8 @@ foundation for future planned screens.
 ### 1. Book identity resolution
 
 - Resolves `lccn` ahead of `oclc`, `isbn`, and source fallback.
-- Normalizes `http://id.loc.gov/...` values into canonical `lccn:<value>`.
+- Accepts `lccn:`-prefixed strings and normalises them to canonical `lccn:<value>` form.
+- Rejects LOC names-authority URIs (`/authorities/names/`) — they identify persons, not works.
 - Converts ISBN‑10 into normalized ISBN‑13.
 - Falls back to `gutenberg:<id>` when no stronger identifier exists.
 - Stores all discovered identifiers, not only the winning one.
@@ -136,7 +137,7 @@ foundation for future planned screens.
 
 - Inserts a new book when no identifiers match an existing row.
 - Reuses the existing `book_id` when any incoming identifier already exists.
-- Promotes a fallback key such as `gutenberg:1342` to `lccn:n78095332` when a stronger identifier appears later.
+- Promotes a fallback key such as `gutenberg:1342` to a stronger identifier (e.g. `lccn:n79025140` or `oclc:42707429`) when one arrives in a later discovery run.
 - Preserves related `editions`, `formats`, `sources`, and `library_items` after promotion.
 - Leaves the old fallback identifier searchable through `book_identifiers`.
 
@@ -163,15 +164,24 @@ foundation for future planned screens.
 
 - `normalizeLccn()` zero‑pads pre‑2001 numeric portions correctly.
 - `normalizeLccn()` preserves prefixed letter segments.
-- `resolveBookId()` chooses the highest‑priority available identifier.
+- `resolveBookId()` chooses the highest‑priority available identifier (LCCN > OCLC > ISBN > gutenberg fallback).
+- `resolveBookId()` ignores `/authorities/names/` URIs — they identify persons, not works. With only such a URI present the resolver falls back to `gutenberg:<id>`.
+- `resolveBookId()` falls back to OCLC when a names-authority URI accompanies a valid OCLC number.
 - `normalizeFormatName()` maps known MIME types to expected internal names.
 - RDF parsing ignores image‑only formats.
+- RDF parsing stores only `lccn`-prefixed identifiers in `book.identifiers`; names-authority URIs produce no `lccn` entry.
+- RDF parsing strips MARC 21 subfield markers (e.g. `$b`) from title strings, replacing them with `": "` to preserve subtitle semantics.
+- RDF title parsing collapses embedded newlines and leading whitespace via `simplified()`.
+- RDF title parsing ignores `<title>` elements that are not direct children of `<ebook>`.
+- RDF language codes are stored raw from the RDF (`"nl"`, `"fr"`, etc.); normalisation to full names happens in `BookDiscoveryService`.
+- Multiple formats of the same MIME type are stored with `_N` suffixed keys (`epub_1`, `epub_2`) so neither URL is lost.
 
 ### Database helpers
 
 - `databaseFilePath()` resolves to `QStandardPaths::AppDataLocation`.
 - `createSchema()` creates all expected tables.
-- `insertSampleData()` is idempotent enough for repeated local startup use.
+- `insertSampleData()` is idempotent — running it twice produces the same row counts.
+- `verifySchemaVersion()` runs the v4→v5 migration: strips `_N` format-type suffixes, cleans MARC-contaminated titles, and remaps names-authority `lccn:n...` book IDs to `gutenberg:<id>` fallback.
 
 ### Query/state helpers to extract later
 
@@ -193,6 +203,9 @@ If search, explore, and details logic grow, extract small query‑builder or pre
 - Merges two source records that share an LCCN into one logical book.
 - Accepts a later stronger identifier and promotes the primary key in a transaction‑safe way.
 - Keeps first‑writer book metadata when a later source has different title/summary values.
+- Normalises ISO 639‑1/2 language codes (e.g. `"nl"`) to English full names (e.g. `"Dutch"`) before storage.
+- Strips the `_N` de-collision suffix from format keys before storage (`"epub_1"` → `"epub"`).
+- Stores a single `format_type` row when a book has two files of the same MIME type, with both download URLs as separate `sources` rows.
 
 Representative scenarios:
 
@@ -383,7 +396,7 @@ Create a few reusable fixtures to keep tests readable.
 ### Fixture C: deduplication promotion case
 
 - existing DB row keyed as `gutenberg:1342`
-- incoming discovery record with matching Gutenberg identifier plus `lccn:n78095332`
+- incoming discovery record with matching Gutenberg identifier plus a stronger key (e.g. `lccn:n79025140` or `oclc:42707429`)
 - existing dependent rows in `editions`, `formats`, `sources`, and `library_items`
 
 ### Fixture D: audiobook‑capable book
@@ -430,5 +443,6 @@ This keeps the test suite aligned with the design documents instead of adding co
 | Date | Author | Change |
 |---|---|---|
 | 2026‑04‑28 | Antigravity | Added Table of Contents, cross‑link to sanity‑check tier, standardized headings, and revision history. |
+| 2026‑05‑12 | David | Expanded unit test suggestions to cover MARC title stripping, names-authority rejection, raw language storage, and multi-format suffix keys; expanded `BookDiscoveryService` integration suggestions to cover language normalisation, format suffix stripping, and multi-URL deduplication; added migration test to database-helper suggestions; updated Fixture C and promotion example to remove incorrect `lccn:n78095332` reference. |
 
 (End of file)

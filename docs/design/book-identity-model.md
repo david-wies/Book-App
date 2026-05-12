@@ -128,10 +128,15 @@ The `GutenbergAdapter::parseSingleRdf()` method must be extended to collect thes
 The parser should collect all `<dcterms:identifier>` text values into a list while walking the XML.
 After parsing is complete, resolve them in priority order:
 
-1. Search the identifier list for any value starting with `"lccn:"`, any bare LCCN string, or any
-   LC authority URI such as `http://id.loc.gov/authorities/names/n78095332`. Normalise to the
-   canonical storage form `lccn:<normalised-string>` using Library of Congress formatting rules
-   (lowercase prefix, normalised value, zero-padded where required by LC rules).
+1. Search the identifier list for any value starting with `"lccn:"`. Normalise to the canonical
+   storage form `lccn:<normalised-string>` using Library of Congress formatting rules (lowercase
+   prefix, normalised value, zero-padded where required by LC rules).
+
+   **Important:** Gutenberg RDF files also contain `dcterms:identifier` entries whose value is a
+   LOC *names-authority* URI such as `http://id.loc.gov/authorities/names/n78095332`. These URIs
+   identify persons, corporate bodies, or geographic names — **not works** — and must be ignored
+   at this step. Accept only identifiers that carry the explicit `lccn:` prefix; discard any raw
+   `/authorities/names/` URL entirely (do not store it as an `lccn` type identifier either).
 2. Search for any value starting with `"oclc:"`. Only use OCLC numbers that are present in the
    source metadata; sources that do not expose OCLC are not enriched via external lookup in the MVP.
 3. Search for a bare ISBN-10 or ISBN-13 digit string (10 or 13 digits). Convert ISBN-10 to ISBN-13
@@ -146,14 +151,24 @@ All collected raw identifier strings are stored in `identifiers` regardless of w
 ```xml
 <pgterms:ebook rdf:about="ebooks/1342">
   <dcterms:identifier>http://www.gutenberg.org/ebooks/1342</dcterms:identifier>
-  <dcterms:identifier>lccn:n78095332</dcterms:identifier>
+  <dcterms:identifier>oclc:42707429</dcterms:identifier>
   <dcterms:title>Pride and Prejudice</dcterms:title>
   ...
 </pgterms:ebook>
 ```
 
-In this case `resolvedId` becomes `"lccn:n78095332"` and `identifiers` contains two entries:
-`{type:"gutenberg", value:"1342"}` and `{type:"lccn", value:"2007012345"}`.
+In this case `resolvedId` becomes `"oclc:42707429"` (highest available priority) and `identifiers`
+contains `{type:"oclc", value:"42707429"}` and `{type:"gutenberg", value:"1342"}`.
+
+**Counterexample — names-authority URI (rejected):**
+
+```xml
+<dcterms:identifier>http://id.loc.gov/authorities/names/n78095332</dcterms:identifier>
+```
+
+`n78095332` is Jane Austen's LOC *names-authority* record, not a work identifier. This URI is
+discarded. If no OCLC or ISBN identifier is present either, the book falls back to
+`"gutenberg:1342"`.
 
 ### Gutenberg books without standard identifiers
 
@@ -199,7 +214,7 @@ metadata (title, author, summary) is not overwritten — the first writer wins. 
 
 If Phase 1 finds an existing row keyed by a lower-priority fallback identifier (for example
 `gutenberg:1342`) and the incoming record resolves to a stronger canonical identifier (for example
-`lccn:n78095332`), the existing row is promoted to the stronger key. This update runs in a
+`lccn:n79025140` or `oclc:42707429`), the existing row is promoted to the stronger key. This update runs in a
 transaction and cascades through all foreign-key tables. The old identifier remains in
 `book_identifiers`, so lookups by either identifier continue to resolve to the same work.
 
@@ -332,29 +347,32 @@ CREATE TABLE IF NOT EXISTS library_items (
 
 ## Sample Data (updated)
 
-The following sample data replaces the existing `insertSampleData` content. It uses real LCCN values
-for the three sample books (Pride and Prejudice: `lccn:n78095332`, Huckleberry Finn: `lccn:n79025140`,
-Count of Monte Cristo: uses Gutenberg fallback since no LCCN is in the public sample set).
+The following sample data is used by `insertSampleData()` in `src/shared/database.cpp`.
+
+**Notes on ID assignment:**
+- Huckleberry Finn uses `lccn:n79025140` — a genuine work-level LCCN from the LOC catalog.
+- Pride and Prejudice (Gutenberg 1342) and The Count of Monte Cristo (Gutenberg 1184) have no
+  work-level LCCN in Gutenberg's RDF — only a names-authority URI (which identifies Jane Austen
+  the person, not the novel). Both use the Gutenberg fallback ID.
+- French editions are intentionally omitted for books 1342 and 1184: Gutenberg carries only English
+  content for those works, so a French edition stub would be permanently empty.
 
 ```sql
 INSERT OR IGNORE INTO books (book_id, title, author, publish_year) VALUES
-    ('lccn:n78095332',   'Pride and Prejudice',                   'Jane Austen',       1813),
-    ('lccn:n79025140',   'The Adventures of Huckleberry Finn',    'Mark Twain',        1884),
-    ('gutenberg:1184',    'The Count of Monte Cristo',             'Alexandre Dumas',   1844);
+    ('gutenberg:1342',  'Pride and Prejudice',                'Jane Austen',     1813),
+    ('lccn:n79025140',  'The Adventures of Huckleberry Finn', 'Mark Twain',      1884),
+    ('gutenberg:1184',  'The Count of Monte Cristo',          'Alexandre Dumas', 1844);
 
 INSERT OR IGNORE INTO book_identifiers (book_id, type, value) VALUES
-    ('lccn:n78095332',  'lccn',       '2007012345'),
-    ('lccn:n78095332',  'gutenberg',  '1342'),
-    ('lccn:n79025140',  'lccn',       '2007012344'),
-    ('lccn:n79025140',  'gutenberg',  '76'),
-    ('gutenberg:1184',   'gutenberg',  '1184');
+    ('gutenberg:1342',  'gutenberg', '1342'),
+    ('lccn:n79025140',  'lccn',      'n79025140'),
+    ('lccn:n79025140',  'gutenberg', '76'),
+    ('gutenberg:1184',  'gutenberg', '1184');
 
 INSERT OR IGNORE INTO editions (book_id, language) VALUES
-    ('lccn:n78095332', 'English'),
-    ('lccn:n78095332', 'French'),
-    ('lccn:n79025140', 'English'),
-    ('gutenberg:1184',  'English'),
-    ('gutenberg:1184',  'French');
+    ('gutenberg:1342',  'English'),
+    ('lccn:n79025140',  'English'),
+    ('gutenberg:1184',  'English');
 ```
 
 ---
@@ -466,3 +484,11 @@ is out of scope for the MVP. First-writer-wins is predictable and requires no ad
 **Application-layer resolution, not database triggers:** Placing ID resolution logic in the adapter
 keeps the database schema simple and ensures each adapter can apply source-specific parsing rules. A
 database trigger would need to understand Gutenberg RDF syntax, which violates separation of concerns.
+
+---
+
+## Revision History
+
+| Date | Author | Change |
+|---|---|---|
+| 2026‑05‑12 | David | Corrected parsing-approach step 1 to exclude LOC names-authority URIs (`/authorities/names/`) — they identify persons, not works, and must not become book primary keys. Updated the RDF example to show a correct OCLC-based resolution and a named counterexample for the rejected names-authority URI. Corrected sample data: Pride and Prejudice uses `gutenberg:1342` (no work-level LCCN available), Count of Monte Cristo stays `gutenberg:1184`, and phantom French editions (no Gutenberg content) are removed. Updated promotion phase example to avoid the incorrect `lccn:n78095332` reference. |
