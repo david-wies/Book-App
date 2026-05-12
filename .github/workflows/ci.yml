@@ -35,35 +35,57 @@ jobs:
         sudo apt-get install -y --no-install-recommends \
           build-essential \
           cmake \
+          ccache \
           qt6-base-dev \
           libqt6sql6 \
           libqt6sql6-sqlite \
           libarchive-dev
 
+    - name: Cache ccache
+      uses: actions/cache@v5
+      with:
+        path: ~/.cache/ccache
+        key: ccache-${{ runner.os }}-${{ github.ref_name }}
+        restore-keys: ccache-${{ runner.os }}-
+
+    - name: Configure ccache
+      run: |
+        ccache --set-config=max_size=500M
+        ccache --set-config=compression=true
+        ccache --zero-stats
+
     - name: Cache CMake build directory
       uses: actions/cache@v5
       with:
         path: build
-        key: cmake-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'src/**', 'resources.qrc', '*.jpg', '*.png') }}
+        key: cmake-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'resources.qrc', '*.jpg', '*.png') }}
         restore-keys: cmake-${{ runner.os }}-
 
     - name: Configure build
       run: |
         mkdir -p build && cd build && cmake \
-          -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+          -DCMAKE_BUILD_TYPE=Debug \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
           -DCMAKE_CXX_FLAGS="-Wall -Wextra -Werror" \
           ..
 
     - name: Build project
       run: cd build && make -j$(nproc)
 
+    - name: Print ccache stats
+      run: ccache --show-stats
+
     - name: Run sanity tests
       run: cd build && ctest -L sanity -j$(nproc) --output-on-failure
 
     - name: Run remaining tests
       # Full suite only on master — develop gets sanity-only for fast feedback.
+      # Build the EXCLUDE_FROM_ALL test executables explicitly before running them.
       if: github.ref == 'refs/heads/master' || github.base_ref == 'master'
-      run: cd build && ctest -LE sanity -j$(nproc) --output-on-failure
+      run: |
+        cd build
+        make -j$(nproc) test_library_screen test_search_service test_search_screen test_explore_service test_explore_screen
+        ctest -LE sanity -j$(nproc) --output-on-failure
 
     - name: Upload build artifact
       if: success()

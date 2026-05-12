@@ -44,8 +44,10 @@ find_package(Qt6 COMPONENTS Widgets Sql Network Test REQUIRED)
 find_package(Qt6 COMPONENTS Multimedia QUIET)
 find_package(LibArchive REQUIRED)
 
-# shared: pure database helpers, no Q_OBJECT — safe as a STATIC library consumed by all targets.
-add_library(shared STATIC
+# shared: pure database helpers, no Q_OBJECT — safe as an OBJECT library consumed by all targets.
+# OBJECT (not STATIC) keeps the compiled unit in the link graph without creating an intermediate
+# archive; CMake deduplicates OBJECT contributions when multiple consumers reference the same target.
+add_library(shared OBJECT
     src/shared/database.cpp
 )
 target_include_directories(shared PUBLIC src/shared)
@@ -179,6 +181,43 @@ else()
     endif()
 endif()
 
+# ---------------------------------------------------------------------------
+# Precompiled headers — amortise large Qt header parsing across all TUs.
+# Each OBJECT library gets its own PCH because their compile definitions differ
+# (bookhub_gui picks up BOOKHUB_HAVE_MULTIMEDIA, GPU macros, etc.).
+# ---------------------------------------------------------------------------
+target_precompile_headers(bookhub_collector PRIVATE
+    <QObject>
+    <QString>
+    <QStringList>
+    <QList>
+    <QMap>
+    <QByteArray>
+    <QUrl>
+    <QSqlDatabase>
+    <QSqlQuery>
+    <QSqlError>
+    <QNetworkAccessManager>
+    <QNetworkReply>
+    <QNetworkRequest>
+)
+target_precompile_headers(bookhub_gui PRIVATE
+    <QObject>
+    <QString>
+    <QStringList>
+    <QList>
+    <QMap>
+    <QWidget>
+    <QDialog>
+    <QLabel>
+    <QPushButton>
+    <QVBoxLayout>
+    <QHBoxLayout>
+    <QSqlDatabase>
+    <QSqlQuery>
+    <QSqlError>
+)
+
 add_executable(bookhub
     src/main.cpp
     resources.qrc
@@ -198,121 +237,136 @@ set_target_properties(bookhub PROPERTIES WIN32_EXECUTABLE $<CONFIG:Release>)
 target_include_directories(bookhub PRIVATE src)
 target_link_libraries(bookhub PRIVATE bookhub_collector bookhub_gui)
 
-enable_testing()
+# ---------------------------------------------------------------------------
+# Test suite — disable with -DBUILD_TESTING=OFF to skip all test targets,
+# e.g. for release packaging where no test code should be compiled.
+# ---------------------------------------------------------------------------
+option(BUILD_TESTING "Build and register the test suite" ON)
+if(BUILD_TESTING)
+    enable_testing()
 
-function(add_bookhub_test test_name)
-    add_executable(${test_name} ${ARGN})
-    target_include_directories(${test_name} PRIVATE src tests)
-    target_link_libraries(${test_name} PRIVATE Qt6::Test bookhub_collector bookhub_gui)
-    add_test(NAME ${test_name} COMMAND ${test_name})
-    set_tests_properties(${test_name} PROPERTIES
-        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    # FULL_SUITE_ONLY marks a test EXCLUDE_FROM_ALL so it is not built by the
+    # default 'all' target. CI builds these explicitly only on master before
+    # running the full ctest suite. Omit the flag for any test in the 'sanity'
+    # label set, which must be available after every plain 'make'.
+    function(add_bookhub_test test_name)
+        cmake_parse_arguments(ARG "FULL_SUITE_ONLY" "" "" ${ARGN})
+        add_executable(${test_name} ${ARG_UNPARSED_ARGUMENTS})
+        if(ARG_FULL_SUITE_ONLY)
+            set_target_properties(${test_name} PROPERTIES EXCLUDE_FROM_ALL TRUE)
+        endif()
+        target_include_directories(${test_name} PRIVATE src tests)
+        target_link_libraries(${test_name} PRIVATE Qt6::Test bookhub_collector bookhub_gui)
+        add_test(NAME ${test_name} COMMAND ${test_name})
+        set_tests_properties(${test_name} PROPERTIES
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        )
+    endfunction()
+
+    function(label_bookhub_test test_name)
+        set_property(TEST ${test_name} APPEND PROPERTY LABELS ${ARGN})
+    endfunction()
+
+    add_bookhub_test(test_database_schema
+        tests/unit/test_database_schema.cpp
     )
-endfunction()
+    label_bookhub_test(test_database_schema sanity unit database)
 
-function(label_bookhub_test test_name)
-    set_property(TEST ${test_name} APPEND PROPERTY LABELS ${ARGN})
-endfunction()
+    add_bookhub_test(test_gutenberg_id_resolution
+        tests/unit/test_gutenberg_id_resolution.cpp
+    )
+    label_bookhub_test(test_gutenberg_id_resolution sanity unit collector identity)
 
-add_bookhub_test(test_database_schema
-    tests/unit/test_database_schema.cpp
-)
-label_bookhub_test(test_database_schema sanity unit database)
+    add_bookhub_test(test_book_discovery_service
+        tests/integration/test_book_discovery_service.cpp
+    )
+    label_bookhub_test(test_book_discovery_service sanity integration collector identity)
 
-add_bookhub_test(test_gutenberg_id_resolution
-    tests/unit/test_gutenberg_id_resolution.cpp
-)
-label_bookhub_test(test_gutenberg_id_resolution sanity unit collector identity)
+    add_bookhub_test(test_library_service
+        tests/integration/test_library_service.cpp
+    )
+    label_bookhub_test(test_library_service sanity integration library)
 
-add_bookhub_test(test_book_discovery_service
-    tests/integration/test_book_discovery_service.cpp
-)
-label_bookhub_test(test_book_discovery_service sanity integration collector identity)
+    add_bookhub_test(test_main_window
+        tests/gui/test_main_window.cpp
+    )
+    label_bookhub_test(test_main_window sanity gui shell)
 
-add_bookhub_test(test_library_service
-    tests/integration/test_library_service.cpp
-)
-label_bookhub_test(test_library_service sanity integration library)
+    add_bookhub_test(test_library_screen FULL_SUITE_ONLY
+        tests/gui/test_library_screen.cpp
+    )
+    label_bookhub_test(test_library_screen gui library)
 
-add_bookhub_test(test_main_window
-    tests/gui/test_main_window.cpp
-)
-label_bookhub_test(test_main_window sanity gui shell)
+    add_bookhub_test(test_search_service FULL_SUITE_ONLY
+        tests/integration/test_search_service.cpp
+    )
+    label_bookhub_test(test_search_service integration search)
 
-add_bookhub_test(test_library_screen
-    tests/gui/test_library_screen.cpp
-)
-label_bookhub_test(test_library_screen gui library)
+    add_bookhub_test(test_search_screen FULL_SUITE_ONLY
+        tests/gui/test_search_screen.cpp
+    )
+    label_bookhub_test(test_search_screen gui search)
 
-add_bookhub_test(test_search_service
-    tests/integration/test_search_service.cpp
-)
-label_bookhub_test(test_search_service integration search)
+    add_bookhub_test(test_explore_service FULL_SUITE_ONLY
+        tests/integration/test_explore_service.cpp
+    )
+    label_bookhub_test(test_explore_service integration explore)
 
-add_bookhub_test(test_search_screen
-    tests/gui/test_search_screen.cpp
-)
-label_bookhub_test(test_search_screen gui search)
+    add_bookhub_test(test_explore_screen FULL_SUITE_ONLY
+        tests/gui/test_explore_screen.cpp
+    )
+    label_bookhub_test(test_explore_screen gui explore)
 
-add_bookhub_test(test_explore_service
-    tests/integration/test_explore_service.cpp
-)
-label_bookhub_test(test_explore_service integration explore)
+    add_bookhub_test(test_book_details_panel
+        tests/gui/test_book_details_panel.cpp
+    )
+    label_bookhub_test(test_book_details_panel sanity gui details)
 
-add_bookhub_test(test_explore_screen
-    tests/gui/test_explore_screen.cpp
-)
-label_bookhub_test(test_explore_screen gui explore)
+    add_bookhub_test(test_download_flow_dialog
+        tests/gui/test_download_flow_dialog.cpp
+    )
+    label_bookhub_test(test_download_flow_dialog sanity gui download)
 
-add_bookhub_test(test_book_details_panel
-    tests/gui/test_book_details_panel.cpp
-)
-label_bookhub_test(test_book_details_panel sanity gui details)
+    add_bookhub_test(test_step_indicator_widget
+        tests/gui/test_step_indicator_widget.cpp
+    )
+    label_bookhub_test(test_step_indicator_widget sanity gui widgets)
 
-add_bookhub_test(test_download_flow_dialog
-    tests/gui/test_download_flow_dialog.cpp
-)
-label_bookhub_test(test_download_flow_dialog sanity gui download)
+    add_bookhub_test(test_audiobook_flow_dialog
+        tests/gui/test_audiobook_flow_dialog.cpp
+    )
+    label_bookhub_test(test_audiobook_flow_dialog sanity gui audiobook)
 
-add_bookhub_test(test_step_indicator_widget
-    tests/gui/test_step_indicator_widget.cpp
-)
-label_bookhub_test(test_step_indicator_widget sanity gui widgets)
+    add_bookhub_test(test_tts_service
+        tests/unit/test_tts_service.cpp
+    )
+    label_bookhub_test(test_tts_service sanity unit tts)
 
-add_bookhub_test(test_audiobook_flow_dialog
-    tests/gui/test_audiobook_flow_dialog.cpp
-)
-label_bookhub_test(test_audiobook_flow_dialog sanity gui audiobook)
+    add_bookhub_test(test_wav_utils
+        tests/unit/test_wav_utils.cpp
+    )
+    label_bookhub_test(test_wav_utils sanity unit tts)
 
-add_bookhub_test(test_tts_service
-    tests/unit/test_tts_service.cpp
-)
-label_bookhub_test(test_tts_service sanity unit tts)
-
-add_bookhub_test(test_wav_utils
-    tests/unit/test_wav_utils.cpp
-)
-label_bookhub_test(test_wav_utils sanity unit tts)
+endif() # BUILD_TESTING
 
 # ---------------------------------------------------------------------------
 # clang-format target — reformat all sources in-place
 #   cmake --build build --target format
 # ---------------------------------------------------------------------------
+# find runs at build time so newly added files are picked up without re-running cmake.
 find_program(CLANG_FORMAT_EXE NAMES clang-format-19 clang-format-18 clang-format-17 clang-format)
 if(CLANG_FORMAT_EXE)
-    file(GLOB_RECURSE ALL_SOURCES
-        "${CMAKE_SOURCE_DIR}/src/*.cpp"
-        "${CMAKE_SOURCE_DIR}/src/*.h"
-        "${CMAKE_SOURCE_DIR}/tests/*.cpp"
-        "${CMAKE_SOURCE_DIR}/tests/*.h"
-    )
     add_custom_target(format
-        COMMAND ${CLANG_FORMAT_EXE} -i --style=file ${ALL_SOURCES}
+        COMMAND find ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/tests
+                \( -name "*.cpp" -o -name "*.h" \)
+                -exec ${CLANG_FORMAT_EXE} -i --style=file {} +
         COMMENT "Running clang-format on all sources"
         VERBATIM
     )
     add_custom_target(format-check
-        COMMAND ${CLANG_FORMAT_EXE} --style=file --dry-run -Werror ${ALL_SOURCES}
+        COMMAND find ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/tests
+                \( -name "*.cpp" -o -name "*.h" \)
+                -exec ${CLANG_FORMAT_EXE} --style=file --dry-run -Werror {} +
         COMMENT "Checking clang-format compliance (no files modified)"
         VERBATIM
     )
