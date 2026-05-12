@@ -44,10 +44,8 @@ find_package(Qt6 COMPONENTS Widgets Sql Network Test REQUIRED)
 find_package(Qt6 COMPONENTS Multimedia QUIET)
 find_package(LibArchive REQUIRED)
 
-# shared: pure database helpers, no Q_OBJECT — safe as an OBJECT library consumed by all targets.
-# OBJECT (not STATIC) keeps the compiled unit in the link graph without creating an intermediate
-# archive; CMake deduplicates OBJECT contributions when multiple consumers reference the same target.
-add_library(shared OBJECT
+# shared: pure database helpers, no Q_OBJECT — safe as a STATIC library consumed by all targets.
+add_library(shared STATIC
     src/shared/database.cpp
 )
 target_include_directories(shared PUBLIC src/shared)
