@@ -1,6 +1,7 @@
 #include "gui/dialogs/audiobook_flow_dialog.h"
 #include "gui/dialogs/voice_upload_dialog.h"
 #include "gui/services/library_service.h"
+#include "gui/services/native_tts_service.h"
 #include "gui/services/tts_service.h"
 #include "gui/widgets/voice_selector_widget.h"
 #include "support/test_database_utils.h"

@@ -70,6 +70,7 @@ set(GUI_SOURCES
     src/gui/services/book_details_service.cpp
     src/gui/services/explore_service.cpp
     src/gui/services/library_service.cpp
+    src/gui/services/native_tts_service.cpp
     src/gui/services/pocket_tts_service.cpp
     src/gui/services/search_service.cpp
     src/gui/services/sherpa_onnx_tts_service.cpp

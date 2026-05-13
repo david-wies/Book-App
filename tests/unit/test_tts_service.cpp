@@ -1,3 +1,4 @@
+#include "gui/services/native_tts_service.h"
 #include "gui/services/pocket_tts_service.h"
 #include "gui/services/sherpa_onnx_tts_service.h"
 #include "gui/services/tts_service.h"

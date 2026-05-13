@@ -77,14 +77,14 @@ void SherpaOnnxTTSService::generateAudiobook(int voiceId,
 #ifdef BOOKHUB_HAVE_SHERPA_ONNX
     if (modelAvailable(voiceId)) {
         // TODO (Task 22): load model from modelDir(voiceId), synthesize the full audiobook,
-        // report progress via generationProgress(), and emit generationCompleted().
+        // report progress via generationProgress(), emit generationCompleted(true, outputPath),
+        // and return. Until then fall through to the failure emit below.
 #    ifdef BOOKHUB_HAVE_GPU
         // TODO (Task 22): set SherpaOnnxOfflineTtsConfig::provider based on backend:
         //   CUDA→"cuda"  CoreML→"coreml"  DirectML→"dml"  ROCm→"rocm"  OpenVINO→"openvino"
 #    endif
-        return; // placeholder — remove once Task 22 synthesis is wired in
     }
-    // Model not downloaded yet — fall through to failure.
+    // Model not downloaded yet (or synthesis not yet wired in) — fall through to failure.
 #else
     Q_UNUSED(voiceId)
 #endif

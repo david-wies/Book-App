@@ -2,6 +2,7 @@
 
 #include "../query_worker.h"
 #include "../services/library_service.h"
+#include "../services/native_tts_service.h"
 #include "../services/tts_service.h"
 #include "../utils/wav_utils.h"
 #include "../widgets/mini_audio_player_widget.h"
@@ -550,6 +551,14 @@ void AudiobookFlowDialog::onPreviewGenerated(int voiceId, const QByteArray &audi
 
     m_previewAudioData = audioData;
 
+    if (audioData.isEmpty()) {
+        m_previewVoiceBtn->setEnabled(true);
+        m_previewVoiceBtn->setText(QStringLiteral("▶ Preview selected voice"));
+        m_resultLabel->setText(
+            QStringLiteral("Preview unavailable — voice model not yet downloaded."));
+        return;
+    }
+
     // Write to a temp file so the audio player (in-app or system) can open it.
     if (!m_previewTempPath.isEmpty())
         QFile::remove(m_previewTempPath);
@@ -560,7 +569,7 @@ void AudiobookFlowDialog::onPreviewGenerated(int voiceId, const QByteArray &audi
         // Scope the QFile so it is closed before QMediaPlayer opens the same path.
         // On Windows, an open write handle prevents the player from reading the file.
         QFile previewFile(m_previewTempPath);
-        if (audioData.isEmpty() || !previewFile.open(QIODevice::WriteOnly) ||
+        if (!previewFile.open(QIODevice::WriteOnly) ||
             previewFile.write(audioData) != audioData.size()) {
             m_previewTempPath.clear();
         }
@@ -759,6 +768,7 @@ bool AudiobookFlowDialog::startGeneration()
     m_openFileBtn->hide();
     m_saveAsBtn->hide();
     m_addToLibBtn->hide();
+    m_nextBtn->setText(QStringLiteral("✓ Confirm & Generate"));
     m_nextBtn->setEnabled(false);
     if (m_libraryItemId > 0 && m_libraryService)
         m_libraryService->requestUpdateStatus(m_libraryItemId, QStringLiteral("converting"));
