@@ -78,7 +78,7 @@ QString PocketTTSService::modelDir()
 
 bool PocketTTSService::checkAvailabilityAndEmitFailure(int voiceId, bool isPreview)
 {
-    if (!languageSupported(m_language) || !modelsAvailable()) {
+    if (!libraryAvailable() || !languageSupported(m_language) || !modelsAvailable()) {
         if (isPreview) {
             QTimer::singleShot(
                 0, this, [this, voiceId] { emit previewGenerated(voiceId, QByteArray{}); });
@@ -110,10 +110,10 @@ void PocketTTSService::generatePreview(int voiceId, const QString &voiceName, co
     //   OpenVINO→ AppendExecutionProvider_OpenVINO(OrtOpenVINOProviderOptions{})
 #endif
     Q_UNUSED(voiceId)
-    // Prevent fall-through to the failure emit below once synthesis is wired in.
-    return;
+    // Once real synthesis is wired in, emit the result signal and return here.
+    // Until then, fall through to the failure emit below.
 #endif
-    // Library not linked or synthesis not yet implemented — emit empty data so the dialog
+    // Synthesis not yet implemented — emit empty data so the dialog
     // can show duration 0:00 and let the user retry once models are ready.
     QTimer::singleShot(0, this, [this, voiceId] { emit previewGenerated(voiceId, QByteArray{}); });
 }
@@ -143,10 +143,10 @@ void PocketTTSService::generateAudiobook(int voiceId,
     //   OpenVINO→ AppendExecutionProvider_OpenVINO(OrtOpenVINOProviderOptions{})
 #endif
     Q_UNUSED(voiceId)
-    // Prevent fall-through to the failure emit below once synthesis is wired in.
-    return;
+    // Once real synthesis is wired in, emit the result signal and return here.
+    // Until then, fall through to the failure emit below.
 #endif
-    // Library not linked or synthesis not yet implemented — emit failure.
+    // Synthesis not yet implemented — emit failure.
     QTimer::singleShot(0, this, [this] { emit generationCompleted(false, {}); });
 }
 
