@@ -73,7 +73,7 @@ private:
     void populateLanguageList();
     void populateFormatList();
     void populateVoiceList();
-    bool startGeneration();
+    void startGeneration();
     void markAudiobookReady();
     BookSourceEntry selectedSource() const;
     bool isTextCompatibleFormat(const QString &formatType) const;

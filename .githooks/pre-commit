@@ -12,21 +12,18 @@
 
 set -euo pipefail
 
-CHANGED=$(git diff --name-only --cached | grep -E '\.(cpp|h)$' || true)
-[ -z "$CHANGED" ] && exit 0
-
 if ! command -v clang-format &>/dev/null; then
     echo "WARNING: clang-format not found — skipping format check." >&2
     exit 0
 fi
 
 FAILED=()
-for f in $CHANGED; do
+while IFS= read -r f; do
     [ -f "$f" ] || continue
     if ! clang-format --style=file --dry-run -Werror "$f" 2>/dev/null; then
         FAILED+=("$f")
     fi
-done
+done < <(git diff --name-only --cached | grep -E '\.(cpp|h)$' || true)
 
 if [ ${#FAILED[@]} -gt 0 ]; then
     echo "-----------------------------------------------------------" >&2

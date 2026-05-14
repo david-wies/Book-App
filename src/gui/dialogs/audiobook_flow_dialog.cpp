@@ -142,6 +142,11 @@ AudiobookFlowDialog::AudiobookFlowDialog(LibraryService *libraryService,
 
 AudiobookFlowDialog::~AudiobookFlowDialog()
 {
+    // Stop before removing: on Windows an open player handle blocks file deletion.
+#ifdef BOOKHUB_HAVE_MULTIMEDIA
+    if (m_mediaPlayer)
+        m_mediaPlayer->stop();
+#endif
     if (!m_previewTempPath.isEmpty())
         QFile::remove(m_previewTempPath);
 }
@@ -571,6 +576,8 @@ void AudiobookFlowDialog::onPreviewGenerated(int voiceId, const QByteArray &audi
         QFile previewFile(m_previewTempPath);
         if (!previewFile.open(QIODevice::WriteOnly) ||
             previewFile.write(audioData) != audioData.size()) {
+            previewFile.close();
+            QFile::remove(m_previewTempPath);
             m_previewTempPath.clear();
         }
     }
@@ -743,21 +750,21 @@ void AudiobookFlowDialog::updateNextButtonEnabled()
     m_nextBtn->setEnabled(enabled);
 }
 
-bool AudiobookFlowDialog::startGeneration()
+void AudiobookFlowDialog::startGeneration()
 {
     if (m_selectedLanguage.isEmpty() || m_selectedFormat.isEmpty() || m_selectedVoiceId < 0) {
         showErrorState("Please select language, format, and voice.");
-        return false;
+        return;
     }
     if (!m_ttsService) {
         showErrorState("The text-to-speech service is unavailable.");
-        return false;
+        return;
     }
 
     m_generatedOutputPath = defaultOutputPath();
     if (m_generatedOutputPath.isEmpty()) {
         showErrorState("Could not prepare the audiobook output folder.");
-        return false;
+        return;
     }
 
     m_progressBar->setValue(0);
@@ -775,7 +782,6 @@ bool AudiobookFlowDialog::startGeneration()
 
     m_ttsService->generateAudiobook(
         m_selectedVoiceId, m_selectedVoiceName, generationScript(), m_generatedOutputPath);
-    return true;
 }
 
 void AudiobookFlowDialog::markAudiobookReady()
