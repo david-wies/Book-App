@@ -33,6 +33,8 @@ public:
 
     void generatePreview(int voiceId, const QString &, const QString &) override
     {
+        // Deliberately emits 4-byte "RIFF" — invalid WAV that is non-empty so the
+        // dialog exercises the temp-file-write path without real audio playback.
         emit previewGenerated(voiceId, QByteArray("RIFF"));
     }
 
@@ -46,6 +48,28 @@ public:
     }
 
     int generationRequests{0};
+};
+
+class ControllableTTSService final : public TTSService
+{
+public:
+    explicit ControllableTTSService(QObject *parent = nullptr) : TTSService(parent) {}
+
+    void generatePreview(int voiceId, const QString &, const QString &) override
+    {
+        ++previewRequests;
+        pendingVoiceId = voiceId;
+    }
+
+    void deliverPreview(const QByteArray &data = QByteArray("fake"))
+    {
+        emit previewGenerated(pendingVoiceId, data);
+    }
+
+    void generateAudiobook(int, const QString &, const QString &, const QString &) override {}
+
+    int previewRequests{0};
+    int pendingVoiceId{-1};
 };
 
 class AudiobookFlowDialogTest : public QObject
@@ -82,6 +106,8 @@ private slots:
     void previewVoice_writesTempFile();
     void previewListened_gatesGenerateStep();
     void onPlayPreview_nonMultimediaFallback_setsPreviewListened();
+    void previewVoice_inFlightGuard_preventsDuplicateSynthesis();
+    void previewVoice_staleVoiceId_discardedByDialog();
 
     // Generation flow
     void startGeneration_succeedsWithAllSelections();
@@ -424,6 +450,51 @@ void AudiobookFlowDialogTest::onPlayPreview_nonMultimediaFallback_setsPreviewLis
 #else
     QSKIP("Non-multimedia fallback path not compiled in this build");
 #endif
+}
+
+void AudiobookFlowDialogTest::previewVoice_inFlightGuard_preventsDuplicateSynthesis()
+{
+    ControllableTTSService svc;
+    delete m_dialog;
+    m_dialog = new AudiobookFlowDialog(m_libraryService, m_worker, &svc);
+    m_dialog->m_selectedVoiceId = 1;
+    m_dialog->m_selectedVoiceName = QStringLiteral("Classic Storyteller");
+
+    // First click starts synthesis — previewRequests == 1, flag is set.
+    m_dialog->onPreviewVoiceClicked();
+    QCOMPARE(svc.previewRequests, 1);
+    QVERIFY(m_dialog->m_previewGenerating);
+
+    // Second click while in-flight must not enqueue another call.
+    m_dialog->onPreviewVoiceClicked();
+    QCOMPARE(svc.previewRequests, 1);
+
+    // Delivering the result clears the flag and stores the data.
+    svc.deliverPreview();
+    QVERIFY(!m_dialog->m_previewGenerating);
+    QVERIFY(!m_dialog->m_previewAudioData.isEmpty());
+}
+
+void AudiobookFlowDialogTest::previewVoice_staleVoiceId_discardedByDialog()
+{
+    ControllableTTSService svc;
+    delete m_dialog;
+    m_dialog = new AudiobookFlowDialog(m_libraryService, m_worker, &svc);
+    m_dialog->m_selectedVoiceId = 1;
+    m_dialog->m_selectedVoiceName = QStringLiteral("Classic Storyteller");
+
+    // Kick off synthesis for voice 1.
+    m_dialog->onPreviewVoiceClicked();
+    QCOMPARE(svc.previewRequests, 1);
+
+    // User switches to voice 2 before the result arrives.
+    m_dialog->onVoiceSelectionChanged(2, QStringLiteral("Warm Listener"));
+    QVERIFY(!m_dialog->m_previewGenerating); // cleared by voice change
+    QVERIFY(m_dialog->m_previewAudioData.isEmpty());
+
+    // Stale result for voice 1 arrives — dialog must discard it.
+    svc.deliverPreview(QByteArray("stale"));
+    QVERIFY(m_dialog->m_previewAudioData.isEmpty());
 }
 
 void AudiobookFlowDialogTest::startGeneration_succeedsWithAllSelections()

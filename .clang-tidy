@@ -66,30 +66,6 @@ WarningsAsErrors: ''
 HeaderFilterRegex: '^.*/src/.*\.(h|hpp)$'
 
 CheckOptions:
-  # Naming conventions — mirror the project style observed in the codebase:
-  #   namespaces  → lower_case  (bookhub, bookhub::gui, …)
-  #   classes     → CamelCase   (QueryWorker, BookDiscoveryService, …)
-  #   methods     → camelCase   (onBookDetailsRequested, buildNavBar, …)
-  #   members     → m_camelCase (m_queryThread, m_activeFetches, …)
-  #   constants   → kCamelCase  (kConnectionName, …)
-  #   locals/params → camelCase
-  readability-identifier-naming.NamespaceCase:           lower_case
-  readability-identifier-naming.ClassCase:               CamelCase
-  readability-identifier-naming.StructCase:              CamelCase
-  readability-identifier-naming.EnumCase:                CamelCase
-  readability-identifier-naming.FunctionCase:            camelBack
-  readability-identifier-naming.MethodCase:              camelBack
-  readability-identifier-naming.PrivateMemberCase:       camelBack
-  readability-identifier-naming.PrivateMemberPrefix:     m_
-  readability-identifier-naming.ProtectedMemberCase:     camelBack
-  readability-identifier-naming.ProtectedMemberPrefix:   m_
-  readability-identifier-naming.ParameterCase:           camelBack
-  readability-identifier-naming.LocalVariableCase:       camelBack
-  readability-identifier-naming.StaticConstantCase:      CamelCase
-  readability-identifier-naming.StaticConstantPrefix:    k
-  readability-identifier-naming.ClassConstantCase:       CamelCase
-  readability-identifier-naming.ClassConstantPrefix:     k
-
   # Cognitive complexity — flag functions that are hard to test; complements
   # the Lizard cyclomatic-complexity gate in CLAUDE.md (CCN > 10).
   readability-function-cognitive-complexity.Threshold:   25

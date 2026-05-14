@@ -63,6 +63,8 @@ jobs:
         restore-keys: cmake-${{ runner.os }}-
 
     - name: Configure build
+      # Debug keeps assertions active and gives ASan/UBSan cleaner stack traces.
+      # ccache keeps incremental builds fast despite the extra debug metadata.
       run: |
         mkdir -p build && cd build && cmake \
           -DCMAKE_BUILD_TYPE=Debug \

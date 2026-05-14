@@ -4,6 +4,7 @@
 
 #include <QByteArray>
 #include <QDialog>
+#include <QPointer>
 
 class QLabel;
 class QListWidget;
@@ -32,7 +33,9 @@ class AudiobookFlowDialog : public QDialog
 
 public:
     // ttsService: caller retains ownership. Null → a NativeTTSService is created
-    // and owned by this dialog.
+    // and owned by this dialog. If a non-null service is passed and later
+    // destroyed, m_ttsService (QPointer) silently becomes null and all callers
+    // already guard with `if (m_ttsService)`.
     explicit AudiobookFlowDialog(LibraryService *libraryService,
                                  QueryWorker *worker,
                                  TTSService *ttsService = nullptr,
@@ -77,17 +80,20 @@ private:
     void markAudiobookReady();
     BookSourceEntry selectedSource() const;
     bool isTextCompatibleFormat(const QString &formatType) const;
+    void startPreviewGeneration();
     QString previewScript() const;
     QString generationScript() const;
     QString defaultOutputPath() const;
     void showErrorState(const QString &message);
+    // Reset the preview button to its idle label ("▶ Preview selected voice").
+    void resetPreviewButton();
 
     friend class ::bookhub::gui::AudiobookFlowDialogTest;
 
     LibraryService *m_libraryService{};
     BookDetailsService *m_detailsService{};
     QueryWorker *m_worker{};
-    TTSService *m_ttsService{};
+    QPointer<TTSService> m_ttsService;
 
     QString m_bookId;
     QString m_bookTitle;
@@ -114,7 +120,8 @@ private:
     QByteArray m_previewAudioData;
     QString m_previewTempPath;
     bool m_previewListened{false};
-    bool m_previewPlaying{false}; // true while QMediaPlayer is in PlayingState
+    bool m_previewPlaying{false};    // true while QMediaPlayer is in PlayingState
+    bool m_previewGenerating{false}; // true while generatePreview() is in-flight
     QString m_generatedOutputPath;
 #ifdef BOOKHUB_HAVE_MULTIMEDIA
     QMediaPlayer *m_mediaPlayer{};

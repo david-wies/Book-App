@@ -118,7 +118,7 @@ AudiobookFlowDialog::AudiobookFlowDialog(LibraryService *libraryService,
                     m_previewVoiceBtn->setText(QStringLiteral("■ Stop"));
                     m_previewPlaying = true;
                 } else if (!m_previewAudioData.isEmpty()) {
-                    m_previewVoiceBtn->setText(QStringLiteral("▶ Preview selected voice"));
+                    resetPreviewButton();
                     m_previewPlaying = false;
                 }
                 if (state == QMediaPlayer::StoppedState)
@@ -129,7 +129,7 @@ AudiobookFlowDialog::AudiobookFlowDialog(LibraryService *libraryService,
             this,
             [this](QMediaPlayer::Error, const QString &errorString) {
                 m_previewVoiceBtn->setEnabled(!m_previewAudioData.isEmpty());
-                m_previewVoiceBtn->setText(QStringLiteral("▶ Preview selected voice"));
+                resetPreviewButton();
                 m_previewPlayer->setPlaying(false);
                 m_previewPlaying = false;
                 showErrorState(
@@ -315,6 +315,7 @@ void AudiobookFlowDialog::resetState()
     m_previewAudioData.clear();
     m_previewListened = false;
     m_previewPlaying = false;
+    m_previewGenerating = false;
     if (!m_previewTempPath.isEmpty()) {
         QFile::remove(m_previewTempPath);
         m_previewTempPath.clear();
@@ -418,13 +419,14 @@ void AudiobookFlowDialog::onVoiceSelectionChanged(int voiceId, const QString &vo
     m_selectedVoiceId = voiceId;
     m_selectedVoiceName = voiceName;
     m_previewVoiceBtn->setEnabled(voiceId >= 0);
-    m_previewVoiceBtn->setText(QStringLiteral("▶ Preview selected voice"));
+    resetPreviewButton();
     m_previewVoiceLabel->setText(voiceId >= 0 ? QString("Listening to: %1").arg(voiceName)
                                               : QStringLiteral("Listening to: —"));
     m_previewText->setText(previewScript());
     m_previewAudioData.clear();
     m_previewListened = false;
     m_previewPlaying = false;
+    m_previewGenerating = false;
     if (!m_previewTempPath.isEmpty()) {
         QFile::remove(m_previewTempPath);
         m_previewTempPath.clear();
@@ -475,7 +477,7 @@ void AudiobookFlowDialog::onNextOrGenerateClicked()
 void AudiobookFlowDialog::onPlayPreview()
 {
     if (m_previewAudioData.isEmpty()) {
-        onPreviewVoiceClicked();
+        startPreviewGeneration();
         return;
     }
     if (m_previewTempPath.isEmpty())
@@ -503,7 +505,7 @@ void AudiobookFlowDialog::onStopPreview()
     m_previewPlaying = false;
     m_previewPlayer->setPlaying(false);
     if (!m_previewAudioData.isEmpty())
-        m_previewVoiceBtn->setText(QStringLiteral("▶ Preview selected voice"));
+        resetPreviewButton();
 }
 
 void AudiobookFlowDialog::onGenerationProgress(int percent)
@@ -533,6 +535,17 @@ void AudiobookFlowDialog::onGenerationComplete()
     connect(m_nextBtn, &QPushButton::clicked, this, &QDialog::accept);
 }
 
+void AudiobookFlowDialog::startPreviewGeneration()
+{
+    if (m_previewGenerating || m_selectedVoiceId < 0 || !m_ttsService)
+        return;
+    m_previewGenerating = true;
+    m_previewVoiceBtn->setEnabled(false);
+    m_previewVoiceBtn->setText(QStringLiteral("Generating preview…"));
+    m_previewText->setText(previewScript());
+    m_ttsService->generatePreview(m_selectedVoiceId, m_selectedVoiceName, m_previewText->text());
+}
+
 void AudiobookFlowDialog::onPreviewVoiceClicked()
 {
     if (m_selectedVoiceId < 0 || !m_ttsService)
@@ -543,14 +556,21 @@ void AudiobookFlowDialog::onPreviewVoiceClicked()
         return;
     }
 
-    m_previewVoiceBtn->setEnabled(false);
-    m_previewVoiceBtn->setText(QStringLiteral("Generating preview…"));
-    m_previewText->setText(previewScript());
-    m_ttsService->generatePreview(m_selectedVoiceId, m_selectedVoiceName, m_previewText->text());
+    // Cached preview available — play rather than regenerate.
+    if (!m_previewAudioData.isEmpty()) {
+        onPlayPreview();
+        return;
+    }
+
+    startPreviewGeneration();
 }
 
 void AudiobookFlowDialog::onPreviewGenerated(int voiceId, const QByteArray &audioData)
 {
+    // Always clear the in-flight flag, even for stale results, so a new synthesis
+    // can be triggered after a voice change mid-flight.
+    m_previewGenerating = false;
+
     if (voiceId != m_selectedVoiceId)
         return;
 
@@ -558,7 +578,7 @@ void AudiobookFlowDialog::onPreviewGenerated(int voiceId, const QByteArray &audi
 
     if (audioData.isEmpty()) {
         m_previewVoiceBtn->setEnabled(true);
-        m_previewVoiceBtn->setText(QStringLiteral("▶ Preview selected voice"));
+        resetPreviewButton();
         m_resultLabel->setText(
             QStringLiteral("Preview unavailable — voice model not yet downloaded."));
         return;
@@ -583,7 +603,7 @@ void AudiobookFlowDialog::onPreviewGenerated(int voiceId, const QByteArray &audi
     }
 
     m_previewVoiceBtn->setEnabled(true);
-    m_previewVoiceBtn->setText(QStringLiteral("▶ Preview selected voice"));
+    resetPreviewButton();
 
     if (m_previewTempPath.isEmpty()) {
         // File write failed — don't leave a stale duration in the player.
@@ -868,7 +888,6 @@ QString AudiobookFlowDialog::defaultOutputPath() const
     QString stem = m_bookTitle.simplified().toLower();
     static const QRegularExpression kNonAlnum(QStringLiteral("[^a-z0-9]+"));
     stem.replace(kNonAlnum, QStringLiteral("-"));
-    stem = stem.trimmed();
     while (stem.startsWith(QLatin1Char('-')))
         stem.remove(0, 1);
     while (stem.endsWith(QLatin1Char('-')))
@@ -887,6 +906,11 @@ void AudiobookFlowDialog::showErrorState(const QString &message)
         QMessageBox::Warning, QStringLiteral("Error"), message, QMessageBox::Ok, this);
     box->setAttribute(Qt::WA_DeleteOnClose);
     box->open();
+}
+
+void AudiobookFlowDialog::resetPreviewButton()
+{
+    m_previewVoiceBtn->setText(QStringLiteral("▶ Preview selected voice"));
 }
 
 } // namespace bookhub::gui
