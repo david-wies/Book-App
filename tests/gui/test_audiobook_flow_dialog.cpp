@@ -98,6 +98,7 @@ private slots:
     void populateFormatList_autoSelectsEpub();
     void populateFormatList_selectsFirstTextFormatWhenNoEpub();
     void populateFormatList_filtersNonTextFormats();
+    void populateFormatList_acceptsGutenbergSuffixedKeys();
 
     // Voice list
     void voiceSelector_displaysPresetAndCustomSeparately();
@@ -322,6 +323,35 @@ void AudiobookFlowDialogTest::populateFormatList_filtersNonTextFormats()
 
     QCOMPARE(m_dialog->m_formatList->count(), 1);
     QCOMPARE(m_dialog->m_selectedFormat, QStringLiteral("html"));
+}
+
+void AudiobookFlowDialogTest::populateFormatList_acceptsGutenbergSuffixedKeys()
+{
+    // GutenbergAdapter stores format keys as "<mime-name>_<N>" (e.g. "epub_1",
+    // "text_plain_1", "html_1"). The filter must normalize before the allowlist
+    // check, otherwise every real Gutenberg book gets an empty format list and
+    // the flow becomes unusable past step 2.
+    QList<BookFormatEntry> formats;
+    BookFormatEntry epub;
+    epub.formatType = QStringLiteral("epub_1");
+    BookFormatEntry textPlain;
+    textPlain.formatType = QStringLiteral("text_plain_1");
+    BookFormatEntry html;
+    html.formatType = QStringLiteral("html_1");
+    BookFormatEntry pdf;
+    pdf.formatType = QStringLiteral("pdf_1");
+    formats.append(pdf);
+    formats.append(textPlain);
+    formats.append(html);
+    formats.append(epub);
+
+    m_dialog->m_pendingFormatsId = 11;
+    m_dialog->onFormatsCompleted(11, formats);
+
+    // pdf is filtered; epub_1 / text_plain_1 / html_1 survive.
+    QCOMPARE(m_dialog->m_formatList->count(), 3);
+    // Epub still wins the "recommended" auto-selection even with the _N suffix.
+    QCOMPARE(m_dialog->m_selectedFormat, QStringLiteral("epub_1"));
 }
 
 void AudiobookFlowDialogTest::voiceSelector_displaysPresetAndCustomSeparately()

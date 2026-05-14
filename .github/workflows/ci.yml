@@ -59,7 +59,10 @@ jobs:
       uses: actions/cache@v5
       with:
         path: build
-        key: cmake-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'resources.qrc', '*.jpg', '*.png') }}
+        # Include src/** and tests/** so source-only changes invalidate the cache.
+        # Without them, CMake-generated state (moc, dep scans) can persist across
+        # PRs and produce confusing incremental errors.
+        key: cmake-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'resources.qrc', '*.jpg', '*.png', 'src/**', 'tests/**') }}
         restore-keys: cmake-${{ runner.os }}-
 
     - name: Configure build

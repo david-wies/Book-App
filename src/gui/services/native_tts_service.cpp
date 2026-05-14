@@ -92,7 +92,14 @@ void NativeTTSService::generateAudiobook(int voiceId,
         QMetaObject::invokeMethod(
             qApp,
             [self, flag, success, outputPath] {
-                if (!self || flag->load(std::memory_order_relaxed))
+                if (flag->load(std::memory_order_relaxed)) {
+                    // Cancel raced the write — if we got far enough to land a file
+                    // on disk, remove it so the cancel doesn't leak a partial WAV.
+                    if (success)
+                        QFile::remove(outputPath);
+                    return;
+                }
+                if (!self)
                     return;
                 if (self->m_generationTimer) {
                     self->m_generationTimer->stop();

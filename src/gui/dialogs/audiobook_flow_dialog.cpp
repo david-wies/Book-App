@@ -37,6 +37,10 @@
 
 namespace bookhub::gui {
 
+namespace {
+constexpr auto kPreviewButtonIdleLabel = "▶ Preview selected voice";
+} // namespace
+
 AudiobookFlowDialog::AudiobookFlowDialog(LibraryService *libraryService,
                                          QueryWorker *worker,
                                          TTSService *ttsService,
@@ -203,7 +207,7 @@ void AudiobookFlowDialog::buildUi()
             this,
             &AudiobookFlowDialog::onVoiceUploadRequested);
     voiceLayout->addWidget(m_voiceSelector);
-    m_previewVoiceBtn = new QPushButton("▶ Preview selected voice", this);
+    m_previewVoiceBtn = new QPushButton(QString::fromUtf8(kPreviewButtonIdleLabel), this);
     m_previewVoiceBtn->setEnabled(false); // enabled once a voice is selected
     connect(m_previewVoiceBtn,
             &QPushButton::clicked,
@@ -445,8 +449,9 @@ void AudiobookFlowDialog::onVoiceUploadRequested()
 {
     VoiceUploadDialog uploadDialog(this);
     if (uploadDialog.exec() == QDialog::Accepted) {
-        // Phase 3: insert into voices table and call populateVoiceList().
-        // For now, acknowledge the submission so the user knows it was received.
+        // TODO (Task 14): persist the uploaded sample into the voices table and
+        // call populateVoiceList(). Until then, acknowledge the submission so the
+        // user knows it was received.
         QMessageBox::information(
             this,
             "Voice Registered",
@@ -556,6 +561,13 @@ void AudiobookFlowDialog::onPreviewVoiceClicked()
         return;
     }
 
+    // m_previewGenerating is the only signal that a previous request is still
+    // in flight in the non-multimedia path (m_previewPlaying is only flipped
+    // by QMediaPlayer's state-change lambda). Without this guard, a second
+    // click before previewGenerated arrives would queue duplicate synthesis.
+    if (m_previewGenerating)
+        return;
+
     // Cached preview available — play rather than regenerate.
     if (!m_previewAudioData.isEmpty()) {
         onPlayPreview();
@@ -658,6 +670,10 @@ void AudiobookFlowDialog::onSaveAsClicked()
         QDir::homePath() + QLatin1Char('/') + QFileInfo(m_generatedOutputPath).fileName(),
         QStringLiteral("WAV audio (*.wav);;All files (*)"));
     if (!dest.isEmpty()) {
+        // No-op if the user picks the source file itself — would otherwise delete
+        // the source on remove() and then fail the copy, leaving nothing on disk.
+        if (QFileInfo(dest) == QFileInfo(m_generatedOutputPath))
+            return;
         // QFileDialog already prompted the user to confirm overwrite; honour that answer.
         QFile::remove(dest);
         if (!QFile::copy(m_generatedOutputPath, dest))
@@ -831,18 +847,25 @@ BookSourceEntry AudiobookFlowDialog::selectedSource() const
 
 bool AudiobookFlowDialog::isTextCompatibleFormat(const QString &formatType) const
 {
-    // Exact allowlist: only formats whose text can be extracted for TTS.
-    // epub2/epub3 are matched by their canonical Gutenberg type strings.
+    // GutenbergAdapter stores format keys like "epub_1", "text_plain_1", "html_1"
+    // (mime-derived name + per-edition counter). Strip the trailing "_<N>" before
+    // matching so the allowlist works for both raw mime names and counter-suffixed
+    // production keys.
+    QString normalized = formatType.toLower();
+    static const QRegularExpression kTrailingCounter(QStringLiteral("_\\d+$"));
+    normalized.remove(kTrailingCounter);
+
     static const QSet<QString> kTextFormats{
         QStringLiteral("epub"),
         QStringLiteral("epub2"),
         QStringLiteral("epub3"),
         QStringLiteral("txt"),
         QStringLiteral("text"),
+        QStringLiteral("text_plain"),
         QStringLiteral("html"),
         QStringLiteral("htm"),
     };
-    return kTextFormats.contains(formatType.toLower());
+    return kTextFormats.contains(normalized);
 }
 
 QString AudiobookFlowDialog::previewScript() const
@@ -873,17 +896,34 @@ QString AudiobookFlowDialog::generationScript() const
 
 QString AudiobookFlowDialog::defaultOutputPath() const
 {
+    // mkpath() returns true when the target already exists, even if it is not
+    // writable — so a successful mkpath does not prove the dialog will be able
+    // to write the eventual WAV. Probe with a real file open before committing
+    // to a directory; fall through to tempPath/bookhub if AppDataLocation is
+    // present but unwritable (read-only volume, sandbox restrictions, tests).
+    auto prepareDir = [](const QString &base, QDir &out) {
+        QDir dir(base);
+        if (!dir.mkpath(QStringLiteral("audiobooks")))
+            return false;
+        dir.cd(QStringLiteral("audiobooks"));
+        QFile probe(dir.filePath(QStringLiteral(".bookhub-write-probe")));
+        if (!probe.open(QIODevice::WriteOnly))
+            return false;
+        probe.close();
+        probe.remove();
+        out = dir;
+        return true;
+    };
+
     QString baseDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     if (baseDir.isEmpty())
         baseDir = QDir::homePath() + QStringLiteral("/.bookhub");
 
-    QDir dir(baseDir);
-    if (!dir.mkpath(QStringLiteral("audiobooks"))) {
-        dir = QDir(QDir::tempPath() + QStringLiteral("/bookhub"));
-        if (!dir.mkpath(QStringLiteral("audiobooks")))
-            return {};
+    QDir dir;
+    if (!prepareDir(baseDir, dir) &&
+        !prepareDir(QDir::tempPath() + QStringLiteral("/bookhub"), dir)) {
+        return {};
     }
-    dir.cd(QStringLiteral("audiobooks"));
 
     QString stem = m_bookTitle.simplified().toLower();
     static const QRegularExpression kNonAlnum(QStringLiteral("[^a-z0-9]+"));
@@ -910,7 +950,7 @@ void AudiobookFlowDialog::showErrorState(const QString &message)
 
 void AudiobookFlowDialog::resetPreviewButton()
 {
-    m_previewVoiceBtn->setText(QStringLiteral("▶ Preview selected voice"));
+    m_previewVoiceBtn->setText(QString::fromUtf8(kPreviewButtonIdleLabel));
 }
 
 } // namespace bookhub::gui

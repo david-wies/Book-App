@@ -40,9 +40,13 @@ if(ENABLE_MSAN)
     add_link_options(-fsanitize=memory -pie)
 endif()
 
-find_package(Qt6 COMPONENTS Widgets Sql Network Test REQUIRED)
+find_package(Qt6 COMPONENTS Widgets Sql Network REQUIRED)
 find_package(Qt6 COMPONENTS Multimedia QUIET)
 find_package(LibArchive REQUIRED)
+
+# Qt6::Test is only needed when the test suite is built — keep release/packaging
+# builds free of a hard dependency on it. The actual find_package(... Test ...)
+# call lives inside the if(BUILD_TESTING) block below.
 
 # shared: pure database helpers, no Q_OBJECT — safe as a STATIC library consumed by all targets.
 add_library(shared STATIC
@@ -145,9 +149,14 @@ endif()
 # BOOKHUB_HAVE_GPU is always defined alongside the specific macro so code
 # that only needs to guard any GPU path can use a single check.
 #
+# Only the TTS engines that target ONNX execution providers consume these
+# macros, so detection only runs when at least one such engine is enabled.
+# Default builds (both engines OFF) skip it entirely.
+#
 # IMPORTANT: the TTS library (Sherpa-ONNX / ONNX Runtime) must itself be
 # built with the matching backend — detecting the toolkit is necessary but
 # not sufficient for GPU inference to work at runtime.
+if(ENABLE_SHERPA_ONNX OR ENABLE_POCKET_TTS)
 find_package(CUDAToolkit 11 QUIET)
 if(CUDAToolkit_FOUND)
     # NVIDIA CUDA — highest priority on all platforms that support it.
@@ -179,6 +188,7 @@ else()
         endif()
     endif()
 endif()
+endif() # ENABLE_SHERPA_ONNX OR ENABLE_POCKET_TTS
 
 # ---------------------------------------------------------------------------
 # Precompiled headers — amortise large Qt header parsing across all TUs.
@@ -242,6 +252,7 @@ target_link_libraries(bookhub PRIVATE bookhub_collector bookhub_gui)
 # ---------------------------------------------------------------------------
 option(BUILD_TESTING "Build and register the test suite" ON)
 if(BUILD_TESTING)
+    find_package(Qt6 COMPONENTS Test REQUIRED)
     enable_testing()
 
     # FULL_SUITE_ONLY marks a test EXCLUDE_FROM_ALL so it is not built by the
