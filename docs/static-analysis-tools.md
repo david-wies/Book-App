@@ -36,7 +36,7 @@ Standard: c++23
 ColumnLimit: 100
 IndentWidth: 4
 UseTab: Never
-PointerAlignment: Left
+PointerAlignment: Right
 ```
 
 **Check files:**

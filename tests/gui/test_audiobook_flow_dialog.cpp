@@ -484,13 +484,7 @@ void AudiobookFlowDialogTest::startGeneration_failsWithMissingSelections()
     // Leave language, format, and voice unset so startGeneration() rejects.
     m_dialog->m_currentStep = 4;
 
-    // Dismiss the warning dialog that showErrorState() will block on.
-    QTimer::singleShot(0, [] {
-        auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget());
-        if (box)
-            box->reject();
-    });
-
+    // showErrorState() uses non-blocking open() — no need to dismiss it.
     m_dialog->onNextOrGenerateClicked();
 
     // Generation was blocked — progress bar stays at 0 and result is empty.

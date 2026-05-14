@@ -585,6 +585,12 @@ void AudiobookFlowDialog::onPreviewGenerated(int voiceId, const QByteArray &audi
     m_previewVoiceBtn->setEnabled(true);
     m_previewVoiceBtn->setText(QStringLiteral("▶ Preview selected voice"));
 
+    if (m_previewTempPath.isEmpty()) {
+        // File write failed — don't leave a stale duration in the player.
+        m_previewPlayer->setDuration(0);
+        return;
+    }
+
     const qint64 durationMs = bookhub::gui::wav::durationMsFromBytes(audioData);
     m_previewPlayer->setDuration(durationMs);
     m_previewPlayer->setCurrentTime(0);
@@ -631,10 +637,14 @@ void AudiobookFlowDialog::onSaveAsClicked()
         QStringLiteral("Save Audiobook As"),
         QDir::homePath() + QLatin1Char('/') + QFileInfo(m_generatedOutputPath).fileName(),
         QStringLiteral("WAV audio (*.wav);;All files (*)"));
-    if (!dest.isEmpty() && !QFile::copy(m_generatedOutputPath, dest))
-        showErrorState(QStringLiteral("Could not save the audiobook to \"%1\".\n"
-                                      "Check disk space and permissions.")
-                           .arg(dest));
+    if (!dest.isEmpty()) {
+        // QFileDialog already prompted the user to confirm overwrite; honour that answer.
+        QFile::remove(dest);
+        if (!QFile::copy(m_generatedOutputPath, dest))
+            showErrorState(QStringLiteral("Could not save the audiobook to \"%1\".\n"
+                                          "Check disk space and permissions.")
+                               .arg(dest));
+    }
 }
 
 void AudiobookFlowDialog::onAddToLibraryClicked()

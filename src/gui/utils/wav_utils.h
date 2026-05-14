@@ -13,6 +13,7 @@ namespace bookhub::gui::wav {
 //   - fewer than 44 bytes supplied
 //   - wrong RIFF/WAVE magic or "fmt " subchunk tag
 //   - audio format is not PCM (1)  [ADPCM, IEEE float give wrong results]
+//   - claimed data size exceeds the supplied buffer
 //   - bytesPerSecond computed as zero
 //
 // NOTE: Files that embed JUNK/LIST chunks between "fmt " and "data" shift
@@ -43,6 +44,12 @@ namespace bookhub::gui::wav {
     const quint32 channels = u16(22);
     const quint32 bitsPerSample = u16(34);
     const quint32 dataBytes = u32(40);
+    // When the caller supplies the full audio buffer (not just the 44-byte header),
+    // reject a header that claims more PCM data than the buffer actually contains.
+    // The size() == 44 case is intentionally skipped: durationMsFromFile passes only
+    // the header and performs its own file-size cross-check before calling this.
+    if (wav.size() > 44 && static_cast<qsizetype>(dataBytes) > wav.size() - 44)
+        return 0;
 
     // Promote to quint64 before multiplying to avoid quint32 overflow for
     // high sample-rate / multi-channel files (e.g. 192 kHz stereo 24-bit).
