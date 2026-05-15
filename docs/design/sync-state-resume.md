@@ -112,7 +112,12 @@ Next launch routes through the resume logic.
 3. Branch:
    * **No row OR books == 0 OR status == 'failed':** start a fresh fetch
      (omit conditional headers). Write `status='in_progress'`, `phase='downloading'`,
-     reset all resume fields, `started_at=now`, `books_processed=0`.
+     reset all resume fields, `started_at=now`, `books_processed=0`. **Clear
+     `last_modified` and `validator_type`** — the prior fetch's validator is
+     no longer authoritative for the new download.  If the server's 200
+     response omits Last-Modified/ETag, those columns stay NULL and the next
+     fetch will go unconditional rather than stamp new data with the old
+     validator (which would produce stale `If-Modified-Since` comparisons).
    * **status == 'completed' AND books > 0:** conditional fetch. Send
      `If-Modified-Since: <last_modified>` when `validator_type='last_modified'`
      (or NULL — the v8 legacy default), or `If-None-Match: <last_modified>` when

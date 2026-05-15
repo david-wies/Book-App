@@ -16,6 +16,15 @@ namespace {
 // sync_state table so freshness is coupled to the DB it describes.  Copy the
 // legacy value into a 'completed' sync_state row, then clear the QSettings key
 // so no future code path reads the now-stale fallback.
+//
+// Ordering invariant — MUST RUN BEFORE ANY OTHER QSqlDatabase CONNECTION IS
+// OPENED on this DB file (i.e. before CollectorWorker starts).  We rely on
+// SQLite WAL snapshot semantics so that the collector_connection's first
+// read sees the row this function INSERTed on the default connection; that
+// only holds if the INSERT commits *before* the collector connection's
+// initial PRAGMA/SELECT establishes its read snapshot.  Reordering this
+// call after the collector start would silently regress the bug v8 fixed
+// (deleted DB + stale QSettings → empty library + 304 forever).
 void migrateLegacyGutenbergCache()
 {
     QSettings settings;
@@ -34,10 +43,14 @@ void migrateLegacyGutenbergCache()
         return;
     }
 
+    // The legacy QSettings value was always a Last-Modified date (Gutenberg
+    // never sent ETag), so we record the matching validator_type explicitly
+    // rather than leaving it NULL — keeps the row in lock-step with what fresh
+    // v9 code would write and makes intent obvious on inspection.
     q.prepare(QStringLiteral(
-        "INSERT INTO sync_state (adapter_id, status, last_modified, completed_at, "
-        "books_processed, bytes_downloaded, bytes_total) "
-        "VALUES ('gutenberg', 'completed', ?, ?, 0, 0, 0)"));
+        "INSERT INTO sync_state (adapter_id, status, last_modified, validator_type, "
+        "completed_at, books_processed, bytes_downloaded, bytes_total) "
+        "VALUES ('gutenberg', 'completed', ?, 'last_modified', ?, 0, 0, 0)"));
     q.addBindValue(legacyValue);
     q.addBindValue(QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
     if (q.exec()) {
@@ -82,6 +95,8 @@ int main(int argc, char *argv[])
 
     // Must run after createSchema() (sync_state table exists) and before the
     // collector starts so the adapter's first fetchBooks() call sees the row.
+    // See migrateLegacyGutenbergCache's "Ordering invariant" comment for the
+    // WAL-snapshot reasoning — do not move this call below collector.start().
     migrateLegacyGutenbergCache();
 
     // Start background collector thread

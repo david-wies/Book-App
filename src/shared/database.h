@@ -64,10 +64,12 @@ bool beginFetch(const QString &adapterId,
 /// `validatorType` selects which conditional-request header the validator
 /// belongs to ('last_modified' or 'etag'); pass empty to preserve any
 /// previously stored type (mirroring `downloadEtag`'s preserve-on-empty
-/// semantics).
+/// semantics).  Does *not* touch `bytes_total` — that field is owned by
+/// `recordDownloadComplete()`, which writes it once the full size is known
+/// (every caller used to pass 0 here and unconditionally overwrite the
+/// recorded total, which was a foot-gun rather than a useful feature).
 bool recordDownloadProgress(const QString &adapterId,
                             qint64 bytesDownloaded,
-                            qint64 bytesTotal,
                             const QString &downloadEtag,
                             const QString &validatorType,
                             const QString &connectionName = QSqlDatabase::defaultConnection);

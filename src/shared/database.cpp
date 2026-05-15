@@ -1185,27 +1185,26 @@ bool beginFetch(const QString &adapterId, const QString &downloadUrl,
 {
     QSqlDatabase db = QSqlDatabase::database(connectionName);
     QSqlQuery q(db);
-    // INSERT OR REPLACE so we clobber any prior row (failed/completed) and reset all
-    // resume cursors at once.  PRIMARY KEY on adapter_id keeps us idempotent.
-    // The validator_type sub-SELECT mirrors last_modified for consistency.
-    // In practice the preserved value lives only between this INSERT and the
-    // first recordDownloadProgress() call (which overwrites it from the new
-    // response headers), but mirroring the same preservation contract keeps
-    // the two fields in lock-step and avoids a half-initialised row if the
-    // network stack fails before any header arrives.
+    // INSERT OR REPLACE so we clobber any prior row (failed/completed) and reset
+    // all resume cursors at once.  PRIMARY KEY on adapter_id keeps us idempotent.
+    //
+    // last_modified and validator_type are explicitly NULL'd here.  Earlier the
+    // sub-SELECT preserved them in case the new attempt failed before a fresh
+    // validator was captured — but that masked a real bug: if a conditional
+    // fetch returned 200 with no Last-Modified / ETag, the new (different) data
+    // would be stamped with the previous fetch's validator, and subsequent
+    // If-Modified-Since requests would compare apples to oranges.  The safer
+    // contract is "no validator known until the response says so" — if the
+    // server omits a validator, the next fetch will simply go unconditional.
     q.prepare(QStringLiteral(
         "INSERT OR REPLACE INTO sync_state ("
         "  adapter_id, status, phase, last_modified, validator_type,"
         "  started_at, completed_at, books_processed, error_message,"
         "  download_url, download_etag, archive_path,"
         "  bytes_downloaded, bytes_total, last_parsed_entry"
-        ") VALUES (?, 'in_progress', 'downloading', "
-        "  (SELECT last_modified  FROM sync_state WHERE adapter_id = ?),"
-        "  (SELECT validator_type FROM sync_state WHERE adapter_id = ?),"
+        ") VALUES (?, 'in_progress', 'downloading', NULL, NULL,"
         "  ?, NULL, 0, NULL, ?, NULL, ?, 0, 0, NULL)"));
     q.addBindValue(adapterId);
-    q.addBindValue(adapterId);          // preserves last completed last_modified
-    q.addBindValue(adapterId);          // preserves last completed validator_type
     q.addBindValue(nowIso());
     q.addBindValue(downloadUrl);
     q.addBindValue(archivePath);
@@ -1217,19 +1216,22 @@ bool beginFetch(const QString &adapterId, const QString &downloadUrl,
 }
 
 bool recordDownloadProgress(const QString &adapterId, qint64 bytesDownloaded,
-                            qint64 bytesTotal, const QString &downloadEtag,
+                            const QString &downloadEtag,
                             const QString &validatorType,
                             const QString &connectionName)
 {
     QSqlDatabase db = QSqlDatabase::database(connectionName);
     QSqlQuery q(db);
+    // bytes_total is intentionally left alone — recordDownloadComplete sets it
+    // once at the end when the total is actually known.  COALESCE(NULLIF(?, ''),
+    // <col>) keeps the row's existing validator value if the caller passes an
+    // empty string (e.g. progress flushes that don't carry fresh header info).
     q.prepare(QStringLiteral(
-        "UPDATE sync_state SET bytes_downloaded = ?, bytes_total = ?, "
+        "UPDATE sync_state SET bytes_downloaded = ?, "
         "download_etag  = COALESCE(NULLIF(?, ''), download_etag), "
         "validator_type = COALESCE(NULLIF(?, ''), validator_type) "
         "WHERE adapter_id = ?"));
     q.addBindValue(bytesDownloaded);
-    q.addBindValue(bytesTotal);
     q.addBindValue(downloadEtag);
     q.addBindValue(validatorType);
     q.addBindValue(adapterId);
@@ -1284,6 +1286,11 @@ bool completeFetch(const QString &adapterId, const QString &lastModified,
 {
     QSqlDatabase db = QSqlDatabase::database(connectionName);
     QSqlQuery q(db);
+    // COALESCE(NULLIF(?, ''), <col>) lets the caller pass an empty string to
+    // preserve whatever value the row already has.  The 304-Not-Modified path
+    // depends on this — it has no fresh validator to write, but the previous
+    // completed fetch's validator (set on the prior call) must survive so the
+    // next conditional GET can still send If-Modified-Since / If-None-Match.
     q.prepare(QStringLiteral(
         "UPDATE sync_state SET status = 'completed', phase = NULL, "
         "completed_at = ?, "

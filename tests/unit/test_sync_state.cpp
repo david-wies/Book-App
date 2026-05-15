@@ -13,7 +13,7 @@ private slots:
     void createSchema_includesSyncStateTable();
     void getSyncState_returnsNulloptWhenNoRow();
     void beginFetch_initialisesInProgressDownloadingRow();
-    void beginFetch_preservesPriorLastModified();
+    void beginFetch_clearsPriorLastModified();
     void recordDownloadProgress_updatesBytesAndEtag();
     void recordDownloadProgress_doesNotClearEtagWhenEmpty();
     void recordDownloadComplete_transitionsToParsing();
@@ -25,6 +25,7 @@ private slots:
     void migration_v7ToV8_createsSyncStateTable();
     void migration_v7ToV8_preservesExistingData();
     void migration_v8ToV9_addsValidatorTypeColumn();
+    void completeFetch_doesNotCarryOverStaleValidatorAfterFreshDownload();
 };
 
 void SyncStateTest::createSchema_includesSyncStateTable()
@@ -80,19 +81,20 @@ void SyncStateTest::beginFetch_initialisesInProgressDownloadingRow()
     QVERIFY(!state->startedAt.isEmpty());
 }
 
-void SyncStateTest::beginFetch_preservesPriorLastModified()
+void SyncStateTest::beginFetch_clearsPriorLastModified()
 {
-    // Reason this exists: a previously-completed fetch sets last_modified.
-    // A subsequent beginFetch() opens a new attempt but must keep that value
-    // around so the conditional-GET path on the next *completed* attempt can
-    // still send If-Modified-Since correctly if the new attempt fails midway.
+    // beginFetch starts a fresh attempt against new server-side data, so the
+    // *previous* fetch's validator is no longer authoritative.  If the new
+    // attempt completes without a fresh Last-Modified / ETag from the server,
+    // last_modified must end up NULL — not silently carry over the old value
+    // and trick the next conditional GET into comparing against the wrong data.
     bookhub::tests::TestDatabase testDb;
     QVERIFY(testDb.open());
     QVERIFY(testDb.createSchema());
 
     QVERIFY(bookhub::tests::execSql(testDb.database(), QStringLiteral(
-        "INSERT INTO sync_state (adapter_id, status, last_modified) "
-        "VALUES ('gutenberg', 'completed', 'Wed, 01 Jan 2025 00:00:00 GMT')")));
+        "INSERT INTO sync_state (adapter_id, status, last_modified, validator_type) "
+        "VALUES ('gutenberg', 'completed', 'Wed, 01 Jan 2025 00:00:00 GMT', 'last_modified')")));
 
     QVERIFY(db::beginFetch(QStringLiteral("gutenberg"),
                            QStringLiteral("https://example.com/a.tar.bz2"),
@@ -102,7 +104,8 @@ void SyncStateTest::beginFetch_preservesPriorLastModified()
     const auto state = db::getSyncState(QStringLiteral("gutenberg"), testDb.connection());
     QVERIFY(state.has_value());
     QCOMPARE(state->status, QStringLiteral("in_progress"));
-    QCOMPARE(state->lastModified, QStringLiteral("Wed, 01 Jan 2025 00:00:00 GMT"));
+    QVERIFY(state->lastModified.isEmpty());
+    QVERIFY(state->validatorType.isEmpty());
 }
 
 void SyncStateTest::recordDownloadProgress_updatesBytesAndEtag()
@@ -113,8 +116,7 @@ void SyncStateTest::recordDownloadProgress_updatesBytesAndEtag()
     QVERIFY(db::beginFetch(QStringLiteral("gutenberg"), QStringLiteral("u"),
                            QStringLiteral("p"), testDb.connection()));
 
-    QVERIFY(db::recordDownloadProgress(QStringLiteral("gutenberg"),
-                                       12345, 67890,
+    QVERIFY(db::recordDownloadProgress(QStringLiteral("gutenberg"), 12345,
                                        QStringLiteral("Thu, 02 Jan 2025 00:00:00 GMT"),
                                        QStringLiteral("last_modified"),
                                        testDb.connection()));
@@ -122,7 +124,8 @@ void SyncStateTest::recordDownloadProgress_updatesBytesAndEtag()
     const auto state = db::getSyncState(QStringLiteral("gutenberg"), testDb.connection());
     QVERIFY(state.has_value());
     QCOMPARE(state->bytesDownloaded, qint64{12345});
-    QCOMPARE(state->bytesTotal, qint64{67890});
+    // bytes_total is owned by recordDownloadComplete; progress writes leave it alone.
+    QCOMPARE(state->bytesTotal, qint64{0});
     QCOMPARE(state->downloadEtag, QStringLiteral("Thu, 02 Jan 2025 00:00:00 GMT"));
     QCOMPARE(state->validatorType, QStringLiteral("last_modified"));
 }
@@ -134,14 +137,14 @@ void SyncStateTest::recordDownloadProgress_doesNotClearEtagWhenEmpty()
     QVERIFY(testDb.createSchema());
     QVERIFY(db::beginFetch(QStringLiteral("gutenberg"), QStringLiteral("u"),
                            QStringLiteral("p"), testDb.connection()));
-    QVERIFY(db::recordDownloadProgress(QStringLiteral("gutenberg"), 100, 200,
+    QVERIFY(db::recordDownloadProgress(QStringLiteral("gutenberg"), 100,
                                        QStringLiteral("etag-v1"),
                                        QStringLiteral("etag"),
                                        testDb.connection()));
 
     // Subsequent progress update without a fresh etag must not wipe the stored one
     // (and an empty validator_type must not clobber the prior 'etag' marker).
-    QVERIFY(db::recordDownloadProgress(QStringLiteral("gutenberg"), 500, 1000,
+    QVERIFY(db::recordDownloadProgress(QStringLiteral("gutenberg"), 500,
                                        QString(), QString(),
                                        testDb.connection()));
 
@@ -159,7 +162,7 @@ void SyncStateTest::recordDownloadComplete_transitionsToParsing()
     QVERIFY(testDb.createSchema());
     QVERIFY(db::beginFetch(QStringLiteral("gutenberg"), QStringLiteral("u"),
                            QStringLiteral("p"), testDb.connection()));
-    QVERIFY(db::recordDownloadProgress(QStringLiteral("gutenberg"), 800, 1000,
+    QVERIFY(db::recordDownloadProgress(QStringLiteral("gutenberg"), 800,
                                        QStringLiteral("etag"),
                                        QStringLiteral("etag"),
                                        testDb.connection()));
@@ -207,7 +210,7 @@ void SyncStateTest::completeFetch_clearsResumeStateAndSetsCompleted()
     QVERIFY(db::beginFetch(QStringLiteral("gutenberg"),
                            QStringLiteral("https://x"),
                            QStringLiteral("/tmp/a"), testDb.connection()));
-    QVERIFY(db::recordDownloadProgress(QStringLiteral("gutenberg"), 1000, 1000,
+    QVERIFY(db::recordDownloadProgress(QStringLiteral("gutenberg"), 1000,
                                        QStringLiteral("etag"),
                                        QStringLiteral("last_modified"),
                                        testDb.connection()));
@@ -267,7 +270,7 @@ void SyncStateTest::failFetch_preservesResumeState()
     QVERIFY(db::beginFetch(QStringLiteral("gutenberg"),
                            QStringLiteral("url"),
                            QStringLiteral("/tmp/a"), testDb.connection()));
-    QVERIFY(db::recordDownloadProgress(QStringLiteral("gutenberg"), 1234, 5678,
+    QVERIFY(db::recordDownloadProgress(QStringLiteral("gutenberg"), 1234,
                                        QStringLiteral("etag"),
                                        QStringLiteral("etag"),
                                        testDb.connection()));
@@ -387,6 +390,49 @@ void SyncStateTest::migration_v8ToV9_addsValidatorTypeColumn()
     const auto state = db::getSyncState(QStringLiteral("gutenberg"), testDb.connection());
     QVERIFY(state.has_value());
     QCOMPARE(state->lastModified, QStringLiteral("Wed, 01 Jan 2025 00:00:00 GMT"));
+    QVERIFY(state->validatorType.isEmpty());
+}
+
+void SyncStateTest::completeFetch_doesNotCarryOverStaleValidatorAfterFreshDownload()
+{
+    // Regression: a prior fetch completed with last_modified='OLD'.  A later
+    // conditional fetch returned 200 (server has new data) → beginFetch starts
+    // a fresh attempt → the server omits Last-Modified/ETag on the new
+    // response → recordDownloadProgress is called with empty validator →
+    // completeFetch is called with empty validator at parse end.
+    //
+    // The new data must NOT be stamped with the old 'OLD' validator, because
+    // sending If-Modified-Since: OLD on the *next* fetch would compare against
+    // unrelated data.  beginFetch's clearing of last_modified + validator_type
+    // is what makes this safe.
+    bookhub::tests::TestDatabase testDb;
+    QVERIFY(testDb.open());
+    QVERIFY(testDb.createSchema());
+
+    // Seed a prior 'completed' row with a stale validator.
+    QVERIFY(bookhub::tests::execSql(testDb.database(), QStringLiteral(
+        "INSERT INTO sync_state (adapter_id, status, last_modified, validator_type) "
+        "VALUES ('gutenberg', 'completed', 'OLD', 'last_modified')")));
+
+    // Simulate Conditional→200 → transitionToFreshDownload.
+    QVERIFY(db::beginFetch(QStringLiteral("gutenberg"),
+                           QStringLiteral("https://example.com/a.tar.bz2"),
+                           QStringLiteral("/tmp/a.tar.bz2"),
+                           testDb.connection()));
+    // Server sent no Last-Modified / ETag on the 200 response.
+    QVERIFY(db::recordDownloadProgress(QStringLiteral("gutenberg"), 100,
+                                       QString(), QString(),
+                                       testDb.connection()));
+    QVERIFY(db::recordDownloadComplete(QStringLiteral("gutenberg"), 100,
+                                       testDb.connection()));
+    QVERIFY(db::completeFetch(QStringLiteral("gutenberg"), QString(), QString(),
+                              testDb.connection()));
+
+    const auto state = db::getSyncState(QStringLiteral("gutenberg"), testDb.connection());
+    QVERIFY(state.has_value());
+    QCOMPARE(state->status, QStringLiteral("completed"));
+    // Crucial assertion: the stale 'OLD' validator must NOT survive.
+    QVERIFY(state->lastModified.isEmpty());
     QVERIFY(state->validatorType.isEmpty());
 }
 

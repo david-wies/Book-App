@@ -223,7 +223,7 @@ void GutenbergAdapter::onMetaDataChanged()
     case FetchContext::Fresh:
         if (status == 200) {
             if (!openTruncate()) return;
-            db::recordDownloadProgress(adapterId(), 0, 0,
+            db::recordDownloadProgress(adapterId(), 0,
                                        m_serverValidator, m_serverValidatorType,
                                        m_dbConnectionName);
             m_headerDecided = true;
@@ -299,7 +299,7 @@ void GutenbergAdapter::onReadyRead()
     const qint64 totalOnDisk = m_startingOffset + m_bytesWrittenThisRun;
     if (totalOnDisk - m_lastPersistedBytes >= kProgressFlushBytes) {
         m_cacheFile->flush();
-        db::recordDownloadProgress(adapterId(), totalOnDisk, 0,
+        db::recordDownloadProgress(adapterId(), totalOnDisk,
                                    m_serverValidator, m_serverValidatorType,
                                    m_dbConnectionName);
         m_lastPersistedBytes = totalOnDisk;
@@ -341,7 +341,7 @@ void GutenbergAdapter::onFinished()
         const qint64 totalOnDisk = m_startingOffset + m_bytesWrittenThisRun;
         // Persist whatever progress we have so the next tick can resume.
         if (m_writingToCache && totalOnDisk > 0) {
-            db::recordDownloadProgress(adapterId(), totalOnDisk, 0,
+            db::recordDownloadProgress(adapterId(), totalOnDisk,
                                        m_serverValidator, m_serverValidatorType,
                                        m_dbConnectionName);
         }
@@ -396,7 +396,7 @@ bool GutenbergAdapter::transitionToFreshDownload(const QString& archivePath)
 {
     db::beginFetch(adapterId(), QString::fromLatin1(kGutenbergRdfUrl),
                    archivePath, m_dbConnectionName);
-    db::recordDownloadProgress(adapterId(), 0, 0,
+    db::recordDownloadProgress(adapterId(), 0,
                                m_serverValidator, m_serverValidatorType,
                                m_dbConnectionName);
 
