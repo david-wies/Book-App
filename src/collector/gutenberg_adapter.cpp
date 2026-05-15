@@ -103,11 +103,12 @@ void GutenbergAdapter::fetchBooks() {
         const QString validatorType =
             state->validatorType.isEmpty() ? QStringLiteral("last_modified")
                                            : state->validatorType;
-        qDebug() << "GutenbergAdapter: Conditional fetch ("
-                 << (validatorType == QLatin1String("etag")
-                         ? "If-None-Match"
-                         : "If-Modified-Since")
-                 << ":" << state->lastModified << ")";
+        const QString headerName = (validatorType == QLatin1String("etag"))
+            ? QStringLiteral("If-None-Match")
+            : QStringLiteral("If-Modified-Since");
+        qDebug().noquote()
+            << QStringLiteral("GutenbergAdapter: Conditional fetch (%1: %2)")
+                   .arg(headerName, state->lastModified);
         startFetch(FetchContext::Conditional, 0,
                    state->lastModified, validatorType, QString{});
         return;
