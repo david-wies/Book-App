@@ -18,6 +18,11 @@ Schema v8: Adds the sync_state table (per-adapter catalog freshness and resume
            state).  See docs/design/sync-state-resume.md.  Legacy QSettings value
            ("gutenberg_last_modified") is copied into the table on first app
            startup at this version, then cleared from QSettings.
+Schema v9: Adds the sync_state.validator_type column so adapters can
+           distinguish Last-Modified validators from ETags and send the right
+           conditional-request header (If-Modified-Since vs If-None-Match).
+           Pre-v9 rows leave the column NULL; adapter code interprets NULL as
+           'last_modified' for backwards compatibility.
 
 The v1→v2 migration and all migrations from v3 onward are handled automatically by
 the app at startup; launch the app once and it will upgrade the database in place.
@@ -287,16 +292,16 @@ def migrate(db_path: str) -> None:
             con.close()
             return
 
-        if user_version in (3, 4, 5, 6):
+        if user_version in (3, 4, 5, 6, 7, 8):
             print(
                 f"Database is at v{user_version}. "
-                "Launch the app once to auto-migrate to v7 (current)."
+                "Launch the app once to auto-migrate to v9 (current)."
             )
             con.close()
             return
 
-        if user_version >= 7:
-            print("Already at version 7 (current), nothing to do.")
+        if user_version >= 9:
+            print("Already at version 9 (current), nothing to do.")
             con.close()
             return
 
@@ -567,12 +572,12 @@ def main() -> None:
         )
     parser = argparse.ArgumentParser(
         description=(
-            "Migrate bookhub.db to the current schema version (v7). "
+            "Migrate bookhub.db to the current schema version (v9). "
             "Handles v0→v1 (ISBN-keyed to book_id-keyed) and v2→v3 "
             "(voices table + library_items CHECK constraint) directly. "
-            "For v3→v7 (language normalisation, format-suffix cleanup, MARC title "
-            "fixes, MIME parameter stripping, text_plain rename), launch the app — "
-            "it auto-migrates at startup.\n\n"
+            "For v3→v9 (language normalisation, format-suffix cleanup, MARC title "
+            "fixes, MIME parameter stripping, text_plain rename, sync_state table, "
+            "validator_type column), launch the app — it auto-migrates at startup.\n\n"
             "Platform default paths:\n"
             "  Linux:   ~/.local/share/BookHub/BookHub/bookhub.db\n"
             "  macOS:   ~/Library/Application Support/BookHub/BookHub/bookhub.db\n"

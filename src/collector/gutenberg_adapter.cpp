@@ -87,7 +87,7 @@ void GutenbergAdapter::fetchBooks() {
             qDebug() << "GutenbergAdapter: Resuming download from byte"
                      << state->bytesDownloaded;
             startFetch(FetchContext::ResumeDownload, state->bytesDownloaded,
-                       QString{}, state->downloadEtag);
+                       QString{}, QString{}, state->downloadEtag);
             return;
         }
         qDebug() << "GutenbergAdapter: download-resume cache inconsistent; "
@@ -98,9 +98,18 @@ void GutenbergAdapter::fetchBooks() {
     if (state && state->status == QLatin1String("completed")
             && !state->lastModified.isEmpty()
             && bookCount >= kMinBooksForConditionalGet) {
-        qDebug() << "GutenbergAdapter: Conditional fetch (If-Modified-Since:"
-                 << state->lastModified << ")";
-        startFetch(FetchContext::Conditional, 0, state->lastModified, QString{});
+        // Pre-v9 rows have an empty validator_type but always stored a
+        // Last-Modified value (Gutenberg never sent ETag), so default to that.
+        const QString validatorType =
+            state->validatorType.isEmpty() ? QStringLiteral("last_modified")
+                                           : state->validatorType;
+        qDebug() << "GutenbergAdapter: Conditional fetch ("
+                 << (validatorType == QLatin1String("etag")
+                         ? "If-None-Match"
+                         : "If-Modified-Since")
+                 << ":" << state->lastModified << ")";
+        startFetch(FetchContext::Conditional, 0,
+                   state->lastModified, validatorType, QString{});
         return;
     }
 
@@ -108,17 +117,19 @@ void GutenbergAdapter::fetchBooks() {
     qDebug() << "GutenbergAdapter: Fresh fetch.";
     db::beginFetch(adapterId(), QString::fromLatin1(kGutenbergRdfUrl),
                    archivePath, m_dbConnectionName);
-    startFetch(FetchContext::Fresh, 0, QString{}, QString{});
+    startFetch(FetchContext::Fresh, 0, QString{}, QString{}, QString{});
 }
 
 void GutenbergAdapter::startFetch(FetchContext ctx, qint64 resumeFromByte,
-                                  const QString& conditionalLastModified,
+                                  const QString& conditionalValidator,
+                                  const QString& conditionalValidatorType,
                                   const QString& ifRangeValidator) {
     m_context = ctx;
     m_bytesWrittenThisRun = 0;
     m_startingOffset = resumeFromByte;
     m_lastPersistedBytes = resumeFromByte;
     m_serverValidator.clear();
+    m_serverValidatorType.clear();
     m_headerDecided = false;
     m_writingToCache = false;
     m_cacheFile.reset();
@@ -127,9 +138,12 @@ void GutenbergAdapter::startFetch(FetchContext ctx, qint64 resumeFromByte,
 
     switch (ctx) {
     case FetchContext::Conditional:
-        if (!conditionalLastModified.isEmpty()) {
-            request.setRawHeader("If-Modified-Since",
-                                 conditionalLastModified.toUtf8());
+        if (!conditionalValidator.isEmpty()) {
+            const char* header =
+                (conditionalValidatorType == QLatin1String("etag"))
+                    ? "If-None-Match"
+                    : "If-Modified-Since";
+            request.setRawHeader(header, conditionalValidator.toUtf8());
         }
         break;
     case FetchContext::ResumeDownload: {
@@ -169,7 +183,16 @@ void GutenbergAdapter::onMetaDataChanged()
 
     const QByteArray lastModified = m_currentReply->rawHeader("Last-Modified");
     const QByteArray etag = m_currentReply->rawHeader("ETag");
-    m_serverValidator = QString::fromUtf8(!lastModified.isEmpty() ? lastModified : etag);
+    if (!lastModified.isEmpty()) {
+        m_serverValidator = QString::fromUtf8(lastModified);
+        m_serverValidatorType = QStringLiteral("last_modified");
+    } else if (!etag.isEmpty()) {
+        m_serverValidator = QString::fromUtf8(etag);
+        m_serverValidatorType = QStringLiteral("etag");
+    } else {
+        m_serverValidator.clear();
+        m_serverValidatorType.clear();
+    }
 
     const QString archivePath = archiveCachePath();
 
@@ -200,7 +223,8 @@ void GutenbergAdapter::onMetaDataChanged()
         if (status == 200) {
             if (!openTruncate()) return;
             db::recordDownloadProgress(adapterId(), 0, 0,
-                                       m_serverValidator, m_dbConnectionName);
+                                       m_serverValidator, m_serverValidatorType,
+                                       m_dbConnectionName);
             m_headerDecided = true;
         } else {
             abortWithError(
@@ -214,15 +238,7 @@ void GutenbergAdapter::onMetaDataChanged()
             m_headerDecided = true;
         } else if (status == 200) {
             // Server has new data — transition to in_progress + download fresh.
-            db::beginFetch(adapterId(), QString::fromLatin1(kGutenbergRdfUrl),
-                           archivePath, m_dbConnectionName);
-            db::recordDownloadProgress(adapterId(), 0, 0,
-                                       m_serverValidator, m_dbConnectionName);
-            if (!openTruncate()) return;
-            m_startingOffset = 0;
-            m_lastPersistedBytes = 0;
-            m_context = FetchContext::Fresh;
-            m_headerDecided = true;
+            if (!transitionToFreshDownload(archivePath)) return;
         } else {
             abortWithError(
                 QStringLiteral("Conditional fetch: unexpected HTTP status %1").arg(status));
@@ -236,25 +252,19 @@ void GutenbergAdapter::onMetaDataChanged()
         } else if (status == 200) {
             // If-Range validator did not match — server's resource changed.
             qDebug() << "GutenbergAdapter: If-Range mismatch (got 200); restarting download.";
-            db::beginFetch(adapterId(), QString::fromLatin1(kGutenbergRdfUrl),
-                           archivePath, m_dbConnectionName);
-            db::recordDownloadProgress(adapterId(), 0, 0,
-                                       m_serverValidator, m_dbConnectionName);
-            if (!openTruncate()) return;
-            m_startingOffset = 0;
-            m_lastPersistedBytes = 0;
-            m_context = FetchContext::Fresh;
-            m_headerDecided = true;
+            if (!transitionToFreshDownload(archivePath)) return;
         } else if (status == 416) {
             // Cache is past server size — discard and let next tick start fresh.
+            // abortWithError nulls m_currentReply *before* aborting, so the
+            // queued onFinished short-circuits and cannot overwrite this message
+            // with the generic "Operation canceled" failure.
             qDebug() << "GutenbergAdapter: 416 Range Not Satisfiable; clearing cache.";
             clearCachedArchive();
-            db::failFetch(adapterId(),
-                          QStringLiteral("Range request returned 416; cache cleared."),
-                          m_dbConnectionName);
             m_headerDecided = true;
             m_writingToCache = false;
-            m_currentReply->abort();
+            abortWithError(
+                QStringLiteral("Range request returned 416; cache cleared."));
+            return;
         } else {
             abortWithError(
                 QStringLiteral("Resume download: unexpected HTTP status %1").arg(status));
@@ -288,7 +298,8 @@ void GutenbergAdapter::onReadyRead()
     if (totalOnDisk - m_lastPersistedBytes >= kProgressFlushBytes) {
         m_cacheFile->flush();
         db::recordDownloadProgress(adapterId(), totalOnDisk, 0,
-                                   m_serverValidator, m_dbConnectionName);
+                                   m_serverValidator, m_serverValidatorType,
+                                   m_dbConnectionName);
         m_lastPersistedBytes = totalOnDisk;
     }
 }
@@ -310,8 +321,8 @@ void GutenbergAdapter::onFinished()
     // error mapping on some platforms, so check the status code rather than just error().
     if (status == 304) {
         if (m_cacheFile) m_cacheFile.reset();
-        // Touch completed_at; last_modified stays as it was.
-        db::completeFetch(adapterId(), QString{}, m_dbConnectionName);
+        // Touch completed_at; last_modified + validator_type stay as they were.
+        db::completeFetch(adapterId(), QString{}, QString{}, m_dbConnectionName);
         qDebug() << "GutenbergAdapter: 304 Not Modified — catalog is up to date.";
         emit fetchCompleted(true);
         return;
@@ -329,7 +340,8 @@ void GutenbergAdapter::onFinished()
         // Persist whatever progress we have so the next tick can resume.
         if (m_writingToCache && totalOnDisk > 0) {
             db::recordDownloadProgress(adapterId(), totalOnDisk, 0,
-                                       m_serverValidator, m_dbConnectionName);
+                                       m_serverValidator, m_serverValidatorType,
+                                       m_dbConnectionName);
         }
         db::failFetch(adapterId(), msg, m_dbConnectionName);
         m_cacheFile.reset();
@@ -378,9 +390,33 @@ void GutenbergAdapter::clearCachedArchive()
     QFile::remove(archiveCachePath());
 }
 
-void GutenbergAdapter::finishParseSuccess(const QString& lastModified)
+bool GutenbergAdapter::transitionToFreshDownload(const QString& archivePath)
 {
-    db::completeFetch(adapterId(), lastModified, m_dbConnectionName);
+    db::beginFetch(adapterId(), QString::fromLatin1(kGutenbergRdfUrl),
+                   archivePath, m_dbConnectionName);
+    db::recordDownloadProgress(adapterId(), 0, 0,
+                               m_serverValidator, m_serverValidatorType,
+                               m_dbConnectionName);
+
+    m_cacheFile = std::make_unique<QFile>(archivePath);
+    if (!m_cacheFile->open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        abortWithError(QStringLiteral("Failed to open cache file for writing: %1")
+                           .arg(m_cacheFile->errorString()));
+        return false;
+    }
+    m_writingToCache = true;
+    m_startingOffset = 0;
+    m_lastPersistedBytes = 0;
+    m_bytesWrittenThisRun = 0;
+    m_context = FetchContext::Fresh;
+    m_headerDecided = true;
+    return true;
+}
+
+void GutenbergAdapter::finishParseSuccess(const QString& lastModified,
+                                          const QString& validatorType)
+{
+    db::completeFetch(adapterId(), lastModified, validatorType, m_dbConnectionName);
     clearCachedArchive();
     qDebug() << "GutenbergAdapter: Parse complete; cache cleared.";
     emit fetchCompleted(true);
@@ -394,9 +430,17 @@ void GutenbergAdapter::parseCachedArchive(const QString& archivePath,
     // row already has (set by an earlier successful download we're now resuming the
     // parse for).
     QString validatorForCompletion = m_serverValidator;
+    QString validatorTypeForCompletion = m_serverValidatorType;
     if (validatorForCompletion.isEmpty()) {
-        if (auto s = db::getSyncState(adapterId(), m_dbConnectionName))
+        if (auto s = db::getSyncState(adapterId(), m_dbConnectionName)) {
             validatorForCompletion = s->downloadEtag;
+            // Fall back to validator_type recorded earlier; if absent (e.g. v8
+            // legacy row written before this column existed), treat as
+            // Last-Modified — matches the historical Gutenberg behaviour.
+            validatorTypeForCompletion = s->validatorType.isEmpty()
+                ? QStringLiteral("last_modified")
+                : s->validatorType;
+        }
     }
 
     struct ArchiveDeleter {
@@ -531,7 +575,7 @@ void GutenbergAdapter::parseCachedArchive(const QString& archivePath,
 
     qDebug() << "GutenbergAdapter: Parse complete. Books this run:" << totalParsedThisRun
              << "Skipped entries (resume):" << skippedEntries;
-    finishParseSuccess(validatorForCompletion);
+    finishParseSuccess(validatorForCompletion, validatorTypeForCompletion);
 }
 
 QString GutenbergAdapter::normalizeFormatName(const QString& url, const QString& mimeType) {

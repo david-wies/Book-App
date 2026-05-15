@@ -7,7 +7,7 @@
 
 namespace bookhub::db {
 
-inline constexpr int kSchemaVersion = 8;
+inline constexpr int kSchemaVersion = 9;
 
 /// Returns the absolute path to the database file, located next to the executable.
 QString databaseFilePath();
@@ -21,15 +21,23 @@ bool insertSampleData(const QString &connectionName = QSqlDatabase::defaultConne
 /// See docs/design/sync-state-resume.md for the state machine.
 struct SyncState {
     QString adapterId;
-    QString status;            ///< 'in_progress' | 'completed' | 'failed'
+    QString status;             ///< 'in_progress' | 'completed' | 'failed'
     QString phase;              ///< 'downloading' | 'parsing' | empty
-    QString lastModified;       ///< HTTP Last-Modified of the last completed fetch
+    QString lastModified;       ///< Validator value from the last completed fetch
+                                ///< — either an HTTP Last-Modified date or an
+                                ///< ETag (see validatorType to disambiguate).
+    QString validatorType;      ///< 'last_modified' | 'etag' | empty (legacy: treat
+                                ///< as 'last_modified'). Selects whether
+                                ///< If-Modified-Since or If-None-Match is sent
+                                ///< on the next conditional request.
     QString startedAt;
     QString completedAt;
     qint64  booksProcessed{0};
     QString errorMessage;
     QString downloadUrl;
-    QString downloadEtag;
+    QString downloadEtag;       ///< In-progress validator for If-Range; same
+                                ///< type as validatorType while the row is
+                                ///< status='in_progress'.
     QString archivePath;
     qint64  bytesDownloaded{0};
     qint64  bytesTotal{0};
@@ -53,10 +61,15 @@ bool beginFetch(const QString &adapterId,
                 const QString &connectionName = QSqlDatabase::defaultConnection);
 
 /// Update the download-resume cursor. Cheap; safe to call every few MB.
+/// `validatorType` selects which conditional-request header the validator
+/// belongs to ('last_modified' or 'etag'); pass empty to preserve any
+/// previously stored type (mirroring `downloadEtag`'s preserve-on-empty
+/// semantics).
 bool recordDownloadProgress(const QString &adapterId,
                             qint64 bytesDownloaded,
                             qint64 bytesTotal,
                             const QString &downloadEtag,
+                            const QString &validatorType,
                             const QString &connectionName = QSqlDatabase::defaultConnection);
 
 /// Transition from downloading→parsing. Clears last_parsed_entry.
@@ -71,8 +84,13 @@ bool recordBatchCommit(const QString &adapterId,
                        const QString &connectionName = QSqlDatabase::defaultConnection);
 
 /// Mark fetch as successfully completed; clears all resume state.
+/// `validatorType` should match the `lastModified` value's origin
+/// ('last_modified' or 'etag'); pass empty to preserve any existing type
+/// (the 304-Not-Modified path passes empty for both, leaving the previous
+/// validator + type intact).
 bool completeFetch(const QString &adapterId,
                    const QString &lastModified,
+                   const QString &validatorType,
                    const QString &connectionName = QSqlDatabase::defaultConnection);
 
 /// Mark fetch as failed. Leaves resume state intact so the next attempt can pick up.

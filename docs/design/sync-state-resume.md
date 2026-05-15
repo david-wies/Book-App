@@ -44,14 +44,19 @@ CREATE TABLE IF NOT EXISTS sync_state (
                       CHECK(status IN ('in_progress', 'completed', 'failed')),
     phase             TEXT
                       CHECK(phase IS NULL OR phase IN ('downloading', 'parsing')),
-    last_modified     TEXT,                      -- HTTP Last-Modified of the last completed fetch
+    last_modified     TEXT,                      -- Server validator from the last completed fetch (Last-Modified value or ETag)
+    validator_type    TEXT                       -- 'last_modified' | 'etag' | NULL (legacy = treat as 'last_modified').
+                      CHECK(validator_type IS NULL
+                            OR validator_type IN ('last_modified', 'etag')),
+                                                 -- Selects which conditional-request header the next fetch sends
+                                                 -- (If-Modified-Since vs If-None-Match).
     started_at        TEXT,                      -- ISO 8601 of current/last attempt
     completed_at      TEXT,                      -- ISO 8601 of last successful completion
     books_processed   INTEGER NOT NULL DEFAULT 0,
     error_message     TEXT,
     -- Resume state (meaningful only while status='in_progress'):
     download_url      TEXT,                      -- URL being downloaded
-    download_etag     TEXT,                      -- Server validator (Last-Modified or ETag) at download start
+    download_etag     TEXT,                      -- Server validator (Last-Modified or ETag) at download start; same kind as validator_type while in progress
     archive_path      TEXT,                      -- Cache file path
     bytes_downloaded  INTEGER NOT NULL DEFAULT 0,
     bytes_total       INTEGER NOT NULL DEFAULT 0,
@@ -109,9 +114,10 @@ Next launch routes through the resume logic.
      (omit conditional headers). Write `status='in_progress'`, `phase='downloading'`,
      reset all resume fields, `started_at=now`, `books_processed=0`.
    * **status == 'completed' AND books > 0:** conditional fetch. Send
-     `If-Modified-Since: last_modified`. Don't touch resume fields yet — only
-     transition to `in_progress` on the 200 response, where we have a download
-     to resume.
+     `If-Modified-Since: <last_modified>` when `validator_type='last_modified'`
+     (or NULL — the v8 legacy default), or `If-None-Match: <last_modified>` when
+     `validator_type='etag'`. Don't touch resume fields yet — only transition to
+     `in_progress` on the 200 response, where we have a download to resume.
    * **status == 'in_progress' AND phase == 'downloading':** resume download
      (see below). Server validator is `download_etag`.
    * **status == 'in_progress' AND phase == 'parsing':** archive on disk is
@@ -125,8 +131,9 @@ Next launch routes through the resume logic.
 * Persist `bytes_downloaded` every 4 MB of received data and on `finished`/error.
   This bounds DB writes to a few hundred over an ~800 MB download.
 * On the *first* attempt: GET, no `Range`. On `200 OK`, capture
-  `Last-Modified` (or `ETag` if present) into `download_etag` so we can
-  validate resumes.
+  `Last-Modified` (preferred) or `ETag` (fallback) into `download_etag` so we
+  can validate resumes, and set `validator_type` to the header that supplied
+  the value (`'last_modified'` or `'etag'`).
 * On *resume* (`bytes_downloaded > 0`, file exists, sizes match):
   send `Range: bytes=<bytes_downloaded>-` and `If-Range: <download_etag>`.
   * `206 Partial Content` → append from the existing offset.
@@ -166,8 +173,13 @@ Next launch routes through the resume logic.
   `bytes_downloaded`, `bytes_total`, `last_parsed_entry`. Delete the cached
   archive file.
 * On parse failure (libarchive error, disk read error): set `status='failed'`,
-  `error_message=...`, leave the cached file and resume markers in place. The
-  next fetch will retry from `last_parsed_entry` if possible.
+  `error_message=...`. The next fetch tick routes through the
+  `status == 'failed'` branch of `fetchBooks()` (see Decision logic above) and
+  starts a fresh full fetch — no `If-Modified-Since`, resume cursors are reset
+  by `beginFetch()`. Cached archive cleanup happens implicitly when the fresh
+  download truncates it. We deliberately do *not* resume from
+  `last_parsed_entry` after a `failed` status, because a parse error tends to
+  indicate corruption upstream of the marker; restarting is the safer default.
 
 ## Idempotency
 
