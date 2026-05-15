@@ -237,6 +237,11 @@ void GutenbergAdapter::parseSingleRdf(const QByteArray& data, const QString& ent
                 static const QRegularExpression reMarc(QStringLiteral("[\\s:;/,]*\\$[a-z]\\s*"));
                 book.title.replace(reMarc, QStringLiteral(": "));
                 book.title = book.title.simplified();
+                // A title that begins with a $b marker (no main text before it) will
+                // produce a leading ": " after the substitution.  Strip it so the stored
+                // title starts with real content rather than punctuation.
+                if (book.title.startsWith(QStringLiteral(": ")))
+                    book.title = book.title.mid(2);
                 if (!path.isEmpty()) path.removeLast(); // text read moves past EndElement
             } else if (name == "identifier") {
                 rawIdentifiers.append(xml.readElementText().trimmed());

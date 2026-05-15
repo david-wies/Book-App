@@ -256,6 +256,8 @@ QString languageNameForCode(const QString &isoCode)
         {QStringLiteral("zho"), QStringLiteral("Chinese")},
     };
     const auto it = kMap.constFind(isoCode.toLower());
+    if (it == kMap.constEnd())
+        qDebug() << "languageNameForCode: unmapped ISO code" << isoCode << "— extend kMap";
     return (it != kMap.constEnd()) ? *it : isoCode;
 }
 
@@ -475,6 +477,14 @@ bool verifySchemaVersion(const QString &connectionName)
             // sources/formats/edition for the ISO-coded edition row r.id.
             auto mergeInto = [&](int targetId) -> bool {
                 QSqlQuery q(db);
+                // Remove any old-edition rows whose book_id already has a row under
+                // targetId — a plain UPDATE would produce a duplicate without this.
+                q.prepare(QStringLiteral(
+                    "DELETE FROM library_items WHERE edition_id = ? "
+                    "AND book_id IN (SELECT book_id FROM library_items WHERE edition_id = ?)"));
+                q.addBindValue(r.id);
+                q.addBindValue(targetId);
+                q.exec();
                 q.prepare(QStringLiteral(
                     "UPDATE library_items SET edition_id = ? WHERE edition_id = ?"));
                 q.addBindValue(targetId);
@@ -856,8 +866,11 @@ bool verifySchemaVersion(const QString &connectionName)
     }
 
     // Migration: version 6 → 7
-    // Renames format_type 'text_plain' → 'plain' to match the value that
-    // normalizeFormatName() now returns for text/plain MIME types.
+    // Renames format_type 'text_plain' → 'plain'.  The slash in the MIME type
+    // "text/plain" was previously encoded as '_' to produce "text_plain", but
+    // normalizeFormatName() in gutenberg_adapter.cpp was updated to return the
+    // cleaner "plain" (matching epub, pdf, etc.).  This migration brings existing
+    // rows in line with new inserts so UI display and dedup are consistent.
     // Rows that would collide with an existing 'plain' row are deleted along
     // with their sources; the remaining rows are renamed with UPDATE OR IGNORE
     // and any still-unconverted duplicates are removed.

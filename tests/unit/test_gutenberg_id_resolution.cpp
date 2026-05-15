@@ -25,6 +25,7 @@ private slots:
     void normalizeFormatName_mapsKnownMimeTypesAndIgnoresImages();
     void parseSingleRdf_noLccnFromAuthoritiesNames();
     void parseSingleRdf_stripsMarc21SubfieldMarkers();
+    void parseSingleRdf_leadingMarc21SubfieldProducesCleanTitle();
     void parseSingleRdf_titleCollapsesEmbeddedWhitespace();
     void parseSingleRdf_titleIgnoredOutsideEbookContext();
     void parseSingleRdf_languageCodeStoredRaw();
@@ -145,7 +146,7 @@ void GutenbergIdResolutionTest::normalizeFormatName_mapsKnownMimeTypesAndIgnores
     QCOMPARE(normalize(QStringLiteral("application/epub+zip")), QStringLiteral("epub"));
     QCOMPARE(normalize(QStringLiteral("application/pdf")), QStringLiteral("pdf"));
     QCOMPARE(normalize(QStringLiteral("application/x-mobipocket-ebook")), QStringLiteral("mobi"));
-    QCOMPARE(normalize(QStringLiteral("text/plain")), QStringLiteral("text_plain"));
+    QCOMPARE(normalize(QStringLiteral("text/plain")), QStringLiteral("plain"));
     QCOMPARE(normalize(QStringLiteral("text/html")), QStringLiteral("html"));
     QCOMPARE(normalize(QStringLiteral("text/rtf")), QStringLiteral("rtf"));
     QCOMPARE(normalize(QStringLiteral("text/xml")), QStringLiteral("xml"));
@@ -221,6 +222,32 @@ void GutenbergIdResolutionTest::parseSingleRdf_stripsMarc21SubfieldMarkers()
     QCOMPARE(batch.size(), 1);
     QCOMPARE(batch.first().title,
              QStringLiteral("His Last Bow: Some Later Reminiscences of Sherlock Holmes"));
+}
+
+void GutenbergIdResolutionTest::parseSingleRdf_leadingMarc21SubfieldProducesCleanTitle()
+{
+    // A title that begins with a $b marker (no main-title text before it) must
+    // not produce a leading ": " — simplified() collapses the leading whitespace
+    // but the regex output starts with ": " which simplified() cannot remove.
+    // This pins the current behaviour so a future refactor doesn't silently regress.
+    GutenbergAdapter adapter;
+    QList<DiscoveredBook> batch;
+
+    const QByteArray rdf = R"(
+        <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+          <ebook rdf:about="https://www.gutenberg.org/ebooks/9001">
+            <title>$b A Subtitle With No Main Title</title>
+          </ebook>
+        </rdf:RDF>
+    )";
+
+    adapter.parseSingleRdf(rdf, QStringLiteral("cache/epub/9001/pg9001.rdf"), batch);
+
+    QCOMPARE(batch.size(), 1);
+    const QString &title = batch.first().title;
+    // Must not begin with ": "
+    QVERIFY2(!title.startsWith(QStringLiteral(": ")),
+             qPrintable(QStringLiteral("Title starts with \": \": ") + title));
 }
 
 void GutenbergIdResolutionTest::parseSingleRdf_titleCollapsesEmbeddedWhitespace()
