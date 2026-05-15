@@ -110,30 +110,48 @@ Pull requests targeting `develop` run only the `sanity` tier. Pull requests targ
 │   ├── integration/             # Tests that hit a real SQLite database
 │   └── gui/                     # Widget tests (offscreen Qt platform)
 └── src/
-    ├── main.cpp                  # Entry point: init DB, start collector, show window
+    ├── main.cpp                  # Entry point: init DB, run QSettings→sync_state migration, start collector, show window
     ├── shared/                   # Database schema and utilities (static library)
-    │   ├── database.cpp/.h
+    │   └── database.cpp/.h               # Schema, migrations, sync_state helpers, language/format normalisation
     ├── collector/                # Background metadata discovery
     │   ├── source_adapter.cpp/.h        # ISourceAdapter interface + DiscoveredBook
-    │   ├── gutenberg_adapter.cpp/.h     # Project Gutenberg RDF catalog adapter
-    │   ├── book_discovery_service.cpp/.h # Orchestrates adapters, writes to DB
+    │   ├── gutenberg_adapter.cpp/.h     # Project Gutenberg RDF catalog adapter (Range/If-Range resume, mid-archive skip)
+    │   ├── book_discovery_service.cpp/.h # Orchestrates adapters, writes batches in one transaction + per-book SAVEPOINTs
     │   └── collector_worker.cpp/.h      # QThread wrapper with polling timer
     └── gui/                      # Qt6 Widgets UI
         ├── main_window.cpp/.h           # QMainWindow; hosts the screen stack
+        ├── query_worker.cpp/.h          # All GUI-thread DB queries (moved to a dedicated QThread)
         ├── style_tokens.h               # Design token constants
-        ├── screens/
+        ├── screens/                     # Top-level navigable screens
         │   ├── library_screen.cpp/.h
         │   ├── search_screen.cpp/.h
         │   └── explore_screen.cpp/.h
+        ├── panels/                      # Reusable composite views
+        │   └── book_details_panel.cpp/.h
+        ├── dialogs/                     # Modal workflows
+        │   ├── download_flow_dialog.cpp/.h
+        │   ├── audiobook_flow_dialog.cpp/.h
+        │   └── voice_upload_dialog.cpp/.h
         ├── widgets/
+        │   ├── badge_label.cpp/.h
         │   ├── book_card_delegate.cpp/.h
         │   ├── empty_state_widget.cpp/.h
-        │   ├── badge_label.cpp/.h
-        │   └── search_result_delegate.cpp/.h
-        └── services/
-            ├── library_service.cpp/.h
-            ├── search_service.cpp/.h
-            └── explore_service.cpp/.h
+        │   ├── mini_audio_player_widget.cpp/.h
+        │   ├── search_result_delegate.cpp/.h
+        │   ├── step_indicator_widget.cpp/.h
+        │   └── voice_selector_widget.cpp/.h
+        ├── services/                    # Async facades around QueryWorker; plus TTS engines
+        │   ├── library_service.cpp/.h
+        │   ├── search_service.cpp/.h
+        │   ├── explore_service.cpp/.h
+        │   ├── book_details_service.cpp/.h
+        │   ├── tts_service.cpp/.h           # ITTSService interface
+        │   ├── tts_types.h
+        │   ├── native_tts_service.cpp/.h    # Built-in fallback engine
+        │   ├── sherpa_onnx_tts_service.cpp/.h # Apache 2.0 preset-voice engine
+        │   └── pocket_tts_service.cpp/.h    # MIT zero-shot voice-cloning engine
+        └── utils/
+            └── wav_utils.h
 ```
 
 ## Branching and Update Rules
