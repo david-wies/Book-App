@@ -356,6 +356,10 @@ QStringList fetchLanguages(const QString &connectionName)
     QStringList result;
     while (query.next())
         result.append(bookhub::db::languageNameForCode(query.value(0).toString()));
+    // sort + removeDuplicates is required even though the SQL uses
+    // SELECT DISTINCT: languageNameForCode() collapses synonymous ISO codes
+    // ("en" and "eng" both map to "English"), so distinct DB rows can yield
+    // duplicate display names that the database has no way to merge.
     result.sort();
     result.removeDuplicates();
     return result;

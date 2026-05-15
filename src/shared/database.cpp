@@ -2,7 +2,10 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QHash>
+#include <QMutex>
+#include <QMutexLocker>
 #include <QRegularExpression>
+#include <QSet>
 #include <QStandardPaths>
 #include <QSqlDatabase>
 #include <QSqlError>
@@ -256,8 +259,20 @@ QString languageNameForCode(const QString &isoCode)
         {QStringLiteral("zho"), QStringLiteral("Chinese")},
     };
     const auto it = kMap.constFind(isoCode.toLower());
-    if (it == kMap.constEnd())
-        qDebug() << "languageNameForCode: unmapped ISO code" << isoCode << "— extend kMap";
+    if (it == kMap.constEnd()) {
+        // One-shot warning per unmapped code.  This function is on the hot path
+        // for search-filter population and book-details rendering, so logging
+        // every call would spam the console when the database holds rows in a
+        // language we haven't mapped yet.
+        static QSet<QString> warned;
+        static QMutex warnMutex;
+        QMutexLocker lock(&warnMutex);
+        const QString key = isoCode.toLower();
+        if (!warned.contains(key)) {
+            warned.insert(key);
+            qWarning() << "languageNameForCode: unmapped ISO code" << isoCode << "— extend kMap";
+        }
+    }
     return (it != kMap.constEnd()) ? *it : isoCode;
 }
 
@@ -605,8 +620,15 @@ bool verifySchemaVersion(const QString &connectionName)
         const QStringList preA = {
             "PRAGMA foreign_keys = OFF",
             // Build a temp mapping from old book_id to new book_id for every
-            // book whose book_id looks like a name-authority LCCN (prefix "lccn:n")
-            // AND that has a gutenberg identifier we can use as the new key.
+            // book whose book_id looks like a LOC names-authority LCCN AND that
+            // has a gutenberg identifier we can use as the new key.
+            //
+            // The "n" prefix on an LCCN identifies the Library of Congress
+            // Name Authority File (e.g. "n78095332" = Jane Austen the person),
+            // distinct from work-level LCCNs which use other prefixes (sh, sn,
+            // bare digits, etc.).  See https://www.loc.gov/marc/lccn-namespace.html
+            // for the full prefix list.  Older versions of resolveBookId()
+            // promoted these to primary keys; we now remap them back.
             "DROP TABLE IF EXISTS temp.bookid_remap",
             R"(CREATE TEMP TABLE bookid_remap (old_id TEXT PRIMARY KEY, new_id TEXT NOT NULL))",
             R"(INSERT INTO bookid_remap (old_id, new_id)
@@ -704,6 +726,9 @@ bool verifySchemaVersion(const QString &connectionName)
                 return false;
             }
 
+            // Same MARC subfield regex as gutenberg_adapter.cpp parseSingleRdf().
+            // The subfield class is intentionally [a-z] (alphabetic MARC subfields
+            // only) — see the comment there for the rationale on excluding [0-9].
             static const QRegularExpression reMarc(QStringLiteral("[\\s:;/,]*\\$[a-z]\\s*"));
             QSqlQuery titleUpdate(db);
             titleUpdate.prepare(
@@ -717,8 +742,12 @@ bool verifySchemaVersion(const QString &connectionName)
                 cleaned = cleaned.simplified();
                 if (cleaned == rawTitle)
                     continue;
-                titleUpdate.addBindValue(cleaned);
-                titleUpdate.addBindValue(bookId);
+                // Use positional bindValue so repeated calls on the prepared
+                // statement always overwrite slot 0 and 1, rather than appending
+                // to the addBindValue stack (which the SQLite driver tolerates
+                // but is brittle across drivers).
+                titleUpdate.bindValue(0, cleaned);
+                titleUpdate.bindValue(1, bookId);
                 if (!titleUpdate.exec()) {
                     qWarning() << "Migration v4→v5: failed to clean title for" << bookId
                                << ":" << titleUpdate.lastError().text();
@@ -786,6 +815,8 @@ bool verifySchemaVersion(const QString &connectionName)
                 return false;
             }
 
+            // [a-z] only — see gutenberg_adapter.cpp parseSingleRdf() for why
+            // numeric MARC subfields are intentionally excluded.
             static const QRegularExpression reMarc(QStringLiteral("[\\s:;/,]*\\$[a-z]\\s*"));
             // Collapses double-colon artefacts left by the old MARC regex (" : :") → ": ".
             // The leading \s* also consumes the space before the first colon.
@@ -803,8 +834,10 @@ bool verifySchemaVersion(const QString &connectionName)
                 cleaned = cleaned.simplified();
                 if (cleaned == rawTitle)
                     continue;
-                titleUpdate.addBindValue(cleaned);
-                titleUpdate.addBindValue(bookId);
+                // Positional bindValue — see the equivalent loop in v4→v5
+                // for the rationale.
+                titleUpdate.bindValue(0, cleaned);
+                titleUpdate.bindValue(1, bookId);
                 if (!titleUpdate.exec())
                     qWarning() << "Migration v5→v6: failed to clean title for" << bookId;
             }

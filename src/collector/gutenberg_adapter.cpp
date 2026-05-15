@@ -228,12 +228,25 @@ void GutenbergAdapter::parseSingleRdf(const QByteArray& data, const QString& ent
                 // Restrict to <pgterms:ebook>/<dcterms:title> to avoid picking up
                 // title-like elements in nested file descriptions.  Use simplified()
                 // to collapse embedded newlines/whitespace that appear in some RDF entries.
+                //
+                // NOTE: the parent local-name is hardcoded to "ebook" to match
+                // the current Gutenberg RDF schema (pgterms:ebook).  If the
+                // upstream schema introduces a different container element for
+                // book metadata (or this adapter is reused for a different
+                // source), update this branch — accidentally falling through
+                // to the catch-all below would silently lose book titles.
                 book.title = xml.readElementText().simplified();
                 // Strip MARC 21 subfield markers that Gutenberg embeds verbatim in some
                 // title strings.  The RDF often includes MARC punctuation immediately
                 // before the marker (e.g. "Main title : $b Subtitle"), so the regex also
                 // consumes any trailing MARC punctuation chars (:;/,) to avoid producing
                 // double colons like "Main title :: Subtitle".
+                //
+                // The subfield character class is deliberately limited to [a-z].
+                // MARC 21 also defines numeric subfield codes ($0, $1, … for
+                // linking/relator codes) but those are vanishingly rare in
+                // Gutenberg titles, and widening to [a-z0-9] risks eating
+                // dollar amounts in unusual titles (e.g. "$2 a day").
                 static const QRegularExpression reMarc(QStringLiteral("[\\s:;/,]*\\$[a-z]\\s*"));
                 book.title.replace(reMarc, QStringLiteral(": "));
                 book.title = book.title.simplified();
