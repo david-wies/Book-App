@@ -482,8 +482,14 @@ void AudiobookFlowDialog::onPlayPreview()
         startPreviewGeneration();
         return;
     }
-    if (m_previewTempPath.isEmpty())
+    if (m_previewTempPath.isEmpty()) {
+        // Audio data was generated but the temp file was removed before playback.
+        // Re-trigger generation so the user gets audible feedback.
+        qWarning() << "AudiobookFlowDialog: preview temp file missing; re-generating";
+        m_previewAudioData.clear();
+        startPreviewGeneration();
         return;
+    }
 
 #ifdef BOOKHUB_HAVE_MULTIMEDIA
     if (m_mediaPlayer) {

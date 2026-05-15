@@ -157,37 +157,37 @@ endif()
 # built with the matching backend — detecting the toolkit is necessary but
 # not sufficient for GPU inference to work at runtime.
 if(ENABLE_SHERPA_ONNX OR ENABLE_POCKET_TTS)
-find_package(CUDAToolkit 11 QUIET)
-if(CUDAToolkit_FOUND)
-    # NVIDIA CUDA — highest priority on all platforms that support it.
-    message(STATUS "CUDA ${CUDAToolkit_VERSION} found — GPU inference via CUDA execution provider (BOOKHUB_HAVE_CUDA)")
-    target_compile_definitions(bookhub_gui PUBLIC BOOKHUB_HAVE_GPU BOOKHUB_HAVE_CUDA)
-elseif(APPLE)
-    # CoreML is always available on Apple platforms — no external toolkit needed.
-    message(STATUS "Apple platform — GPU inference via CoreML execution provider (BOOKHUB_HAVE_COREML)")
-    target_compile_definitions(bookhub_gui PUBLIC BOOKHUB_HAVE_GPU BOOKHUB_HAVE_COREML)
-elseif(WIN32)
-    # DirectML ships with Windows 10+ and covers all GPU vendors (AMD, Intel, NVIDIA)
-    # via DirectX 12 without requiring a vendor-specific SDK.
-    message(STATUS "Windows platform — GPU inference via DirectML execution provider (BOOKHUB_HAVE_DIRECTML)")
-    target_compile_definitions(bookhub_gui PUBLIC BOOKHUB_HAVE_GPU BOOKHUB_HAVE_DIRECTML)
-else()
-    # Linux without CUDA: try AMD ROCm, then Intel OpenVINO, then CPU.
-    find_package(hip QUIET HINTS /opt/rocm/lib/cmake/hip /usr/lib/cmake/hip)
-    if(hip_FOUND)
-        message(STATUS "ROCm/HIP ${hip_VERSION} found — GPU inference via ROCm execution provider (BOOKHUB_HAVE_ROCM)")
-        target_compile_definitions(bookhub_gui PUBLIC BOOKHUB_HAVE_GPU BOOKHUB_HAVE_ROCM)
+    find_package(CUDAToolkit 11 QUIET)
+    if(CUDAToolkit_FOUND)
+        # NVIDIA CUDA — highest priority on all platforms that support it.
+        message(STATUS "CUDA ${CUDAToolkit_VERSION} found — GPU inference via CUDA execution provider (BOOKHUB_HAVE_CUDA)")
+        target_compile_definitions(bookhub_gui PUBLIC BOOKHUB_HAVE_GPU BOOKHUB_HAVE_CUDA)
+    elseif(APPLE)
+        # CoreML is always available on Apple platforms — no external toolkit needed.
+        message(STATUS "Apple platform — GPU inference via CoreML execution provider (BOOKHUB_HAVE_COREML)")
+        target_compile_definitions(bookhub_gui PUBLIC BOOKHUB_HAVE_GPU BOOKHUB_HAVE_COREML)
+    elseif(WIN32)
+        # DirectML ships with Windows 10+ and covers all GPU vendors (AMD, Intel, NVIDIA)
+        # via DirectX 12 without requiring a vendor-specific SDK.
+        message(STATUS "Windows platform — GPU inference via DirectML execution provider (BOOKHUB_HAVE_DIRECTML)")
+        target_compile_definitions(bookhub_gui PUBLIC BOOKHUB_HAVE_GPU BOOKHUB_HAVE_DIRECTML)
     else()
-        # Intel OpenVINO supports iGPU and CPU neural-network acceleration.
-        find_package(OpenVINO QUIET)
-        if(OpenVINO_FOUND)
-            message(STATUS "OpenVINO ${OpenVINO_VERSION} found — inference via OpenVINO execution provider (BOOKHUB_HAVE_OPENVINO)")
-            target_compile_definitions(bookhub_gui PUBLIC BOOKHUB_HAVE_GPU BOOKHUB_HAVE_OPENVINO)
+        # Linux without CUDA: try AMD ROCm, then Intel OpenVINO, then CPU.
+        find_package(hip QUIET HINTS /opt/rocm/lib/cmake/hip /usr/lib/cmake/hip)
+        if(hip_FOUND)
+            message(STATUS "ROCm/HIP ${hip_VERSION} found — GPU inference via ROCm execution provider (BOOKHUB_HAVE_ROCM)")
+            target_compile_definitions(bookhub_gui PUBLIC BOOKHUB_HAVE_GPU BOOKHUB_HAVE_ROCM)
         else()
-            message(STATUS "No GPU/accelerator toolkit found — TTS engines will use CPU inference")
+            # Intel OpenVINO supports iGPU and CPU neural-network acceleration.
+            find_package(OpenVINO QUIET)
+            if(OpenVINO_FOUND)
+                message(STATUS "OpenVINO ${OpenVINO_VERSION} found — inference via OpenVINO execution provider (BOOKHUB_HAVE_OPENVINO)")
+                target_compile_definitions(bookhub_gui PUBLIC BOOKHUB_HAVE_GPU BOOKHUB_HAVE_OPENVINO)
+            else()
+                message(STATUS "No GPU/accelerator toolkit found — TTS engines will use CPU inference")
+            endif()
         endif()
     endif()
-endif()
 endif() # ENABLE_SHERPA_ONNX OR ENABLE_POCKET_TTS
 
 # ---------------------------------------------------------------------------

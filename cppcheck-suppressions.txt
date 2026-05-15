@@ -30,14 +30,6 @@ noExplicitConstructor:*moc_*
 uninitMemberVar:*moc_*
 
 # ---------------------------------------------------------------------------
-# Qt object model
-# ---------------------------------------------------------------------------
-# Qt's parent-child ownership model legitimately uses raw pointers for owned
-# objects (QObject parent takes responsibility for deletion). cppcheck cannot
-# distinguish this from a real leak.
-memleakOnRealloc
-
-# ---------------------------------------------------------------------------
 # Test files
 # ---------------------------------------------------------------------------
 # Test helpers intentionally define functions that are only called by the
