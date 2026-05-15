@@ -431,17 +431,27 @@ void GutenbergAdapter::parseCachedArchive(const QString& archivePath,
     // from the network (m_serverValidator), but fall back to whatever the sync_state
     // row already has (set by an earlier successful download we're now resuming the
     // parse for).
+    //
+    // The validator value and its type must move as a pair — leaving one empty
+    // while writing the other would store a meaningless row (a 'last_modified'
+    // type with no value, etc.) that the next conditional-fetch path would
+    // ignore anyway because of the !lastModified.isEmpty() guard.
     QString validatorForCompletion = m_serverValidator;
     QString validatorTypeForCompletion = m_serverValidatorType;
     if (validatorForCompletion.isEmpty()) {
         if (auto s = db::getSyncState(adapterId(), m_dbConnectionName)) {
             validatorForCompletion = s->downloadEtag;
-            // Fall back to validator_type recorded earlier; if absent (e.g. v8
-            // legacy row written before this column existed), treat as
-            // Last-Modified — matches the historical Gutenberg behaviour.
-            validatorTypeForCompletion = s->validatorType.isEmpty()
-                ? QStringLiteral("last_modified")
-                : s->validatorType;
+            if (!validatorForCompletion.isEmpty()) {
+                // Fall back to validator_type recorded earlier; if absent
+                // (e.g. v8 legacy row written before this column existed),
+                // treat as Last-Modified — matches the historical Gutenberg
+                // behaviour.
+                validatorTypeForCompletion = s->validatorType.isEmpty()
+                    ? QStringLiteral("last_modified")
+                    : s->validatorType;
+            }
+            // else: no validator available — leave type empty too so the
+            // completeFetch COALESCE preserves NULL on both columns.
         }
     }
 
