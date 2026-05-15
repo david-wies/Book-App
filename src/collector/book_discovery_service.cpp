@@ -44,15 +44,63 @@ void BookDiscoveryService::startDiscovery() {
 void BookDiscoveryService::onBooksDiscovered(const QList<bookhub::collector::DiscoveredBook>& books) {
     auto adapter = qobject_cast<ISourceAdapter*>(sender());
     if (!adapter) return;
-    
-    QString sourceName = adapter->sourceName();
+
+    const QString sourceName = adapter->sourceName();
     qDebug() << "BookDiscoveryService:" << sourceName << "discovered" << books.size() << "books.";
-    
-    for (const auto& book : books) {
-        insertBookIntoDatabase(book, sourceName);
+
+    if (books.isEmpty())
+        return;
+
+    QSqlDatabase db = QSqlDatabase::database(m_dbConnectionName);
+    if (!db.isOpen()) {
+        qWarning() << "BookDiscoveryService: Database connection"
+                   << m_dbConnectionName << "is not open.";
+        return;
     }
-    
-    qDebug() << "BookDiscoveryService: Finished updating the database for" << books.size() << "books from" << sourceName;
+
+    // Wrap the whole batch in one transaction: 500 individual transactions per
+    // batch caused SQLITE_BUSY contention with GUI writes once the WAL grew
+    // large.  Per-book SAVEPOINTs preserve the old failure isolation — a single
+    // malformed book rolls back its own rows without losing the rest of the batch.
+    if (!db.transaction()) {
+        qWarning() << "BookDiscoveryService: Failed to start batch transaction:"
+                   << db.lastError().text() << "— falling back to per-book transactions.";
+        for (const auto& book : books)
+            insertBookIntoDatabase(book, sourceName);
+        return;
+    }
+
+    int committed = 0;
+    int failed = 0;
+    for (const auto& book : books) {
+        QSqlQuery sp(db);
+        if (!sp.exec(QStringLiteral("SAVEPOINT book_sp"))) {
+            qWarning() << "BookDiscoveryService: SAVEPOINT failed:" << sp.lastError().text();
+            ++failed;
+            continue;
+        }
+        if (insertBookRows(book, sourceName, db)) {
+            if (!sp.exec(QStringLiteral("RELEASE book_sp"))) {
+                qWarning() << "BookDiscoveryService: RELEASE failed:" << sp.lastError().text();
+            }
+            ++committed;
+        } else {
+            // insertBookRows already logged the specific failure.  Roll back this
+            // book's rows; subsequent books in the batch continue.
+            sp.exec(QStringLiteral("ROLLBACK TO book_sp"));
+            sp.exec(QStringLiteral("RELEASE book_sp"));
+            ++failed;
+        }
+    }
+
+    if (!db.commit()) {
+        qWarning() << "BookDiscoveryService: Batch commit failed:" << db.lastError().text();
+        db.rollback();
+        return;
+    }
+
+    qDebug() << "BookDiscoveryService: Committed" << committed << "books"
+             << "(failed:" << failed << ") from" << sourceName;
 }
 
 void BookDiscoveryService::onFetchCompleted(bool success, const QString& errorMessage) {
@@ -96,6 +144,19 @@ void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, co
         return;
     }
 
+    if (!insertBookRows(book, sourceName, db)) {
+        db.rollback();
+        return;
+    }
+
+    if (!db.commit()) {
+        qWarning() << "BookDiscoveryService: Failed to commit transaction:" << db.lastError().text();
+        db.rollback();
+    }
+}
+
+bool BookDiscoveryService::insertBookRows(const DiscoveredBook& book, const QString& sourceName,
+                                          QSqlDatabase& db) {
     QSqlQuery query(db);
     QString effectiveId = book.resolvedId;
 
@@ -118,8 +179,7 @@ void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, co
                 query.addBindValue(effectiveId);
                 if (!query.exec()) {
                     qWarning() << "Failed to promote book_id:" << query.lastError().text();
-                    db.rollback();
-                    return;
+                    return false;
                 }
                 effectiveId = book.resolvedId;
             }
@@ -135,8 +195,7 @@ void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, co
     query.addBindValue(QVariant());   // summary not available from RDF
     if (!query.exec()) {
         qWarning() << "Failed to insert book:" << query.lastError().text();
-        db.rollback();
-        return;
+        return false;
     }
 
     // Phase 3 — register all known identifiers for cross-source deduplication
@@ -160,8 +219,7 @@ void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, co
     query.addBindValue(primaryLang);
     if (!query.exec()) {
         qWarning() << "Failed to insert edition:" << query.lastError().text();
-        db.rollback();
-        return;
+        return false;
     }
 
     query.prepare("SELECT id FROM editions WHERE book_id = ? AND language = ?");
@@ -169,8 +227,7 @@ void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, co
     query.addBindValue(primaryLang);
     if (!query.exec() || !query.next()) {
         qWarning() << "Failed to retrieve edition id:" << query.lastError().text();
-        db.rollback();
-        return;
+        return false;
     }
     const int editionId = query.value(0).toInt();
 
@@ -225,10 +282,7 @@ void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, co
             qWarning() << "BookDiscoveryService: Failed to insert book_genre:" << bgq.lastError().text();
     }
 
-    if (!db.commit()) {
-        qWarning() << "BookDiscoveryService: Failed to commit transaction:" << db.lastError().text();
-        db.rollback();
-    }
+    return true;
 }
 
 } // namespace bookhub::collector

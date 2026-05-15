@@ -1,130 +1,494 @@
 #include "gutenberg_adapter.h"
+
+#include "shared/database.h"
+
 #include <QDebug>
+#include <QDir>
 #include <QFileInfo>
-#include <QSettings>
-#include <QXmlStreamReader>
 #include <QRegularExpression>
+#include <QStandardPaths>
+#include <QXmlStreamReader>
 
 #include <archive.h>
 #include <archive_entry.h>
 
 namespace bookhub::collector {
 
-GutenbergAdapter::GutenbergAdapter(QObject* parent)
-    : ISourceAdapter(parent), m_networkManager(this) {}
+namespace {
+
+constexpr auto kGutenbergRdfUrl =
+    "https://www.gutenberg.org/cache/epub/feeds/rdf-files.tar.bz2";
+
+// Persist bytes_downloaded to sync_state at most every 4 MB while the response
+// streams in.  Bounds DB writes to a few hundred over an ~800 MB download.
+constexpr qint64 kProgressFlushBytes = qint64{4} * 1024 * 1024;
+
+// Flush books to the DB after this many books OR this many archive entries —
+// whichever first.  The entry cap keeps the parse cursor (last_parsed_entry)
+// fresh even through long stretches of non-RDF tar entries.
+constexpr int kBatchBookLimit = 500;
+constexpr int kBatchEntryLimit = 1000;
+
+// Minimum book count for the "DB has real data, use conditional GET" branch.
+// The dev-only sample data seeds 3 gutenberg:* rows; any real Gutenberg fetch
+// produces tens of thousands.  This threshold distinguishes the two without a
+// dedicated marker column.
+constexpr qint64 kMinBooksForConditionalGet = 100;
+
+QString cacheDir()
+{
+    const QString base =
+        QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    QDir{}.mkpath(base + QStringLiteral("/gutenberg"));
+    return base + QStringLiteral("/gutenberg");
+}
+
+} // namespace
+
+GutenbergAdapter::GutenbergAdapter(const QString& dbConnectionName, QObject* parent)
+    : ISourceAdapter(parent),
+      m_dbConnectionName(dbConnectionName),
+      m_networkManager(this) {}
+
+QString GutenbergAdapter::archiveCachePath() const
+{
+    return cacheDir() + QStringLiteral("/rdf-files.tar.bz2");
+}
 
 void GutenbergAdapter::fetchBooks() {
-    qDebug() << "GutenbergAdapter: Checking for RDF catalog updates...";
+    qDebug() << "GutenbergAdapter: Evaluating sync state...";
 
-    QNetworkRequest request(QUrl("https://www.gutenberg.org/cache/epub/feeds/rdf-files.tar.bz2"));
+    const QString archivePath = archiveCachePath();
+    const auto state = db::getSyncState(adapterId(), m_dbConnectionName);
+    const qint64 bookCount = db::countBooksForAdapter(adapterId(), m_dbConnectionName);
 
-    // Check If-Modified-Since to prevent redundant downloads
-    QSettings settings;
-    QString lastModified = settings.value("gutenberg_last_modified").toString();
-    if (!lastModified.isEmpty()) {
-        request.setRawHeader("If-Modified-Since", lastModified.toUtf8());
+    // Resume parse — the archive should already be on disk in full.
+    if (state && state->status == QLatin1String("in_progress")
+            && state->phase == QLatin1String("parsing")) {
+        QFileInfo fi(state->archivePath);
+        if (fi.exists() && state->bytesTotal > 0 && fi.size() == state->bytesTotal) {
+            qDebug() << "GutenbergAdapter: Resuming parse from"
+                     << (state->lastParsedEntry.isEmpty() ? QStringLiteral("(beginning)")
+                                                          : state->lastParsedEntry);
+            parseCachedArchive(state->archivePath, state->lastParsedEntry);
+            return;
+        }
+        qDebug() << "GutenbergAdapter: parse-resume cache missing or size mismatch; "
+                    "restarting fresh.";
     }
 
-    QNetworkReply* reply = m_networkManager.get(request);
-    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
-        onNetworkReply(reply);
-    });
+    // Resume download — partial archive on disk; send Range + If-Range.
+    if (state && state->status == QLatin1String("in_progress")
+            && state->phase == QLatin1String("downloading")) {
+        QFileInfo fi(state->archivePath);
+        if (fi.exists() && state->bytesDownloaded > 0
+                && fi.size() == state->bytesDownloaded
+                && !state->downloadEtag.isEmpty()) {
+            qDebug() << "GutenbergAdapter: Resuming download from byte"
+                     << state->bytesDownloaded;
+            startFetch(FetchContext::ResumeDownload, state->bytesDownloaded,
+                       QString{}, state->downloadEtag);
+            return;
+        }
+        qDebug() << "GutenbergAdapter: download-resume cache inconsistent; "
+                    "restarting fresh.";
+    }
+
+    // Conditional refresh — completed before with non-empty DB.
+    if (state && state->status == QLatin1String("completed")
+            && !state->lastModified.isEmpty()
+            && bookCount >= kMinBooksForConditionalGet) {
+        qDebug() << "GutenbergAdapter: Conditional fetch (If-Modified-Since:"
+                 << state->lastModified << ")";
+        startFetch(FetchContext::Conditional, 0, state->lastModified, QString{});
+        return;
+    }
+
+    // Fresh fetch — no row, prior failure, or DB empty.
+    qDebug() << "GutenbergAdapter: Fresh fetch.";
+    db::beginFetch(adapterId(), QString::fromLatin1(kGutenbergRdfUrl),
+                   archivePath, m_dbConnectionName);
+    startFetch(FetchContext::Fresh, 0, QString{}, QString{});
 }
 
-void GutenbergAdapter::onNetworkReply(QNetworkReply* reply) {
+void GutenbergAdapter::startFetch(FetchContext ctx, qint64 resumeFromByte,
+                                  const QString& conditionalLastModified,
+                                  const QString& ifRangeValidator) {
+    m_context = ctx;
+    m_bytesWrittenThisRun = 0;
+    m_startingOffset = resumeFromByte;
+    m_lastPersistedBytes = resumeFromByte;
+    m_serverValidator.clear();
+    m_headerDecided = false;
+    m_writingToCache = false;
+    m_cacheFile.reset();
+
+    QNetworkRequest request{QUrl(QString::fromLatin1(kGutenbergRdfUrl))};
+
+    switch (ctx) {
+    case FetchContext::Conditional:
+        if (!conditionalLastModified.isEmpty()) {
+            request.setRawHeader("If-Modified-Since",
+                                 conditionalLastModified.toUtf8());
+        }
+        break;
+    case FetchContext::ResumeDownload: {
+        const QByteArray rangeVal =
+            QByteArray("bytes=") + QByteArray::number(resumeFromByte) + "-";
+        request.setRawHeader("Range", rangeVal);
+        if (!ifRangeValidator.isEmpty()) {
+            request.setRawHeader("If-Range", ifRangeValidator.toUtf8());
+        }
+        break;
+    }
+    case FetchContext::Fresh:
+    case FetchContext::ResumeParse:
+        break;
+    }
+
+    m_currentReply = m_networkManager.get(request);
+    connect(m_currentReply, &QNetworkReply::metaDataChanged,
+            this, &GutenbergAdapter::onMetaDataChanged);
+    connect(m_currentReply, &QNetworkReply::readyRead,
+            this, &GutenbergAdapter::onReadyRead);
+    connect(m_currentReply, &QNetworkReply::finished,
+            this, &GutenbergAdapter::onFinished);
+}
+
+void GutenbergAdapter::onMetaDataChanged()
+{
+    if (!m_currentReply || m_headerDecided)
+        return;
+
+    const QVariant statusVar =
+        m_currentReply->attribute(QNetworkRequest::HttpStatusCodeAttribute);
+    if (!statusVar.isValid())
+        return; // headers not fully available yet
+
+    const int status = statusVar.toInt();
+
+    const QByteArray lastModified = m_currentReply->rawHeader("Last-Modified");
+    const QByteArray etag = m_currentReply->rawHeader("ETag");
+    m_serverValidator = QString::fromUtf8(!lastModified.isEmpty() ? lastModified : etag);
+
+    const QString archivePath = archiveCachePath();
+
+    auto openTruncate = [&]() -> bool {
+        m_cacheFile = std::make_unique<QFile>(archivePath);
+        if (!m_cacheFile->open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            abortWithError(QStringLiteral("Failed to open cache file for writing: %1")
+                               .arg(m_cacheFile->errorString()));
+            return false;
+        }
+        m_writingToCache = true;
+        return true;
+    };
+
+    auto openAppend = [&]() -> bool {
+        m_cacheFile = std::make_unique<QFile>(archivePath);
+        if (!m_cacheFile->open(QIODevice::WriteOnly | QIODevice::Append)) {
+            abortWithError(QStringLiteral("Failed to open cache file for append: %1")
+                               .arg(m_cacheFile->errorString()));
+            return false;
+        }
+        m_writingToCache = true;
+        return true;
+    };
+
+    switch (m_context) {
+    case FetchContext::Fresh:
+        if (status == 200) {
+            if (!openTruncate()) return;
+            db::recordDownloadProgress(adapterId(), 0, 0,
+                                       m_serverValidator, m_dbConnectionName);
+            m_headerDecided = true;
+        } else {
+            abortWithError(
+                QStringLiteral("Fresh fetch: unexpected HTTP status %1").arg(status));
+        }
+        break;
+
+    case FetchContext::Conditional:
+        if (status == 304) {
+            m_writingToCache = false;
+            m_headerDecided = true;
+        } else if (status == 200) {
+            // Server has new data — transition to in_progress + download fresh.
+            db::beginFetch(adapterId(), QString::fromLatin1(kGutenbergRdfUrl),
+                           archivePath, m_dbConnectionName);
+            db::recordDownloadProgress(adapterId(), 0, 0,
+                                       m_serverValidator, m_dbConnectionName);
+            if (!openTruncate()) return;
+            m_startingOffset = 0;
+            m_lastPersistedBytes = 0;
+            m_context = FetchContext::Fresh;
+            m_headerDecided = true;
+        } else {
+            abortWithError(
+                QStringLiteral("Conditional fetch: unexpected HTTP status %1").arg(status));
+        }
+        break;
+
+    case FetchContext::ResumeDownload:
+        if (status == 206) {
+            if (!openAppend()) return;
+            m_headerDecided = true;
+        } else if (status == 200) {
+            // If-Range validator did not match — server's resource changed.
+            qDebug() << "GutenbergAdapter: If-Range mismatch (got 200); restarting download.";
+            db::beginFetch(adapterId(), QString::fromLatin1(kGutenbergRdfUrl),
+                           archivePath, m_dbConnectionName);
+            db::recordDownloadProgress(adapterId(), 0, 0,
+                                       m_serverValidator, m_dbConnectionName);
+            if (!openTruncate()) return;
+            m_startingOffset = 0;
+            m_lastPersistedBytes = 0;
+            m_context = FetchContext::Fresh;
+            m_headerDecided = true;
+        } else if (status == 416) {
+            // Cache is past server size — discard and let next tick start fresh.
+            qDebug() << "GutenbergAdapter: 416 Range Not Satisfiable; clearing cache.";
+            clearCachedArchive();
+            db::failFetch(adapterId(),
+                          QStringLiteral("Range request returned 416; cache cleared."),
+                          m_dbConnectionName);
+            m_headerDecided = true;
+            m_writingToCache = false;
+            m_currentReply->abort();
+        } else {
+            abortWithError(
+                QStringLiteral("Resume download: unexpected HTTP status %1").arg(status));
+        }
+        break;
+
+    case FetchContext::ResumeParse:
+        // Not used — parse-resume path bypasses startFetch().
+        break;
+    }
+}
+
+void GutenbergAdapter::onReadyRead()
+{
+    if (!m_currentReply || !m_writingToCache || !m_cacheFile)
+        return;
+
+    const QByteArray chunk = m_currentReply->readAll();
+    if (chunk.isEmpty())
+        return;
+
+    const qint64 written = m_cacheFile->write(chunk);
+    if (written != chunk.size()) {
+        abortWithError(QStringLiteral("Short write to cache file: %1")
+                           .arg(m_cacheFile->errorString()));
+        return;
+    }
+    m_bytesWrittenThisRun += written;
+
+    const qint64 totalOnDisk = m_startingOffset + m_bytesWrittenThisRun;
+    if (totalOnDisk - m_lastPersistedBytes >= kProgressFlushBytes) {
+        m_cacheFile->flush();
+        db::recordDownloadProgress(adapterId(), totalOnDisk, 0,
+                                   m_serverValidator, m_dbConnectionName);
+        m_lastPersistedBytes = totalOnDisk;
+    }
+}
+
+void GutenbergAdapter::onFinished()
+{
+    if (!m_currentReply)
+        return;
+
+    QNetworkReply* reply = m_currentReply;
+    m_currentReply = nullptr;
     reply->deleteLater();
 
-    if (reply->error() == QNetworkReply::NoError) {
-        // HTTP 200 OK: New file downloaded
-        int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        if (statusCode == 200) {
-            qDebug() << "GutenbergAdapter: Downloaded new RDF catalog.";
+    const int status =
+        reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const QNetworkReply::NetworkError err = reply->error();
 
-            // Save Last-Modified header
-            QByteArray lastModified = reply->rawHeader("Last-Modified");
-            if (!lastModified.isEmpty()) {
-                QSettings settings;
-                settings.setValue("gutenberg_last_modified", QString::fromUtf8(lastModified));
-            }
-
-            qDebug() << "GutenbergAdapter: Extracting and parsing archive...";
-            extractAndParseArchive(reply);
-        } else if (statusCode == 304) {
-            // Not Modified
-            qDebug() << "GutenbergAdapter: RDF catalog is up-to-date (304 Not Modified). No changes needed.";
-            emit fetchCompleted(true);
-        } else {
-            emit fetchCompleted(false, QString("Unexpected HTTP status code: %1").arg(statusCode));
-        }
-    } else if (reply->error() == QNetworkReply::ContentAccessDenied &&
-               reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 304) {
-        qDebug() << "GutenbergAdapter: RDF catalog is up-to-date (304 Not Modified). No changes needed.";
+    // Conditional fetch landed on 304 — also surfaces as ContentAccessDenied in Qt's
+    // error mapping on some platforms, so check the status code rather than just error().
+    if (status == 304) {
+        if (m_cacheFile) m_cacheFile.reset();
+        // Touch completed_at; last_modified stays as it was.
+        db::completeFetch(adapterId(), QString{}, m_dbConnectionName);
+        qDebug() << "GutenbergAdapter: 304 Not Modified — catalog is up to date.";
         emit fetchCompleted(true);
-    } else {
-        qDebug() << "GutenbergAdapter: Network error:" << reply->errorString();
-        emit fetchCompleted(false, reply->errorString());
+        return;
     }
+
+    if (m_cacheFile) {
+        m_cacheFile->flush();
+        m_cacheFile->close();
+    }
+
+    if (err != QNetworkReply::NoError) {
+        const QString msg = QStringLiteral("Network error: %1").arg(reply->errorString());
+        qWarning() << "GutenbergAdapter:" << msg;
+        const qint64 totalOnDisk = m_startingOffset + m_bytesWrittenThisRun;
+        // Persist whatever progress we have so the next tick can resume.
+        if (m_writingToCache && totalOnDisk > 0) {
+            db::recordDownloadProgress(adapterId(), totalOnDisk, 0,
+                                       m_serverValidator, m_dbConnectionName);
+        }
+        db::failFetch(adapterId(), msg, m_dbConnectionName);
+        m_cacheFile.reset();
+        emit fetchCompleted(false, msg);
+        return;
+    }
+
+    // Status sanity check — Fresh path expects 200, ResumeDownload expects 206
+    // (or has already mutated to Fresh on If-Range mismatch).
+    if (status != 200 && status != 206) {
+        const QString msg = QStringLiteral("Unexpected final HTTP status %1").arg(status);
+        db::failFetch(adapterId(), msg, m_dbConnectionName);
+        m_cacheFile.reset();
+        emit fetchCompleted(false, msg);
+        return;
+    }
+
+    const qint64 totalOnDisk = m_startingOffset + m_bytesWrittenThisRun;
+    db::recordDownloadComplete(adapterId(), totalOnDisk, m_dbConnectionName);
+    m_cacheFile.reset();
+
+    qDebug() << "GutenbergAdapter: Download complete," << totalOnDisk
+             << "bytes. Beginning parse.";
+    parseCachedArchive(archiveCachePath(), QString{});
 }
 
-void GutenbergAdapter::extractAndParseArchive(QNetworkReply* reply) {
-    // Read directly from the network reply in chunks so the full ~800 MB
-    // compressed archive is never materialised in a single QByteArray.
-    struct ReadCtx {
-        QNetworkReply* reply;
-        QByteArray buf;
-    };
-    ReadCtx ctx{reply, {}};
+void GutenbergAdapter::abortWithError(const QString& message)
+{
+    qWarning() << "GutenbergAdapter:" << message;
+    if (m_currentReply) {
+        QNetworkReply* reply = m_currentReply;
+        m_currentReply = nullptr;
+        reply->abort();
+        reply->deleteLater();
+    }
+    if (m_cacheFile) {
+        m_cacheFile->close();
+        m_cacheFile.reset();
+    }
+    db::failFetch(adapterId(), message, m_dbConnectionName);
+    emit fetchCompleted(false, message);
+}
 
-    auto readCb = [](archive*, void* data, const void** buffer) -> la_ssize_t {
-        auto* ctx = static_cast<ReadCtx*>(data);
-        ctx->buf = ctx->reply->read(65536);
-        *buffer = ctx->buf.constData();
-        return static_cast<la_ssize_t>(ctx->buf.size());
-    };
+void GutenbergAdapter::clearCachedArchive()
+{
+    QFile::remove(archiveCachePath());
+}
+
+void GutenbergAdapter::finishParseSuccess(const QString& lastModified)
+{
+    db::completeFetch(adapterId(), lastModified, m_dbConnectionName);
+    clearCachedArchive();
+    qDebug() << "GutenbergAdapter: Parse complete; cache cleared.";
+    emit fetchCompleted(true);
+}
+
+void GutenbergAdapter::parseCachedArchive(const QString& archivePath,
+                                          const QString& resumeAfterEntry)
+{
+    // Capture the validator for the *current* fetch.  Prefer what we just learned
+    // from the network (m_serverValidator), but fall back to whatever the sync_state
+    // row already has (set by an earlier successful download we're now resuming the
+    // parse for).
+    QString validatorForCompletion = m_serverValidator;
+    if (validatorForCompletion.isEmpty()) {
+        if (auto s = db::getSyncState(adapterId(), m_dbConnectionName))
+            validatorForCompletion = s->downloadEtag;
+    }
 
     struct ArchiveDeleter {
         void operator()(archive* a) const noexcept { archive_read_free(a); }
     };
-
     std::unique_ptr<archive, ArchiveDeleter> a{archive_read_new()};
     if (!a) {
-        emit fetchCompleted(false, "Failed to allocate archive reader.");
+        const QString msg = QStringLiteral("Failed to allocate libarchive reader.");
+        db::failFetch(adapterId(), msg, m_dbConnectionName);
+        emit fetchCompleted(false, msg);
         return;
     }
 
     archive_read_support_filter_bzip2(a.get());
     archive_read_support_format_tar(a.get());
 
-    if (archive_read_open(a.get(), &ctx, nullptr, readCb, nullptr) != ARCHIVE_OK) {
-        emit fetchCompleted(false,
-            QString("Failed to open archive: %1").arg(archive_error_string(a.get())));
+    const QByteArray pathBytes = archivePath.toUtf8();
+    if (archive_read_open_filename(a.get(), pathBytes.constData(), 65536) != ARCHIVE_OK) {
+        const QString msg = QStringLiteral("Failed to open cached archive: %1")
+                                .arg(QString::fromUtf8(archive_error_string(a.get())));
+        db::failFetch(adapterId(), msg, m_dbConnectionName);
+        clearCachedArchive();
+        emit fetchCompleted(false, msg);
         return;
     }
 
     QList<DiscoveredBook> batch;
-    int totalParsed = 0;
+    int totalParsedThisRun = 0;
+    int entriesSinceLastFlush = 0;
+    QString lastEntryInBatch;
+    bool sawResumePoint = resumeAfterEntry.isEmpty();
+    int skippedEntries = 0;
     archive_entry* entry = nullptr;
+
+    auto flushBatch = [&](const QString& entryAtFlush) {
+        if (batch.isEmpty() && entryAtFlush.isEmpty())
+            return;
+        const int delta = batch.size();
+        if (!batch.isEmpty()) {
+            emit booksDiscovered(batch);
+            totalParsedThisRun += delta;
+            qDebug() << "GutenbergAdapter: Committed batch of" << delta
+                     << "books. Total this run:" << totalParsedThisRun;
+            batch.clear();
+        }
+        if (!entryAtFlush.isEmpty()) {
+            db::recordBatchCommit(adapterId(), entryAtFlush, delta, m_dbConnectionName);
+        }
+        entriesSinceLastFlush = 0;
+    };
 
     while (archive_read_next_header(a.get(), &entry) == ARCHIVE_OK) {
         const char* pathname = archive_entry_pathname(entry);
-        if (!pathname) continue;
-
-        const QString entryName = QString::fromUtf8(pathname);
-        if (!entryName.endsWith(".rdf", Qt::CaseInsensitive)) {
+        if (!pathname) {
             archive_read_data_skip(a.get());
+            continue;
+        }
+        const QString entryName = QString::fromUtf8(pathname);
+
+        if (!sawResumePoint) {
+            archive_read_data_skip(a.get());
+            ++skippedEntries;
+            if (entryName == resumeAfterEntry)
+                sawResumePoint = true;
+            continue;
+        }
+
+        ++entriesSinceLastFlush;
+
+        if (!entryName.endsWith(QStringLiteral(".rdf"), Qt::CaseInsensitive)) {
+            archive_read_data_skip(a.get());
+            if (entriesSinceLastFlush >= kBatchEntryLimit) {
+                flushBatch(entryName);
+            }
             continue;
         }
 
         QByteArray rdfData;
         if (archive_entry_size_is_set(entry)) {
             const la_int64_t entrySize = archive_entry_size(entry);
-            if (entrySize <= 0) continue;
+            if (entrySize <= 0) {
+                archive_read_data_skip(a.get());
+                continue;
+            }
             rdfData.resize(static_cast<qsizetype>(entrySize));
             const la_ssize_t bytesRead = archive_read_data(
                 a.get(), rdfData.data(), static_cast<std::size_t>(entrySize));
-            if (bytesRead != entrySize) continue;
+            if (bytesRead != entrySize) {
+                qWarning() << "GutenbergAdapter: short read on" << entryName;
+                continue;
+            }
         } else {
-            // Size not set in header — read in chunks (shouldn't happen for tar, but be safe)
             constexpr std::size_t kChunk = 65536;
             char buf[kChunk];
             la_ssize_t n;
@@ -134,25 +498,40 @@ void GutenbergAdapter::extractAndParseArchive(QNetworkReply* reply) {
         }
 
         parseSingleRdf(rdfData, entryName, batch);
+        lastEntryInBatch = entryName;
 
-        if (batch.size() >= 500) {
-            emit booksDiscovered(batch);
-            totalParsed += static_cast<int>(batch.size());
-            qDebug() << "GutenbergAdapter: Emitted batch of" << batch.size()
-                     << "books. Total:" << totalParsed;
-            batch.clear();
+        if (batch.size() >= kBatchBookLimit
+                || entriesSinceLastFlush >= kBatchEntryLimit) {
+            flushBatch(lastEntryInBatch);
         }
     }
 
+    // Flush any remainder.
     if (!batch.isEmpty()) {
-        emit booksDiscovered(batch);
-        totalParsed += static_cast<int>(batch.size());
-        qDebug() << "GutenbergAdapter: Emitted final batch of" << batch.size()
-                 << "books. Total:" << totalParsed;
+        flushBatch(lastEntryInBatch);
+    } else if (!lastEntryInBatch.isEmpty()) {
+        // Edge case: we processed entries past the resume point but the final
+        // batch was already flushed at the limit boundary.  Update the cursor
+        // anyway so the next run would not redo the last partial chunk.
+        db::recordBatchCommit(adapterId(), lastEntryInBatch, 0, m_dbConnectionName);
     }
 
-    qDebug() << "GutenbergAdapter: Parsing complete. Total books:" << totalParsed;
-    emit fetchCompleted(true);
+    // If we had a resume marker but never matched it in the archive, treat as
+    // a corrupt cursor: fail (cache is cleared so next tick starts clean).
+    if (!resumeAfterEntry.isEmpty() && !sawResumePoint) {
+        const QString msg = QStringLiteral(
+            "Resume marker '%1' not found in archive; cache will be refreshed.")
+                .arg(resumeAfterEntry);
+        qWarning() << "GutenbergAdapter:" << msg;
+        db::failFetch(adapterId(), msg, m_dbConnectionName);
+        clearCachedArchive();
+        emit fetchCompleted(false, msg);
+        return;
+    }
+
+    qDebug() << "GutenbergAdapter: Parse complete. Books this run:" << totalParsedThisRun
+             << "Skipped entries (resume):" << skippedEntries;
+    finishParseSuccess(validatorForCompletion);
 }
 
 QString GutenbergAdapter::normalizeFormatName(const QString& url, const QString& mimeType) {
@@ -225,37 +604,13 @@ void GutenbergAdapter::parseSingleRdf(const QByteArray& data, const QString& ent
                 currentFormatMime.clear();
             } else if (name == "title" && path.size() >= 2
                        && path.at(path.size() - 2) == QLatin1String("ebook")) {
-                // Restrict to <pgterms:ebook>/<dcterms:title> to avoid picking up
-                // title-like elements in nested file descriptions.  Use simplified()
-                // to collapse embedded newlines/whitespace that appear in some RDF entries.
-                //
-                // NOTE: the parent local-name is hardcoded to "ebook" to match
-                // the current Gutenberg RDF schema (pgterms:ebook).  If the
-                // upstream schema introduces a different container element for
-                // book metadata (or this adapter is reused for a different
-                // source), update this branch — accidentally falling through
-                // to the catch-all below would silently lose book titles.
                 book.title = xml.readElementText().simplified();
-                // Strip MARC 21 subfield markers that Gutenberg embeds verbatim in some
-                // title strings.  The RDF often includes MARC punctuation immediately
-                // before the marker (e.g. "Main title : $b Subtitle"), so the regex also
-                // consumes any trailing MARC punctuation chars (:;/,) to avoid producing
-                // double colons like "Main title :: Subtitle".
-                //
-                // The subfield character class is deliberately limited to [a-z].
-                // MARC 21 also defines numeric subfield codes ($0, $1, … for
-                // linking/relator codes) but those are vanishingly rare in
-                // Gutenberg titles, and widening to [a-z0-9] risks eating
-                // dollar amounts in unusual titles (e.g. "$2 a day").
                 static const QRegularExpression reMarc(QStringLiteral("[\\s:;/,]*\\$[a-z]\\s*"));
                 book.title.replace(reMarc, QStringLiteral(": "));
                 book.title = book.title.simplified();
-                // A title that begins with a $b marker (no main text before it) will
-                // produce a leading ": " after the substitution.  Strip it so the stored
-                // title starts with real content rather than punctuation.
                 if (book.title.startsWith(QStringLiteral(": ")))
                     book.title = book.title.mid(2);
-                if (!path.isEmpty()) path.removeLast(); // text read moves past EndElement
+                if (!path.isEmpty()) path.removeLast();
             } else if (name == "identifier") {
                 rawIdentifiers.append(xml.readElementText().trimmed());
                 if (!path.isEmpty()) path.removeLast();
@@ -301,11 +656,7 @@ void GutenbergAdapter::parseSingleRdf(const QByteArray& data, const QString& ent
     for (const QString& raw : rawIdentifiers) {
         QString lower = raw.toLower();
         if (lower.startsWith("lccn:")) {
-            // Extract the raw LCCN value and normalize it; store only the digits+alpha, no prefix.
-            // Note: /authorities/names/ URIs identify persons, not works — they are skipped here
-            // and in resolveBookId() so they never become book primary keys.
             QString lccnNormalized = normalizeLccn(raw);
-            // lccnNormalized is "lccn:XYZ" — store just the part after the colon as value
             qsizetype colon = lccnNormalized.indexOf(':');
             if (colon >= 0) {
                 book.identifiers.append(BookIdentifier{"lccn", lccnNormalized.mid(colon + 1)});
@@ -313,14 +664,12 @@ void GutenbergAdapter::parseSingleRdf(const QByteArray& data, const QString& ent
         } else if (lower.startsWith("oclc:")) {
             book.identifiers.append(BookIdentifier{"oclc", raw.mid(5)});
         } else {
-            // Check for 10 or 13 consecutive digits (ISBN), stripping hyphens first
             QString stripped = raw;
             stripped.remove('-');
             static const QRegularExpression reDigits("^\\d{10}$|^\\d{13}$");
             if (reDigits.match(stripped).hasMatch()) {
                 QString isbn13;
                 if (stripped.length() == 10) {
-                    // Convert ISBN-10 to ISBN-13: prepend "978", drop old check digit, compute EAN-13 check
                     QString base = "978" + stripped.left(9);
                     int sum = 0;
                     for (int i = 0; i < 12; ++i) {
@@ -334,11 +683,9 @@ void GutenbergAdapter::parseSingleRdf(const QByteArray& data, const QString& ent
                 }
                 book.identifiers.append(BookIdentifier{"isbn", isbn13});
             }
-            // Unknown format — skip
         }
     }
 
-    // Gutenberg ID is always appended as a fallback identifier
     book.identifiers.append(BookIdentifier{"gutenberg", book.sourceId});
 
     if (!book.title.isEmpty() && !book.sourceId.isEmpty()) {
@@ -356,7 +703,7 @@ void GutenbergAdapter::parseSingleRdf(const QByteArray& data, const QString& ent
                 QString lowerSubj = subj.toLower();
                 for (const QString& keyword : possibleKeywords) {
                     if (lowerSubj.contains(keyword)) {
-                        genre = keyword; // Use the matched keyword as a clean genre
+                        genre = keyword;
                         break;
                     }
                 }
@@ -369,7 +716,6 @@ void GutenbergAdapter::parseSingleRdf(const QByteArray& data, const QString& ent
             genre = types.first();
         }
 
-        // Use the simplified genre/subject
         book.subjects.clear();
         if (!genre.isEmpty()) book.subjects.append(genre);
 
@@ -381,7 +727,6 @@ QString GutenbergAdapter::normalizeLccn(const QString& raw)
 {
     QString lccn = raw;
 
-    // Strip URI prefix if present
     const QString uriPrefix = "http://id.loc.gov/authorities/names/";
     if (lccn.startsWith(uriPrefix)) {
         lccn = lccn.mid(uriPrefix.length());
@@ -389,7 +734,6 @@ QString GutenbergAdapter::normalizeLccn(const QString& raw)
         lccn = lccn.mid(5);
     }
 
-    // Separate leading alpha prefix from numeric suffix
     int splitPos = 0;
     while (splitPos < lccn.length() && lccn.at(splitPos).isLetter()) {
         ++splitPos;
@@ -397,8 +741,6 @@ QString GutenbergAdapter::normalizeLccn(const QString& raw)
     QString alpha = lccn.left(splitPos);
     QString digits = lccn.mid(splitPos);
 
-    // Pre-2001 LCCNs: 1–6 digit suffix, zero-padded to 6 digits (8 chars total with 2-letter prefix).
-    // Post-2001 LCCNs: exactly 8 digits with no alpha prefix — do not zero-pad those.
     if (digits.length() < 8) {
         digits = digits.rightJustified(8, '0');
     }
@@ -416,8 +758,6 @@ QString GutenbergAdapter::resolveBookId(const QStringList& rawIdentifiers, const
         QString lower = raw.toLower();
 
         if (lccnResult.isEmpty()) {
-            // /authorities/names/ URIs identify persons/corporate bodies, not works.
-            // Accept only explicit "lccn:" prefixed identifiers as work-level LCCNs.
             if (lower.startsWith("lccn:")) {
                 lccnResult = normalizeLccn(raw);
                 continue;

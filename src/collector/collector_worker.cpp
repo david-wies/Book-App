@@ -52,7 +52,7 @@ void CollectorWorker::run() {
     // 2. Setup Discovery Service
     BookDiscoveryService discoveryService(connectionName);
     m_discoveryService = &discoveryService;
-    m_discoveryService->addAdapter(new GutenbergAdapter(m_discoveryService));
+    m_discoveryService->addAdapter(new GutenbergAdapter(connectionName, m_discoveryService));
     connect(m_discoveryService, &BookDiscoveryService::updateStarted, this, [this]() {
         m_updateInProgress.store(true);
     }, Qt::DirectConnection);

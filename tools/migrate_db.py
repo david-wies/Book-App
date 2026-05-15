@@ -14,6 +14,10 @@ Schema v5: Strips _N suffixes from format_type rows (epub_1 → epub) and fixes 
 Schema v6: Strips MIME parameters from format_type (e.g. "plain; charset=us-ascii"
            → "plain") and cleans up any double-colon artefacts in book titles.
 Schema v7: Renames format_type 'text_plain' → 'plain' to match normalizeFormatName().
+Schema v8: Adds the sync_state table (per-adapter catalog freshness and resume
+           state).  See docs/design/sync-state-resume.md.  Legacy QSettings value
+           ("gutenberg_last_modified") is copied into the table on first app
+           startup at this version, then cleared from QSettings.
 
 The v1→v2 migration and all migrations from v3 onward are handled automatically by
 the app at startup; launch the app once and it will upgrade the database in place.
