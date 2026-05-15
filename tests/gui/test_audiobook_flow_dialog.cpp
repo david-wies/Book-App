@@ -133,6 +133,8 @@ private slots:
 
     // QMediaPlayer::errorOccurred → marks preview as listened so the user can proceed.
     void handlePreviewPlaybackError_marksListenedAndEnablesNext();
+    void handlePreviewPlaybackError_isIdempotent();
+    void handlePreviewPlaybackError_disablesPreviewWhenCacheCleared();
 
     // Dialog reuse: Next button must return to navigation mode after generation.
     void resetState_rewiresToNextFromClose_afterGeneration();
@@ -765,11 +767,40 @@ void AudiobookFlowDialogTest::handlePreviewPlaybackError_marksListenedAndEnables
     // Preview button stays enabled because cached audio is still present.
     QVERIFY(m_dialog->m_previewVoiceBtn->isEnabled());
 
-    // Calling again is a no-op for m_previewListened (guarded by the if-check)
-    // but must not crash or toggle state back.
+    // The user must be informed via a QMessageBox carrying the original error string.
+    auto *box = m_dialog->findChild<QMessageBox *>();
+    QVERIFY(box != nullptr);
+    QVERIFY(box->text().contains(QStringLiteral("test-injected error")));
+    box->close();
+}
+
+void AudiobookFlowDialogTest::handlePreviewPlaybackError_isIdempotent()
+{
+    // Second QMediaPlayer::errorOccurred for the same playback must not toggle
+    // state back or crash. The if-check on m_previewListened guards re-entry.
+    m_dialog->m_currentStep = 3;
+    m_dialog->m_previewAudioData = QByteArray("RIFFsome-fake-wav-data");
+
+    m_dialog->handlePreviewPlaybackError(QStringLiteral("first error"));
+    QVERIFY(m_dialog->m_previewListened);
+
     m_dialog->handlePreviewPlaybackError(QStringLiteral("second error"));
     QVERIFY(m_dialog->m_previewListened);
-    QVERIFY(m_dialog->m_nextBtn->isEnabled());
+}
+
+void AudiobookFlowDialogTest::handlePreviewPlaybackError_disablesPreviewWhenCacheCleared()
+{
+    // When the cached preview audio is empty, the error path must also disable
+    // the Preview button — there is nothing to play, so re-enabling it would
+    // invite the user to click into a dead control.
+    m_dialog->m_selectedVoiceId = 1;
+    m_dialog->m_selectedVoiceName = QStringLiteral("Classic Storyteller");
+    m_dialog->m_previewAudioData.clear();
+    m_dialog->m_previewVoiceBtn->setEnabled(true);
+
+    m_dialog->handlePreviewPlaybackError(QStringLiteral("playback failed"));
+
+    QVERIFY(!m_dialog->m_previewVoiceBtn->isEnabled());
 }
 
 void AudiobookFlowDialogTest::onGenerationComplete_updatesCloseButton()
