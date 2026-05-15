@@ -169,9 +169,14 @@ Next launch routes through the resume logic.
   2. After the batch transaction commits, update `last_parsed_entry` to the
      entry name of the *last* book in the batch and increment `books_processed`.
 * On parse completion: set `status='completed'`, `completed_at=now`,
-  `last_modified=download_etag`, clear `phase`, `download_url`, `archive_path`,
+  `last_modified=<validator captured at download start>`,
+  `validator_type=<validator_type captured at download start>`,
+  clear `phase`, `download_url`, `download_etag`, `archive_path`,
   `bytes_downloaded`, `bytes_total`, `last_parsed_entry`. Delete the cached
-  archive file.
+  archive file. The validator + type pair carries over into the next
+  conditional-fetch decision; passing empty values to `completeFetch` keeps
+  whatever the row already had (the 304 path uses this to avoid clobbering
+  the validator with an empty response).
 * On parse failure (libarchive error, disk read error): set `status='failed'`,
   `error_message=...`. The next fetch tick routes through the
   `status == 'failed'` branch of `fetchBooks()` (see Decision logic above) and
