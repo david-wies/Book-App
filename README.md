@@ -8,7 +8,7 @@ A native C++/Qt6 desktop application for discovering public-domain literature, m
 - **Library Management** — Save books to a local library for quick access and offline reading.
 - **Multi-Format Downloads** — Fetch books in EPUB, PDF, HTML, plain text, and more.
 - **Audiobook Conversion** — *(In Progress)* Convert text editions into audiobooks using high-quality, on-device TTS voices.
-- **Background Sync** — A dedicated collector thread refreshes metadata every 10 minutes without blocking the UI.
+- **Background Sync** — A dedicated collector thread refreshes metadata every 10 minutes without blocking the UI. Per-adapter sync state is persisted in the database so an interrupted fetch (kill, crash, network drop) resumes the download and parse on the next launch instead of starting over.
 
 ## Architecture
 
@@ -20,9 +20,9 @@ The application uses a three-thread model:
 
 All three threads share a single SQLite database (`bookhub.db`, stored in `QStandardPaths::AppDataLocation`). WAL mode enables concurrent reads from the query thread while the collector writes. Thread isolation is maintained by giving each thread its own named Qt SQL connection.
 
-Book metadata flows through an adapter pattern. `ISourceAdapter` defines the interface; `GutenbergAdapter` is the only current implementation. It downloads Gutenberg's RDF catalog (`.tar.bz2`), extracts it in-process via libarchive, and parses the RDF/XML files. `BookDiscoveryService` orchestrates adapters and writes discovered books to the database in batches of 500.
+Book metadata flows through an adapter pattern. `ISourceAdapter` defines the interface; `GutenbergAdapter` is the only current implementation. It downloads Gutenberg's RDF catalog (`.tar.bz2`) to a cache directory (`QStandardPaths::CacheLocation`), parses it in-process via libarchive, and emits books in batches of 500. `BookDiscoveryService` writes each batch to the database in a single transaction with per-book `SAVEPOINT`s for failure isolation.
 
-See `docs/design/` for detailed architecture documents.
+Catalog freshness and resume cursors live in the `sync_state` table — download progress (`Range`/`If-Range`) and parse progress (`last_parsed_entry`) are persisted at safe boundaries so a force-close never costs more than the in-flight batch. See `docs/design/sync-state-resume.md` for the state machine, and `docs/design/` for the rest of the architecture documents.
 
 ## Prerequisites
 
