@@ -86,6 +86,9 @@ private:
     QString defaultOutputPath() const;
     void showErrorState(const QString &message);
     void resetPreviewButton();
+    // Centralises the QMediaPlayer::errorOccurred handling so tests can drive
+    // the recovery path without standing up a real audio backend.
+    void handlePreviewPlaybackError(const QString &errorString);
 
     friend class ::bookhub::gui::AudiobookFlowDialogTest;
 

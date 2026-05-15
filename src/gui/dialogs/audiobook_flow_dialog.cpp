@@ -132,20 +132,7 @@ AudiobookFlowDialog::AudiobookFlowDialog(LibraryService *libraryService,
             &QMediaPlayer::errorOccurred,
             this,
             [this](QMediaPlayer::Error, const QString &errorString) {
-                m_previewVoiceBtn->setEnabled(!m_previewAudioData.isEmpty());
-                resetPreviewButton();
-                m_previewPlayer->setPlaying(false);
-                m_previewPlaying = false;
-                // Treat an errored playback as listened so the user is not
-                // permanently stuck at step 4 when the audio backend cannot
-                // play the preview (e.g. missing codec, sandboxed environment).
-                // The error message is still surfaced via showErrorState below.
-                if (!m_previewListened) {
-                    m_previewListened = true;
-                    updateNextButtonEnabled();
-                }
-                showErrorState(
-                    QStringLiteral("Preview playback failed: %1").arg(errorString));
+                handlePreviewPlaybackError(errorString);
             });
 #endif
 
@@ -979,6 +966,23 @@ void AudiobookFlowDialog::showErrorState(const QString &message)
 void AudiobookFlowDialog::resetPreviewButton()
 {
     m_previewVoiceBtn->setText(QString::fromUtf8(kPreviewButtonIdleLabel));
+}
+
+void AudiobookFlowDialog::handlePreviewPlaybackError(const QString &errorString)
+{
+    m_previewVoiceBtn->setEnabled(!m_previewAudioData.isEmpty());
+    resetPreviewButton();
+    m_previewPlayer->setPlaying(false);
+    m_previewPlaying = false;
+    // Treat an errored playback as listened so the user is not permanently
+    // stuck at step 4 when the audio backend cannot play the preview
+    // (e.g. missing codec, sandboxed environment). The error message is
+    // still surfaced via showErrorState below.
+    if (!m_previewListened) {
+        m_previewListened = true;
+        updateNextButtonEnabled();
+    }
+    showErrorState(QStringLiteral("Preview playback failed: %1").arg(errorString));
 }
 
 } // namespace bookhub::gui

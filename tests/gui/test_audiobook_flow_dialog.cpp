@@ -131,6 +131,9 @@ private slots:
     // Preview disk-write failure path
     void onPreviewGenerated_writeFailure_clearsCachedAudio();
 
+    // QMediaPlayer::errorOccurred → marks preview as listened so the user can proceed.
+    void handlePreviewPlaybackError_marksListenedAndEnablesNext();
+
     // Dialog reuse: Next button must return to navigation mode after generation.
     void resetState_rewiresToNextFromClose_afterGeneration();
 
@@ -737,6 +740,36 @@ void AudiobookFlowDialogTest::onPreviewGenerated_writeFailure_clearsCachedAudio(
         qunsetenv("TMPDIR");
     else
         qputenv("TMPDIR", previousTmp);
+}
+
+void AudiobookFlowDialogTest::handlePreviewPlaybackError_marksListenedAndEnablesNext()
+{
+    // Drive the dialog into a state where step 4 is gated on m_previewListened.
+    m_dialog->m_selectedLanguage = QStringLiteral("en");
+    m_dialog->m_selectedFormat = QStringLiteral("epub");
+    m_dialog->m_selectedVoiceId = 1;
+    m_dialog->m_selectedVoiceName = QStringLiteral("Classic Storyteller");
+    m_dialog->m_currentStep = 3;
+    m_dialog->m_previewAudioData = QByteArray("RIFFsome-fake-wav-data");
+    m_dialog->m_previewListened = false;
+    m_dialog->updateNextButtonEnabled();
+    QVERIFY(!m_dialog->m_nextBtn->isEnabled());
+
+    // An audio-backend failure (e.g. missing codec) must not strand the user
+    // at step 4 — the dialog counts the errored playback as listened.
+    m_dialog->handlePreviewPlaybackError(QStringLiteral("test-injected error"));
+
+    QVERIFY(m_dialog->m_previewListened);
+    QVERIFY(m_dialog->m_nextBtn->isEnabled());
+    QVERIFY(!m_dialog->m_previewPlaying);
+    // Preview button stays enabled because cached audio is still present.
+    QVERIFY(m_dialog->m_previewVoiceBtn->isEnabled());
+
+    // Calling again is a no-op for m_previewListened (guarded by the if-check)
+    // but must not crash or toggle state back.
+    m_dialog->handlePreviewPlaybackError(QStringLiteral("second error"));
+    QVERIFY(m_dialog->m_previewListened);
+    QVERIFY(m_dialog->m_nextBtn->isEnabled());
 }
 
 void AudiobookFlowDialogTest::onGenerationComplete_updatesCloseButton()
