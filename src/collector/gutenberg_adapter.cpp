@@ -257,11 +257,12 @@ void GutenbergAdapter::onMetaDataChanged()
             // Cache is past server size — discard and let next tick start fresh.
             // abortWithError nulls m_currentReply *before* aborting, so the
             // queued onFinished short-circuits and cannot overwrite this message
-            // with the generic "Operation canceled" failure.
+            // with the generic "Operation canceled" failure.  No need to set
+            // m_headerDecided / m_writingToCache: every reader of those flags
+            // gates on m_currentReply being non-null, which abortWithError
+            // clears.
             qDebug() << "GutenbergAdapter: 416 Range Not Satisfiable; clearing cache.";
             clearCachedArchive();
-            m_headerDecided = true;
-            m_writingToCache = false;
             abortWithError(
                 QStringLiteral("Range request returned 416; cache cleared."));
             return;

@@ -1187,6 +1187,12 @@ bool beginFetch(const QString &adapterId, const QString &downloadUrl,
     QSqlQuery q(db);
     // INSERT OR REPLACE so we clobber any prior row (failed/completed) and reset all
     // resume cursors at once.  PRIMARY KEY on adapter_id keeps us idempotent.
+    // The validator_type sub-SELECT mirrors last_modified for consistency.
+    // In practice the preserved value lives only between this INSERT and the
+    // first recordDownloadProgress() call (which overwrites it from the new
+    // response headers), but mirroring the same preservation contract keeps
+    // the two fields in lock-step and avoids a half-initialised row if the
+    // network stack fails before any header arrives.
     q.prepare(QStringLiteral(
         "INSERT OR REPLACE INTO sync_state ("
         "  adapter_id, status, phase, last_modified, validator_type,"
