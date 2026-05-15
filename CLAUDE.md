@@ -137,7 +137,7 @@ All three threads share a single SQLite database (`bookhub.db`, stored in `QStan
 
 `ISourceAdapter` (pure abstract `QObject`) defines the interface for all book metadata sources. New sources implement it and register with `BookDiscoveryService::addAdapter()`. Currently only `GutenbergAdapter` is implemented.
 
-`GutenbergAdapter` downloads `rdf-files.tar.bz2` from Gutenberg, extracts it in-process via libarchive, and parses the RDF/XML files. It uses `If-Modified-Since` HTTP caching (stored in `QSettings`) to skip re-downloads. Books are emitted in batches of 500 via the `booksDiscovered` signal to bound memory usage.
+`GutenbergAdapter` downloads `rdf-files.tar.bz2` from Gutenberg, extracts it in-process via libarchive, and parses the RDF/XML files. Catalog freshness and resume state are tracked per-adapter in the `sync_state` table; `If-Modified-Since` is sent when a prior successful sync is recorded, and interrupted downloads/parses resume from the last recorded cursor (HTTP `Range` + `If-Range` for downloads, `archive_read_data_skip` past `last_parsed_entry` for parses). Books are emitted in batches of 500 via the `booksDiscovered` signal to bound memory usage.
 
 `BookDiscoveryService` orchestrates adapters and writes discovered books to the database in those same 500-book batches.
 
@@ -152,10 +152,11 @@ SQLite with foreign keys enabled (`PRAGMA foreign_keys = ON`). Tables:
 - `formats` — (`edition_id` FK); format type (epub, pdf, txt, …) hangs off editions
 - `sources` — (`format_id` FK); download URL per (format, source) pair
 - `library_items` — (`book_id` FK, `edition_id` FK); user's personal library state
+- `sync_state` — (`adapter_id TEXT PRIMARY KEY`); per-adapter catalog freshness and resume state (status, phase, last_modified validator, download/parse resume cursors, books_processed, error_message). Replaces the legacy `QSettings`-based `gutenberg_last_modified` cache so freshness is coupled to the DB it describes. See `docs/design/sync-state-resume.md`.
 
 **ID resolution priority:** LCCN > OCLC > ISBN > source-specific fallback (e.g. `gutenberg:1342`). The `GutenbergAdapter` extracts `dcterms:identifier` fields from RDF files to resolve the highest-priority available ID. Before inserting a new `books` row, `BookDiscoveryService` queries `book_identifiers` for any matching identifier to deduplicate records from multiple sources.
 
-Full ID model: `docs/design/book-identity-model.md`. Schema DDL: `src/shared/database.cpp` (`bookhub::db::createSchema()`).
+Full ID model: `docs/design/book-identity-model.md`. Schema DDL: `src/shared/database.cpp` (`bookhub::db::createSchema()`). Catalog freshness / resume state machine: `docs/design/sync-state-resume.md`.
 
 ### Key Conventions
 

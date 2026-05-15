@@ -1,7 +1,8 @@
 #pragma once
 
-#include <QObject>
 #include <QList>
+#include <QObject>
+#include <QSqlDatabase>
 #include "source_adapter.h"
 
 class BookDiscoveryServiceTest; // test friend — defined in tests/integration/
@@ -29,6 +30,13 @@ private:
     friend class ::BookDiscoveryServiceTest;
 
     void insertBookIntoDatabase(const DiscoveredBook& book, const QString& sourceName);
+    // No-transaction variant: the caller is responsible for the surrounding
+    // batch transaction.  Returns true if the book was successfully written,
+    // false if a SAVEPOINT-rollback is required.  Failures here log a warning
+    // and instruct the caller to rollback this book's savepoint while keeping
+    // the rest of the batch intact.
+    bool insertBookRows(const DiscoveredBook& book, const QString& sourceName,
+                        QSqlDatabase& db);
 
     QString m_dbConnectionName;
     QList<ISourceAdapter*> m_adapters;

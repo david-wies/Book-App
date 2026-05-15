@@ -1,5 +1,6 @@
 #include "database.h"
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDir>
 #include <QHash>
 #include <QMutex>
@@ -47,6 +48,14 @@ bool initializeDatabase(const QString &filePath, const QString &connectionName)
     // lock, preventing UI stalls during background discovery runs.
     if (!query.exec("PRAGMA journal_mode = WAL;")) {
         qWarning() << "Failed to enable WAL journal mode:" << query.lastError().text();
+    }
+
+    // busy_timeout makes SQLite block up to 5 s for a write lock instead of
+    // failing immediately with SQLITE_BUSY.  WAL serialises writers across
+    // connections (collector + GUI's library mutations both write), so brief
+    // contention is expected during a large catalog ingest.
+    if (!query.exec("PRAGMA busy_timeout = 5000;")) {
+        qWarning() << "Failed to set busy_timeout:" << query.lastError().text();
     }
 
     qDebug() << "Opened SQLite database at" << filePath << "with connection:" << connectionName;
@@ -125,6 +134,31 @@ bool createSchema(const QString &connectionName)
             config_path          TEXT,
             reference_audio_path TEXT,
             created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ))",
+        // Per-adapter catalog sync state. See docs/design/sync-state-resume.md.
+        // Resume cursors (download_*, archive_path, bytes_*, last_parsed_entry)
+        // are meaningful only while status='in_progress' and are cleared on
+        // successful completion.
+        R"(CREATE TABLE IF NOT EXISTS sync_state (
+            adapter_id        TEXT PRIMARY KEY,
+            status            TEXT NOT NULL
+                              CHECK(status IN ('in_progress', 'completed', 'failed')),
+            phase             TEXT
+                              CHECK(phase IS NULL OR phase IN ('downloading', 'parsing')),
+            last_modified     TEXT,
+            validator_type    TEXT
+                              CHECK(validator_type IS NULL
+                                    OR validator_type IN ('last_modified', 'etag')),
+            started_at        TEXT,
+            completed_at      TEXT,
+            books_processed   INTEGER NOT NULL DEFAULT 0,
+            error_message     TEXT,
+            download_url      TEXT,
+            download_etag     TEXT,
+            archive_path      TEXT,
+            bytes_downloaded  INTEGER NOT NULL DEFAULT 0,
+            bytes_total       INTEGER NOT NULL DEFAULT 0,
+            last_parsed_entry TEXT
         ))"
     };
 
@@ -967,10 +1001,332 @@ bool verifySchemaVersion(const QString &connectionName)
         return verifySchemaVersion(connectionName);
     }
 
+    // Migration: version 7 → 8
+    // Adds the sync_state table.  Catalog freshness used to live in QSettings
+    // ("gutenberg_last_modified"), which made the cache decouple from the DB —
+    // a deleted DB plus a stale cache gave the user an empty library with a 304
+    // response.  See docs/design/sync-state-resume.md for the full state machine.
+    //
+    // The QSettings → sync_state value copy is performed by the app at startup
+    // (main.cpp), not here, because QSettings depends on QCoreApplication which
+    // may not be initialised when this code runs in tests or migration tools.
+    if (version == 7) {
+        qDebug() << "Migrating database schema from version 7 to 8...";
+
+        QSqlQuery mq(db);
+        if (!mq.exec(QStringLiteral("BEGIN"))) {
+            qCritical() << "Migration v7→v8 preamble failed:" << mq.lastError().text();
+            return false;
+        }
+
+        const QString createSyncState = R"(CREATE TABLE IF NOT EXISTS sync_state (
+            adapter_id        TEXT PRIMARY KEY,
+            status            TEXT NOT NULL
+                              CHECK(status IN ('in_progress', 'completed', 'failed')),
+            phase             TEXT
+                              CHECK(phase IS NULL OR phase IN ('downloading', 'parsing')),
+            last_modified     TEXT,
+            started_at        TEXT,
+            completed_at      TEXT,
+            books_processed   INTEGER NOT NULL DEFAULT 0,
+            error_message     TEXT,
+            download_url      TEXT,
+            download_etag     TEXT,
+            archive_path      TEXT,
+            bytes_downloaded  INTEGER NOT NULL DEFAULT 0,
+            bytes_total       INTEGER NOT NULL DEFAULT 0,
+            last_parsed_entry TEXT
+        ))";
+
+        if (!mq.exec(createSyncState)) {
+            qCritical() << "Migration v7→v8 failed creating sync_state:"
+                        << mq.lastError().text();
+            mq.exec("ROLLBACK");
+            return false;
+        }
+
+        if (!mq.exec(QStringLiteral("PRAGMA user_version = 8"))
+                || !mq.exec(QStringLiteral("COMMIT"))) {
+            qCritical() << "Migration v7→v8: commit failed:" << mq.lastError().text();
+            mq.exec("ROLLBACK");
+            return false;
+        }
+
+        qDebug() << "Migration to schema version 8 complete.";
+        return verifySchemaVersion(connectionName);
+    }
+
+    // Migration: version 8 → 9
+    // Adds the `validator_type` column to sync_state so adapters can record
+    // whether `last_modified` / `download_etag` came from an HTTP Last-Modified
+    // header (use If-Modified-Since on conditional GETs) or an ETag header (use
+    // If-None-Match).  Gutenberg always sends Last-Modified, but Ben-Yehuda /
+    // Archive.org adapters may rely on ETags; conflating the two would generate
+    // an invalid If-Modified-Since: <etag-bytes> request.
+    //
+    // NULL values are treated as 'last_modified' by adapter code for backward
+    // compatibility with v8 rows written before this column existed.
+    if (version == 8) {
+        qDebug() << "Migrating database schema from version 8 to 9...";
+
+        QSqlQuery mq(db);
+        if (!mq.exec(QStringLiteral("BEGIN"))) {
+            qCritical() << "Migration v8→v9 preamble failed:" << mq.lastError().text();
+            return false;
+        }
+
+        // Idempotency: tests sometimes set PRAGMA user_version backwards without
+        // reshaping the table, so the v9 column may already be present.  Probe
+        // before ALTER to keep the migration replayable.  ALTER TABLE ADD COLUMN
+        // also cannot add a CHECK constraint; matching CHECK semantics on
+        // upgraded DBs would require a table rebuild, so we accept the looser
+        // invariant — the createSchema path on fresh DBs still carries the full
+        // CHECK and adapter code only ever writes the two valid values.
+        bool columnExists = false;
+        QSqlQuery pq(db);
+        if (pq.exec(QStringLiteral("PRAGMA table_info(sync_state)"))) {
+            while (pq.next()) {
+                if (pq.value(1).toString() == QLatin1String("validator_type")) {
+                    columnExists = true;
+                    break;
+                }
+            }
+        }
+
+        if (!columnExists && !mq.exec(QStringLiteral(
+                "ALTER TABLE sync_state ADD COLUMN validator_type TEXT"))) {
+            qCritical() << "Migration v8→v9 failed adding validator_type:"
+                        << mq.lastError().text();
+            mq.exec("ROLLBACK");
+            return false;
+        }
+
+        if (!mq.exec(QStringLiteral("PRAGMA user_version = 9"))
+                || !mq.exec(QStringLiteral("COMMIT"))) {
+            qCritical() << "Migration v8→v9: commit failed:" << mq.lastError().text();
+            mq.exec("ROLLBACK");
+            return false;
+        }
+
+        qDebug() << "Migration to schema version 9 complete.";
+        return verifySchemaVersion(connectionName);
+    }
+
     qCritical("Database schema version mismatch: expected %d, found %d. "
               "Run tools/migrate_db.py to upgrade the database.",
               kSchemaVersion, version);
     return false;
+}
+
+// ---------------------------------------------------------------------------
+// sync_state helpers — see docs/design/sync-state-resume.md
+// ---------------------------------------------------------------------------
+
+namespace {
+QString nowIso()
+{
+    return QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+}
+} // namespace
+
+std::optional<SyncState> getSyncState(const QString &adapterId,
+                                      const QString &connectionName)
+{
+    QSqlDatabase db = QSqlDatabase::database(connectionName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "SELECT adapter_id, status, phase, last_modified, validator_type, "
+        "started_at, completed_at, books_processed, error_message, "
+        "download_url, download_etag, archive_path, "
+        "bytes_downloaded, bytes_total, last_parsed_entry "
+        "FROM sync_state WHERE adapter_id = ?"));
+    q.addBindValue(adapterId);
+    if (!q.exec()) {
+        qWarning() << "getSyncState: query failed:" << q.lastError().text();
+        return std::nullopt;
+    }
+    if (!q.next())
+        return std::nullopt;
+
+    SyncState s;
+    s.adapterId       = q.value(0).toString();
+    s.status          = q.value(1).toString();
+    s.phase           = q.value(2).toString();
+    s.lastModified    = q.value(3).toString();
+    s.validatorType   = q.value(4).toString();
+    s.startedAt       = q.value(5).toString();
+    s.completedAt     = q.value(6).toString();
+    s.booksProcessed  = q.value(7).toLongLong();
+    s.errorMessage    = q.value(8).toString();
+    s.downloadUrl     = q.value(9).toString();
+    s.downloadEtag    = q.value(10).toString();
+    s.archivePath     = q.value(11).toString();
+    s.bytesDownloaded = q.value(12).toLongLong();
+    s.bytesTotal      = q.value(13).toLongLong();
+    s.lastParsedEntry = q.value(14).toString();
+    return s;
+}
+
+qint64 countBooksForAdapter(const QString &adapterIdPrefix, const QString &connectionName)
+{
+    QSqlDatabase db = QSqlDatabase::database(connectionName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral("SELECT COUNT(*) FROM books WHERE book_id LIKE ?"));
+    q.addBindValue(adapterIdPrefix + QStringLiteral(":%"));
+    if (!q.exec() || !q.next()) {
+        qWarning() << "countBooksForAdapter: query failed:" << q.lastError().text();
+        return 0;
+    }
+    return q.value(0).toLongLong();
+}
+
+bool beginFetch(const QString &adapterId, const QString &downloadUrl,
+                const QString &archivePath, const QString &connectionName)
+{
+    QSqlDatabase db = QSqlDatabase::database(connectionName);
+    QSqlQuery q(db);
+    // INSERT OR REPLACE so we clobber any prior row (failed/completed) and reset
+    // all resume cursors at once.  PRIMARY KEY on adapter_id keeps us idempotent.
+    //
+    // last_modified and validator_type are explicitly NULL'd here.  Earlier the
+    // sub-SELECT preserved them in case the new attempt failed before a fresh
+    // validator was captured — but that masked a real bug: if a conditional
+    // fetch returned 200 with no Last-Modified / ETag, the new (different) data
+    // would be stamped with the previous fetch's validator, and subsequent
+    // If-Modified-Since requests would compare apples to oranges.  The safer
+    // contract is "no validator known until the response says so" — if the
+    // server omits a validator, the next fetch will simply go unconditional.
+    q.prepare(QStringLiteral(
+        "INSERT OR REPLACE INTO sync_state ("
+        "  adapter_id, status, phase, last_modified, validator_type,"
+        "  started_at, completed_at, books_processed, error_message,"
+        "  download_url, download_etag, archive_path,"
+        "  bytes_downloaded, bytes_total, last_parsed_entry"
+        ") VALUES (?, 'in_progress', 'downloading', NULL, NULL,"
+        "  ?, NULL, 0, NULL, ?, NULL, ?, 0, 0, NULL)"));
+    q.addBindValue(adapterId);
+    q.addBindValue(nowIso());
+    q.addBindValue(downloadUrl);
+    q.addBindValue(archivePath);
+    if (!q.exec()) {
+        qWarning() << "beginFetch: failed:" << q.lastError().text();
+        return false;
+    }
+    return true;
+}
+
+bool recordDownloadProgress(const QString &adapterId, qint64 bytesDownloaded,
+                            const QString &downloadEtag,
+                            const QString &validatorType,
+                            const QString &connectionName)
+{
+    QSqlDatabase db = QSqlDatabase::database(connectionName);
+    QSqlQuery q(db);
+    // bytes_total is intentionally left alone — recordDownloadComplete sets it
+    // once at the end when the total is actually known.  COALESCE(NULLIF(?, ''),
+    // <col>) keeps the row's existing validator value if the caller passes an
+    // empty string (e.g. progress flushes that don't carry fresh header info).
+    q.prepare(QStringLiteral(
+        "UPDATE sync_state SET bytes_downloaded = ?, "
+        "download_etag  = COALESCE(NULLIF(?, ''), download_etag), "
+        "validator_type = COALESCE(NULLIF(?, ''), validator_type) "
+        "WHERE adapter_id = ?"));
+    q.addBindValue(bytesDownloaded);
+    q.addBindValue(downloadEtag);
+    q.addBindValue(validatorType);
+    q.addBindValue(adapterId);
+    if (!q.exec()) {
+        qWarning() << "recordDownloadProgress: failed:" << q.lastError().text();
+        return false;
+    }
+    return true;
+}
+
+bool recordDownloadComplete(const QString &adapterId, qint64 bytesTotal,
+                            const QString &connectionName)
+{
+    QSqlDatabase db = QSqlDatabase::database(connectionName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "UPDATE sync_state SET phase = 'parsing', bytes_downloaded = ?, "
+        "bytes_total = ?, last_parsed_entry = NULL, books_processed = 0 "
+        "WHERE adapter_id = ?"));
+    q.addBindValue(bytesTotal);
+    q.addBindValue(bytesTotal);
+    q.addBindValue(adapterId);
+    if (!q.exec()) {
+        qWarning() << "recordDownloadComplete: failed:" << q.lastError().text();
+        return false;
+    }
+    return true;
+}
+
+bool recordBatchCommit(const QString &adapterId, const QString &lastParsedEntry,
+                       qint64 booksProcessedDelta, const QString &connectionName)
+{
+    QSqlDatabase db = QSqlDatabase::database(connectionName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "UPDATE sync_state SET last_parsed_entry = ?, "
+        "books_processed = books_processed + ? "
+        "WHERE adapter_id = ?"));
+    q.addBindValue(lastParsedEntry);
+    q.addBindValue(booksProcessedDelta);
+    q.addBindValue(adapterId);
+    if (!q.exec()) {
+        qWarning() << "recordBatchCommit: failed:" << q.lastError().text();
+        return false;
+    }
+    return true;
+}
+
+bool completeFetch(const QString &adapterId, const QString &lastModified,
+                   const QString &validatorType,
+                   const QString &connectionName)
+{
+    QSqlDatabase db = QSqlDatabase::database(connectionName);
+    QSqlQuery q(db);
+    // COALESCE(NULLIF(?, ''), <col>) lets the caller pass an empty string to
+    // preserve whatever value the row already has.  The 304-Not-Modified path
+    // depends on this — it has no fresh validator to write, but the previous
+    // completed fetch's validator (set on the prior call) must survive so the
+    // next conditional GET can still send If-Modified-Since / If-None-Match.
+    q.prepare(QStringLiteral(
+        "UPDATE sync_state SET status = 'completed', phase = NULL, "
+        "completed_at = ?, "
+        "last_modified  = COALESCE(NULLIF(?, ''), last_modified), "
+        "validator_type = COALESCE(NULLIF(?, ''), validator_type), "
+        "download_url = NULL, download_etag = NULL, archive_path = NULL, "
+        "bytes_downloaded = 0, bytes_total = 0, last_parsed_entry = NULL, "
+        "error_message = NULL "
+        "WHERE adapter_id = ?"));
+    q.addBindValue(nowIso());
+    q.addBindValue(lastModified);
+    q.addBindValue(validatorType);
+    q.addBindValue(adapterId);
+    if (!q.exec()) {
+        qWarning() << "completeFetch: failed:" << q.lastError().text();
+        return false;
+    }
+    return true;
+}
+
+bool failFetch(const QString &adapterId, const QString &errorMessage,
+               const QString &connectionName)
+{
+    QSqlDatabase db = QSqlDatabase::database(connectionName);
+    QSqlQuery q(db);
+    // Leave the resume cursors in place — next attempt may pick up from them.
+    q.prepare(QStringLiteral(
+        "UPDATE sync_state SET status = 'failed', error_message = ? "
+        "WHERE adapter_id = ?"));
+    q.addBindValue(errorMessage);
+    q.addBindValue(adapterId);
+    if (!q.exec()) {
+        qWarning() << "failFetch: failed:" << q.lastError().text();
+        return false;
+    }
+    return true;
 }
 
 bool insertSampleData(const QString &connectionName)
