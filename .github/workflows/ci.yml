@@ -35,35 +35,65 @@ jobs:
         sudo apt-get install -y --no-install-recommends \
           build-essential \
           cmake \
+          ccache \
           qt6-base-dev \
           libqt6sql6 \
           libqt6sql6-sqlite \
           libarchive-dev
 
+    - name: Cache ccache
+      uses: actions/cache@v5
+      with:
+        path: ~/.cache/ccache
+        key: ccache-${{ runner.os }}-${{ github.ref_name }}
+        restore-keys: ccache-${{ runner.os }}-
+
+    - name: Configure ccache
+      run: |
+        ccache --set-config=max_size=500M
+        ccache --set-config=compression=true
+        ccache --set-config=sloppiness=pch_defines,time_macros
+        ccache --zero-stats
+
     - name: Cache CMake build directory
       uses: actions/cache@v5
       with:
         path: build
-        key: cmake-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'src/**', 'resources.qrc', '*.jpg', '*.png') }}
+        # Include src/** and tests/** so source-only changes invalidate the cache.
+        # Without them, CMake-generated state (moc, dep scans) can persist across
+        # PRs and produce confusing incremental errors.
+        key: cmake-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'resources.qrc', '*.jpg', '*.png', 'src/**', 'tests/**') }}
         restore-keys: cmake-${{ runner.os }}-
 
     - name: Configure build
+      # Debug keeps assertions active and gives ASan/UBSan cleaner stack traces.
+      # ccache keeps incremental builds fast despite the extra debug metadata.
       run: |
         mkdir -p build && cd build && cmake \
-          -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+          -DCMAKE_BUILD_TYPE=Debug \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
           -DCMAKE_CXX_FLAGS="-Wall -Wextra -Werror" \
           ..
 
     - name: Build project
       run: cd build && make -j$(nproc)
 
+    - name: Print ccache stats
+      run: ccache --show-stats
+
     - name: Run sanity tests
       run: cd build && ctest -L sanity -j$(nproc) --output-on-failure
 
     - name: Run remaining tests
       # Full suite only on master — develop gets sanity-only for fast feedback.
+      # The 'bookhub_full_suite_tests' aggregate target depends on every
+      # FULL_SUITE_ONLY test executable, so adding a new one in CMakeLists.txt
+      # wires it into CI automatically without editing this file.
       if: github.ref == 'refs/heads/master' || github.base_ref == 'master'
-      run: cd build && ctest -LE sanity -j$(nproc) --output-on-failure
+      run: |
+        cd build
+        make -j$(nproc) bookhub_full_suite_tests
+        ctest -LE sanity -j$(nproc) --output-on-failure
 
     - name: Upload build artifact
       if: success()

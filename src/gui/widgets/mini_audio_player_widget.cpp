@@ -1,12 +1,12 @@
 #include "mini_audio_player_widget.h"
+
 #include <QHBoxLayout>
-#include <QVBoxLayout>
 #include <QStyle>
+#include <QVBoxLayout>
 
 namespace bookhub::gui {
 
-MiniAudioPlayerWidget::MiniAudioPlayerWidget(QWidget *parent)
-    : QWidget(parent)
+MiniAudioPlayerWidget::MiniAudioPlayerWidget(QWidget *parent) : QWidget(parent)
 {
     buildUi();
 }
@@ -16,7 +16,8 @@ void MiniAudioPlayerWidget::buildUi()
     m_playPauseBtn = new QPushButton(this);
     m_playPauseBtn->setText("▶");
     m_playPauseBtn->setMaximumWidth(40);
-    connect(m_playPauseBtn, &QPushButton::clicked, this, &MiniAudioPlayerWidget::onPlayPauseClicked);
+    connect(
+        m_playPauseBtn, &QPushButton::clicked, this, &MiniAudioPlayerWidget::onPlayPauseClicked);
 
     m_scrubber = new QSlider(Qt::Horizontal, this);
     m_scrubber->setRange(0, 0);
@@ -63,6 +64,12 @@ bool MiniAudioPlayerWidget::isPlaying() const
     return m_isPlaying;
 }
 
+void MiniAudioPlayerWidget::setPlaying(bool playing)
+{
+    m_isPlaying = playing;
+    m_playPauseBtn->setText(playing ? "⏸" : "▶");
+}
+
 void MiniAudioPlayerWidget::onPlayPauseClicked()
 {
     m_isPlaying = !m_isPlaying;
@@ -103,10 +110,10 @@ void MiniAudioPlayerWidget::updateTimeLabel()
     int totSecs = totalSecs % 60;
 
     QString timeStr = QString("%1:%2 / %3:%4")
-        .arg(curMins)
-        .arg(curSecs, 2, 10, QLatin1Char('0'))
-        .arg(totMins)
-        .arg(totSecs, 2, 10, QLatin1Char('0'));
+                          .arg(curMins)
+                          .arg(curSecs, 2, 10, QLatin1Char('0'))
+                          .arg(totMins)
+                          .arg(totSecs, 2, 10, QLatin1Char('0'));
 
     m_timeLabel->setText(timeStr);
 }

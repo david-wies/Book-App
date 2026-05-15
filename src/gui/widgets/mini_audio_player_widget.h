@@ -1,13 +1,14 @@
 #pragma once
 
-#include <QWidget>
-#include <QSlider>
-#include <QPushButton>
 #include <QLabel>
+#include <QPushButton>
+#include <QSlider>
+#include <QWidget>
 
 namespace bookhub::gui {
 
-class MiniAudioPlayerWidget : public QWidget {
+class MiniAudioPlayerWidget : public QWidget
+{
     Q_OBJECT
 
 public:
@@ -16,6 +17,8 @@ public:
     void setDuration(qint64 durationMs);
     void setCurrentTime(qint64 currentTimeMs);
     bool isPlaying() const;
+    // Sync the play/pause button to external playback state without emitting signals.
+    void setPlaying(bool playing);
 
 signals:
     void playClicked();

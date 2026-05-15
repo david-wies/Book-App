@@ -116,7 +116,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
           this, &MainWindow::onAudiobookRequested);
 
   m_downloadDialog = new DownloadFlowDialog(m_libraryService, m_queryWorker, this);
-  m_audiobookDialog = new AudiobookFlowDialog(m_libraryService, m_queryWorker, this);
+  m_audiobookDialog = new AudiobookFlowDialog(m_libraryService, m_queryWorker, nullptr, this);
 
   // Status bar
   buildStatusBar();
