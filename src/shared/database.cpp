@@ -258,7 +258,8 @@ QString languageNameForCode(const QString &isoCode)
         {QStringLiteral("yid"), QStringLiteral("Yiddish")},
         {QStringLiteral("zho"), QStringLiteral("Chinese")},
     };
-    const auto it = kMap.constFind(isoCode.toLower());
+    const QString lower = isoCode.toLower();
+    const auto it = kMap.constFind(lower);
     if (it == kMap.constEnd()) {
         // One-shot warning per unmapped code.  This function is on the hot path
         // for search-filter population and book-details rendering, so logging
@@ -267,9 +268,8 @@ QString languageNameForCode(const QString &isoCode)
         static QSet<QString> warned;
         static QMutex warnMutex;
         QMutexLocker lock(&warnMutex);
-        const QString key = isoCode.toLower();
-        if (!warned.contains(key)) {
-            warned.insert(key);
+        if (!warned.contains(lower)) {
+            warned.insert(lower);
             qWarning() << "languageNameForCode: unmapped ISO code" << isoCode << "— extend kMap";
         }
     }
@@ -624,11 +624,15 @@ bool verifySchemaVersion(const QString &connectionName)
             // has a gutenberg identifier we can use as the new key.
             //
             // The "n" prefix on an LCCN identifies the Library of Congress
-            // Name Authority File (e.g. "n78095332" = Jane Austen the person),
-            // distinct from work-level LCCNs which use other prefixes (sh, sn,
-            // bare digits, etc.).  See https://www.loc.gov/marc/lccn-namespace.html
-            // for the full prefix list.  Older versions of resolveBookId()
-            // promoted these to primary keys; we now remap them back.
+            // Name Authority File (e.g. "n78095332" = Jane Austen the person).
+            // Work-level (bibliographic) LCCNs are usually bare numeric, often
+            // with a year prefix (e.g. "82-12345" or "2001012345") and never
+            // start with "n"; other alphabetic prefixes such as "sh" / "sn"
+            // belong to *subject*-authority records (LCSH and Name-Subject) and
+            // are also not work-level.  See
+            // https://www.loc.gov/marc/lccn-namespace.html for the full
+            // prefix list.  Older versions of resolveBookId() promoted
+            // names-authority IDs to primary keys; we now remap them back.
             "DROP TABLE IF EXISTS temp.bookid_remap",
             R"(CREATE TEMP TABLE bookid_remap (old_id TEXT PRIMARY KEY, new_id TEXT NOT NULL))",
             R"(INSERT INTO bookid_remap (old_id, new_id)
