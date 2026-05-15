@@ -85,7 +85,6 @@ private:
     QString generationScript() const;
     QString defaultOutputPath() const;
     void showErrorState(const QString &message);
-    // Reset the preview button to its idle label ("▶ Preview selected voice").
     void resetPreviewButton();
 
     friend class ::bookhub::gui::AudiobookFlowDialogTest;
@@ -98,6 +97,7 @@ private:
     QString m_bookId;
     QString m_bookTitle;
     int m_libraryItemId{0};
+    QString m_libraryStatusBeforeConverting;
     QList<BookEditionEntry> m_editions;
     QList<BookFormatEntry> m_formats;
     bool m_hasLanguageStep{false};

@@ -63,7 +63,8 @@ BookDetails fetchBookDetails(const QString &bookId, const QString &connectionNam
             COALESCE(b.publish_year, 0)                       AS publish_year,
             COALESCE(b.summary, '')                           AS summary,
             COALESCE(GROUP_CONCAT(DISTINCT g.genre_name), '') AS genres,
-            COALESCE(li.id, 0)                                AS library_item_id
+            COALESCE(li.id, 0)                                AS library_item_id,
+            COALESCE(li.status, '')                           AS library_status
         FROM books b
         LEFT JOIN book_genres    bg ON bg.book_id = b.book_id
         LEFT JOIN genres          g ON g.id        = bg.genre_id
@@ -88,6 +89,7 @@ BookDetails fetchBookDetails(const QString &bookId, const QString &connectionNam
     result.summary       = coreQ.value(3).toString();
     result.libraryItemId = coreQ.value(5).toInt();
     result.inLibrary     = result.libraryItemId > 0;
+    result.libraryStatus = coreQ.value(6).toString();
 
     const QString genreStr = coreQ.value(4).toString();
     if (!genreStr.isEmpty())

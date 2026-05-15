@@ -312,6 +312,7 @@ void AudiobookFlowDialog::resetState()
 {
     m_currentStep = 0;
     m_hasLanguageStep = false;
+    m_libraryStatusBeforeConverting.clear();
     m_selectedLanguage.clear();
     m_selectedFormat.clear();
     m_selectedVoiceId = -1;
@@ -365,6 +366,7 @@ void AudiobookFlowDialog::onDetailsCompleted(quint64 requestId, const BookDetail
     m_bookTitle = details.title;
     m_editions = details.editions;
     m_libraryItemId = details.libraryItemId;
+    m_libraryStatusBeforeConverting = details.libraryStatus;
     m_titleLabel->setText(QString("Convert to Audiobook — %1").arg(m_bookTitle));
 
     m_hasLanguageStep = m_editions.size() > 1;
@@ -618,8 +620,13 @@ void AudiobookFlowDialog::onPreviewGenerated(int voiceId, const QByteArray &audi
     resetPreviewButton();
 
     if (m_previewTempPath.isEmpty()) {
-        // File write failed — don't leave a stale duration in the player.
+        // File write failed — clear the cached bytes too, otherwise the next click
+        // takes the "cached preview" fast path and silently does nothing because
+        // m_previewTempPath is empty. Surface the failure so the user can retry.
+        m_previewAudioData.clear();
         m_previewPlayer->setDuration(0);
+        m_resultLabel->setText(
+            QStringLiteral("Could not write preview to disk — check temp folder permissions."));
         return;
     }
 
@@ -647,6 +654,12 @@ void AudiobookFlowDialog::onGenerationFinished(bool success, const QString &outp
         m_resultLabel->setText("Could not generate audiobook.");
         m_nextBtn->setText("Retry");
         m_nextBtn->setEnabled(true);
+        // Revert the row from "converting" so a failed run is not pinned forever.
+        if (m_libraryItemId > 0 && m_libraryService &&
+            !m_libraryStatusBeforeConverting.isEmpty()) {
+            m_libraryService->requestUpdateStatus(m_libraryItemId,
+                                                  m_libraryStatusBeforeConverting);
+        }
         return;
     }
 
@@ -699,6 +712,12 @@ void AudiobookFlowDialog::onCancelGenerationClicked()
     m_resultLabel->setText("Audiobook generation was cancelled.");
     m_nextBtn->setText("Retry");
     m_nextBtn->setEnabled(true);
+    // Revert the row from "converting" so a cancelled run is not pinned forever.
+    if (m_libraryItemId > 0 && m_libraryService &&
+        !m_libraryStatusBeforeConverting.isEmpty()) {
+        m_libraryService->requestUpdateStatus(m_libraryItemId,
+                                              m_libraryStatusBeforeConverting);
+    }
 }
 
 void AudiobookFlowDialog::populateLanguageList()

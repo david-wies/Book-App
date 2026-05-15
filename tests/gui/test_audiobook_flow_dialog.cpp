@@ -12,6 +12,7 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QFileDevice>
 #include <QFileInfo>
 #include <QLabel>
 #include <QLineEdit>
@@ -20,6 +21,7 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QSignalSpy>
+#include <QTemporaryDir>
 #include <QTimer>
 
 #include <QtTest>
@@ -116,9 +118,14 @@ private slots:
     void startGeneration_writesWavFile();
     void startGeneration_failsWithMissingSelections();
     void cancelGeneration_stopsAndEnablesRetry();
+    void cancelGeneration_revertsLibraryStatusFromConverting();
     void generationFailure_exposesRetry();
+    void generationFailure_revertsLibraryStatusFromConverting();
     void onGenerationComplete_updatesCloseButton();
     void onAddToLibraryClicked_emitsAudiobookReadyRequest();
+
+    // Preview disk-write failure path
+    void onPreviewGenerated_writeFailure_clearsCachedAudio();
 
     // Dialog reuse: Next button must return to navigation mode after generation.
     void resetState_rewiresToNextFromClose_afterGeneration();
@@ -612,6 +619,31 @@ void AudiobookFlowDialogTest::cancelGeneration_stopsAndEnablesRetry()
     QVERIFY(m_dialog->m_resultLabel->text().contains(QStringLiteral("cancelled")));
 }
 
+void AudiobookFlowDialogTest::cancelGeneration_revertsLibraryStatusFromConverting()
+{
+    m_dialog->m_selectedLanguage = QStringLiteral("en");
+    m_dialog->m_selectedFormat = QStringLiteral("epub");
+    m_dialog->m_selectedVoiceId = 1;
+    m_dialog->m_selectedVoiceName = QStringLiteral("Classic Storyteller");
+    m_dialog->m_libraryItemId = 7;
+    m_dialog->m_libraryStatusBeforeConverting = QStringLiteral("saved");
+    m_dialog->m_currentStep = 4;
+
+    QSignalSpy spy(m_libraryService, &LibraryService::updateStatusRequested);
+    m_dialog->onNextOrGenerateClicked();
+    // Drop any progress-driven status writes the synthesis may issue mid-run
+    // so the assertion below targets the cancel-driven revert specifically.
+    QTRY_VERIFY(spy.count() >= 1);
+    QCOMPARE(spy.first().at(1).toInt(), 7);
+    QCOMPARE(spy.first().at(2).toString(), QStringLiteral("converting"));
+
+    spy.clear();
+    m_dialog->onCancelGenerationClicked();
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.first().at(1).toInt(), 7);
+    QCOMPARE(spy.first().at(2).toString(), QStringLiteral("saved"));
+}
+
 void AudiobookFlowDialogTest::generationFailure_exposesRetry()
 {
     delete m_dialog;
@@ -630,6 +662,77 @@ void AudiobookFlowDialogTest::generationFailure_exposesRetry()
     QCOMPARE(failingService.generationRequests, 1);
     m_dialog->onNextOrGenerateClicked();
     QTRY_COMPARE(failingService.generationRequests, 2);
+}
+
+void AudiobookFlowDialogTest::generationFailure_revertsLibraryStatusFromConverting()
+{
+    delete m_dialog;
+
+    FailingTTSService failingService;
+    m_dialog = new AudiobookFlowDialog(m_libraryService, m_worker, &failingService);
+    m_dialog->m_selectedLanguage = QStringLiteral("en");
+    m_dialog->m_selectedFormat = QStringLiteral("epub");
+    m_dialog->m_selectedVoiceId = 1;
+    m_dialog->m_selectedVoiceName = QStringLiteral("Classic Storyteller");
+    m_dialog->m_libraryItemId = 9;
+    m_dialog->m_libraryStatusBeforeConverting = QStringLiteral("downloaded");
+    m_dialog->m_currentStep = 4;
+
+    QSignalSpy spy(m_libraryService, &LibraryService::updateStatusRequested);
+    m_dialog->onNextOrGenerateClicked();
+    QTRY_COMPARE(m_dialog->m_nextBtn->text(), QStringLiteral("Retry"));
+
+    // First update is "converting" at start; last update must revert to the
+    // status captured before generation began.
+    QVERIFY(spy.count() >= 2);
+    QCOMPARE(spy.first().at(2).toString(), QStringLiteral("converting"));
+    QCOMPARE(spy.last().at(1).toInt(), 9);
+    QCOMPARE(spy.last().at(2).toString(), QStringLiteral("downloaded"));
+}
+
+void AudiobookFlowDialogTest::onPreviewGenerated_writeFailure_clearsCachedAudio()
+{
+    // Force the dialog's QFile open(WriteOnly) on /<tmp>/bookhub-preview-*.wav to
+    // fail by pointing QDir::tempPath() at a directory the test cannot write to.
+    QTemporaryDir roDir;
+    QVERIFY(roDir.isValid());
+    const QByteArray previousTmp = qgetenv("TMPDIR");
+    QVERIFY(qputenv("TMPDIR", roDir.path().toUtf8()));
+    QVERIFY(QFile::setPermissions(roDir.path(),
+                                  QFileDevice::ReadOwner | QFileDevice::ExeOwner));
+
+    if (QFileInfo(roDir.path()).isWritable()) {
+        // Running as root or on a filesystem that ignores POSIX perms — the
+        // failure path under test cannot be exercised, so skip rather than
+        // emit a confusing "passed but didn't test anything" result.
+        QFile::setPermissions(roDir.path(),
+                              QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+                                  QFileDevice::ExeOwner);
+        if (previousTmp.isEmpty())
+            qunsetenv("TMPDIR");
+        else
+            qputenv("TMPDIR", previousTmp);
+        QSKIP("Test environment lets root/uid bypass directory write permissions");
+    }
+
+    m_dialog->m_selectedVoiceId = 1;
+    m_dialog->onPreviewGenerated(1, QByteArray("RIFFsome-fake-wav-data"));
+
+    QVERIFY(m_dialog->m_previewTempPath.isEmpty());
+    // The cached audio bytes must be cleared too — otherwise a subsequent click
+    // hits the "cached preview" branch in onPreviewVoiceClicked and silently
+    // does nothing because there is no temp path to play.
+    QVERIFY(m_dialog->m_previewAudioData.isEmpty());
+    QVERIFY(!m_dialog->m_resultLabel->text().isEmpty());
+
+    // Restore the temp dir to writable so QTemporaryDir's destructor can clean it.
+    QFile::setPermissions(roDir.path(),
+                          QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+                              QFileDevice::ExeOwner);
+    if (previousTmp.isEmpty())
+        qunsetenv("TMPDIR");
+    else
+        qputenv("TMPDIR", previousTmp);
 }
 
 void AudiobookFlowDialogTest::onGenerationComplete_updatesCloseButton()

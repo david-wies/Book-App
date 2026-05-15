@@ -32,6 +32,7 @@ struct BookDetails {
     QList<BookEditionEntry> editions;
     bool                    inLibrary{false};
     int                     libraryItemId{0};
+    QString                 libraryStatus;
 };
 
 class QueryWorker;
