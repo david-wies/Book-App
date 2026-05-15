@@ -136,6 +136,14 @@ AudiobookFlowDialog::AudiobookFlowDialog(LibraryService *libraryService,
                 resetPreviewButton();
                 m_previewPlayer->setPlaying(false);
                 m_previewPlaying = false;
+                // Treat an errored playback as listened so the user is not
+                // permanently stuck at step 4 when the audio backend cannot
+                // play the preview (e.g. missing codec, sandboxed environment).
+                // The error message is still surfaced via showErrorState below.
+                if (!m_previewListened) {
+                    m_previewListened = true;
+                    updateNextButtonEnabled();
+                }
                 showErrorState(
                     QStringLiteral("Preview playback failed: %1").arg(errorString));
             });
@@ -924,7 +932,8 @@ QString AudiobookFlowDialog::defaultOutputPath() const
         QDir dir(base);
         if (!dir.mkpath(QStringLiteral("audiobooks")))
             return false;
-        dir.cd(QStringLiteral("audiobooks"));
+        if (!dir.cd(QStringLiteral("audiobooks")))
+            return false;
         QFile probe(dir.filePath(QStringLiteral(".bookhub-write-probe")));
         if (!probe.open(QIODevice::WriteOnly))
             return false;

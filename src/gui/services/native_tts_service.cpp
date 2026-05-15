@@ -117,6 +117,8 @@ void NativeTTSService::generateAudiobook(int voiceId,
 void NativeTTSService::cancel()
 {
     // Signal the pool task to skip the file write and discard the result.
+    // The pool task and the GUI-thread completion lambda each hold their own
+    // shared_ptr to the flag, so the atomic outlives our reset here.
     if (m_cancelFlag)
         m_cancelFlag->store(true, std::memory_order_relaxed);
     if (m_generationTimer) {
@@ -125,6 +127,7 @@ void NativeTTSService::cancel()
         m_generationTimer = nullptr;
     }
     m_generationStep = 0;
+    m_cancelFlag.reset();
 }
 
 NativeTTSService::VoiceProfile NativeTTSService::profileForVoice(int voiceId,

@@ -259,11 +259,20 @@ if(BUILD_TESTING)
     # default 'all' target. CI builds these explicitly only on master before
     # running the full ctest suite. Omit the flag for any test in the 'sanity'
     # label set, which must be available after every plain 'make'.
+    #
+    # Each FULL_SUITE_ONLY test is also registered as a dependency of the
+    # 'bookhub_full_suite_tests' aggregate target, which CI builds in a single
+    # step. Adding a new FULL_SUITE_ONLY test therefore wires it into CI
+    # automatically — no parallel list in ci.yml to keep in sync.
+    add_custom_target(bookhub_full_suite_tests
+        COMMENT "Building all FULL_SUITE_ONLY test executables")
+
     function(add_bookhub_test test_name)
         cmake_parse_arguments(ARG "FULL_SUITE_ONLY" "" "" ${ARGN})
         add_executable(${test_name} ${ARG_UNPARSED_ARGUMENTS})
         if(ARG_FULL_SUITE_ONLY)
             set_target_properties(${test_name} PROPERTIES EXCLUDE_FROM_ALL TRUE)
+            add_dependencies(bookhub_full_suite_tests ${test_name})
         endif()
         target_include_directories(${test_name} PRIVATE src tests)
         target_link_libraries(${test_name} PRIVATE Qt6::Test bookhub_collector bookhub_gui)

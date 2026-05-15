@@ -86,11 +86,13 @@ jobs:
 
     - name: Run remaining tests
       # Full suite only on master — develop gets sanity-only for fast feedback.
-      # Build the EXCLUDE_FROM_ALL test executables explicitly before running them.
+      # The 'bookhub_full_suite_tests' aggregate target depends on every
+      # FULL_SUITE_ONLY test executable, so adding a new one in CMakeLists.txt
+      # wires it into CI automatically without editing this file.
       if: github.ref == 'refs/heads/master' || github.base_ref == 'master'
       run: |
         cd build
-        make -j$(nproc) test_library_screen test_search_service test_search_screen test_explore_service test_explore_screen
+        make -j$(nproc) bookhub_full_suite_tests
         ctest -LE sanity -j$(nproc) --output-on-failure
 
     - name: Upload build artifact

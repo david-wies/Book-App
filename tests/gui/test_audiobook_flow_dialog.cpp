@@ -37,6 +37,10 @@ public:
     {
         // Deliberately emits 4-byte "RIFF" — invalid WAV that is non-empty so the
         // dialog exercises the temp-file-write path without real audio playback.
+        // Because the payload is non-empty, a subsequent click on Preview hits
+        // the "cached preview" fast path in onPlayPreview(), which the offscreen
+        // QMediaPlayer happily reports as "playing" without producing audio.
+        // Tests rely on that behaviour to drive the dialog state machine.
         emit previewGenerated(voiceId, QByteArray("RIFF"));
     }
 
