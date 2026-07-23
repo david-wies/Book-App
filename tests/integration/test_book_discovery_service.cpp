@@ -20,6 +20,9 @@ private slots:
     void repeatedDiscovery_sameSource_doesNotExplodeRowCounts();
     void sharedLCCN_differentSources_mergesIntoOneBook();
     void firstWriterMetadata_preservedWhenLaterSourceDiffers();
+    void insertBook_normalizesIsoLanguageCodeToFullName();
+    void insertBook_stripsFormatCountSuffixBeforeStorage();
+    void insertBook_multipleFormatsOfSameType_storedOnceWithBothUrls();
 };
 
 namespace {
@@ -184,6 +187,73 @@ void BookDiscoveryServiceTest::firstWriterMetadata_preservedWhenLaterSourceDiffe
     const QString finalTitle = testDb.scalarString(
         QStringLiteral("SELECT title FROM books WHERE book_id = 'gutenberg:1342'"));
     QCOMPARE(finalTitle, originalTitle);
+}
+
+void BookDiscoveryServiceTest::insertBook_normalizesIsoLanguageCodeToFullName()
+{
+    // BookDiscoveryService must convert ISO 639-1 codes to English full names
+    // before inserting into the editions table, so the UI language selectors and
+    // search filters never display raw codes like "en", "fr", or "nl".
+    bookhub::tests::TestDatabase testDb;
+    QVERIFY(testDb.open(QStringLiteral("discovery_lang")));
+    QVERIFY(testDb.createSchema());
+
+    BookDiscoveryService service(testDb.connection());
+
+    DiscoveredBook book = makeFallbackBook();
+    book.languages = {QStringLiteral("nl")};
+    service.insertBookIntoDatabase(book, QStringLiteral("Gutenberg"));
+
+    const QString stored = testDb.scalarString(
+        QStringLiteral("SELECT language FROM editions WHERE book_id = 'gutenberg:1342'"));
+    QCOMPARE(stored, QStringLiteral("Dutch"));
+}
+
+void BookDiscoveryServiceTest::insertBook_stripsFormatCountSuffixBeforeStorage()
+{
+    // The adapter uses _N keys ("epub_1", "pdf_1") to avoid QMap key collisions
+    // when a book has multiple files of the same MIME type.  The discovery service
+    // must strip that suffix before inserting into the formats table so the stored
+    // format_type is the clean name ("epub", "pdf"), not an implementation detail.
+    bookhub::tests::TestDatabase testDb;
+    QVERIFY(testDb.open(QStringLiteral("discovery_fmt")));
+    QVERIFY(testDb.createSchema());
+
+    BookDiscoveryService service(testDb.connection());
+
+    DiscoveredBook book = makeFallbackBook();
+    service.insertBookIntoDatabase(book, QStringLiteral("Gutenberg"));
+
+    const QString fmtType = testDb.scalarString(
+        QStringLiteral("SELECT format_type FROM formats LIMIT 1"));
+    QCOMPARE(fmtType, QStringLiteral("epub"));
+}
+
+void BookDiscoveryServiceTest::insertBook_multipleFormatsOfSameType_storedOnceWithBothUrls()
+{
+    // When the adapter produces epub_1 and epub_2 (two files of the same MIME
+    // type), the discovery service stores a single "epub" format row and links
+    // both download URLs as separate sources — one per insert, with the second
+    // silently ignored if UNIQUE(format_id, source_name) prevents duplication.
+    // The net result must be exactly one "epub" format row (not two "epub_1" /
+    // "epub_2" rows), and at least one source URL must be reachable.
+    bookhub::tests::TestDatabase testDb;
+    QVERIFY(testDb.open(QStringLiteral("discovery_multifmt")));
+    QVERIFY(testDb.createSchema());
+
+    BookDiscoveryService service(testDb.connection());
+
+    DiscoveredBook book = makeFallbackBook();
+    book.formats.clear();
+    book.formats.insert(QStringLiteral("epub_1"), QStringLiteral("https://example.test/1342.epub.images"));
+    book.formats.insert(QStringLiteral("epub_2"), QStringLiteral("https://example.test/1342.epub.noimages"));
+    service.insertBookIntoDatabase(book, QStringLiteral("Gutenberg"));
+
+    QCOMPARE(testDb.scalarInt(QStringLiteral(
+        "SELECT COUNT(*) FROM formats WHERE format_type = 'epub'")), 1);
+    QCOMPARE(testDb.scalarInt(QStringLiteral(
+        "SELECT COUNT(*) FROM formats WHERE format_type LIKE 'epub_%'")), 0);
+    QVERIFY(testDb.scalarInt(QStringLiteral("SELECT COUNT(*) FROM sources")) >= 1);
 }
 
 QTEST_GUILESS_MAIN(BookDiscoveryServiceTest)

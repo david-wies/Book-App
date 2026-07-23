@@ -31,7 +31,7 @@ void SearchServiceTest::search_appliesAndSemanticsAcrossFilters()
     const QList<SearchResult> results =
         internal::runSearch(params, 0, 50, testDb.connection());
     QCOMPARE(results.size(), 1);
-    QCOMPARE(results.first().bookId, QStringLiteral("lccn:n78095332"));
+    QCOMPARE(results.first().bookId, QStringLiteral("gutenberg:1342"));
 }
 
 void SearchServiceTest::search_supportsAudiobookFilterAndSorting()
@@ -41,14 +41,14 @@ void SearchServiceTest::search_supportsAudiobookFilterAndSorting()
     QVERIFY(testDb.createSchema());
     QVERIFY(testDb.insertSampleData());
     QVERIFY(bookhub::tests::execSql(testDb.database(), QStringLiteral(
-        "UPDATE library_items SET status = 'audiobook_ready' WHERE book_id = 'lccn:n79025140'")));
+        "UPDATE library_items SET status = 'audiobook_ready' WHERE book_id = 'gutenberg:76'")));
 
     SearchParams audiobook;
     audiobook.audiobookOnly = true;
     const QList<SearchResult> audioResults =
         internal::runSearch(audiobook, 0, 50, testDb.connection());
     QCOMPARE(audioResults.size(), 1);
-    QCOMPARE(audioResults.first().bookId, QStringLiteral("lccn:n79025140"));
+    QCOMPARE(audioResults.first().bookId, QStringLiteral("gutenberg:76"));
 
     // No keyword — returns all books in the database ordered by author.
     // Sample data has exactly 3 books; Alexandre Dumas sorts first alphabetically.

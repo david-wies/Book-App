@@ -3,6 +3,7 @@
 #include "../services/book_details_service.h"
 #include "../services/library_service.h"
 #include "../style_tokens.h"
+#include "shared/database.h"
 
 #include <QComboBox>
 #include <QFrame>
@@ -451,7 +452,7 @@ void BookDetailsPanel::populateDetails(const BookDetails &details)
         QSignalBlocker blocker(m_langCombo);
         m_langCombo->clear();
         for (const auto &ed : details.editions)
-            m_langCombo->addItem(ed.language);
+            m_langCombo->addItem(bookhub::db::languageNameForCode(ed.language));
     }
 
     const qsizetype edCount = details.editions.size();
@@ -460,7 +461,7 @@ void BookDetailsPanel::populateDetails(const BookDetails &details)
     m_singleLangLabel->setVisible(!multiLang && edCount == 1);
     m_langLabel->setVisible(edCount > 0);
     if (!multiLang && edCount == 1)
-        m_singleLangLabel->setText(details.editions.first().language);
+        m_singleLangLabel->setText(bookhub::db::languageNameForCode(details.editions.first().language));
 
     // Summary
     m_fullSummary    = details.summary.isEmpty()
@@ -518,8 +519,8 @@ void BookDetailsPanel::populateFormats(const QList<BookFormatEntry> &formats)
         rowLayout->setContentsMargins(0, SpacingXS, 0, SpacingXS);
         rowLayout->setSpacing(SpacingSM);
 
-        auto *fmtLabel = new QLabel(fmt.formatType, row);
-        fmtLabel->setFixedWidth(36);
+        auto *fmtLabel = new QLabel(bookhub::db::stripFormatTypeSuffix(fmt.formatType), row);
+        fmtLabel->setFixedWidth(72);
         fmtLabel->setStyleSheet(QStringLiteral(
             "font-size: %1pt; font-weight: bold; color: %2;")
             .arg(FontSizeBody).arg(ColorTextPrimary));

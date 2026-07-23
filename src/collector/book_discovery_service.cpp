@@ -1,4 +1,5 @@
 #include "book_discovery_service.h"
+#include "shared/database.h"
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QSqlError>
@@ -150,7 +151,9 @@ void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, co
     }
 
     // Phase 4 — edition, formats, and sources
-    const QString primaryLang = book.languages.isEmpty() ? "Unknown" : book.languages.first();
+    const QString primaryLang = book.languages.isEmpty()
+        ? QStringLiteral("Unknown")
+        : bookhub::db::languageNameForCode(book.languages.first());
 
     query.prepare("INSERT OR IGNORE INTO editions (book_id, language) VALUES (?, ?)");
     query.addBindValue(effectiveId);
@@ -172,9 +175,10 @@ void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, co
     const int editionId = query.value(0).toInt();
 
     for (auto it = book.formats.constBegin(); it != book.formats.constEnd(); ++it) {
+        const QString formatType = bookhub::db::stripFormatTypeSuffix(it.key());
         query.prepare("INSERT OR IGNORE INTO formats (edition_id, format_type) VALUES (?, ?)");
         query.addBindValue(editionId);
-        query.addBindValue(it.key());
+        query.addBindValue(formatType);
         if (!query.exec()) {
             qWarning() << "Failed to insert format:" << query.lastError().text();
             continue;
@@ -184,7 +188,7 @@ void BookDiscoveryService::insertBookIntoDatabase(const DiscoveredBook& book, co
         QSqlQuery fmtQuery(db);
         fmtQuery.prepare("SELECT id FROM formats WHERE edition_id = ? AND format_type = ?");
         fmtQuery.addBindValue(editionId);
-        fmtQuery.addBindValue(it.key());
+        fmtQuery.addBindValue(formatType);
         if (!fmtQuery.exec() || !fmtQuery.next()) {
             qWarning() << "Failed to retrieve format id:" << fmtQuery.lastError().text();
             continue;

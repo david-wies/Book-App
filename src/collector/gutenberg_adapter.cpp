@@ -161,13 +161,19 @@ QString GutenbergAdapter::normalizeFormatName(const QString& url, const QString&
         return QString();
     }
 
-    QString lowerMime = mimeType.toLower();
+    // Strip MIME parameters (e.g. "; charset=us-ascii") before matching — Gutenberg
+    // sometimes uses parameterised MIME types that would otherwise leak into format_type.
+    QString lowerMime = mimeType.toLower().trimmed();
+    const int semiPos = lowerMime.indexOf(';');
+    if (semiPos >= 0)
+        lowerMime = lowerMime.left(semiPos).trimmed();
+
     if (lowerMime.contains("image")) {
         return QString();
     }
 
     if (lowerMime == "application/epub+zip") return "epub";
-    if (lowerMime == "text/plain") return "text_plain";
+    if (lowerMime == "text/plain") return "plain";
     if (lowerMime == "text/html") return "html";
     if (lowerMime == "application/pdf") return "pdf";
     if (lowerMime == "application/x-mobipocket-ebook") return "mobi";
@@ -217,8 +223,38 @@ void GutenbergAdapter::parseSingleRdf(const QByteArray& data, const QString& ent
             } else if (name == "file") {
                 currentFormatUrl = xml.attributes().value("rdf:about").toString();
                 currentFormatMime.clear();
-            } else if (name == "title") {
-                book.title = xml.readElementText().trimmed();
+            } else if (name == "title" && path.size() >= 2
+                       && path.at(path.size() - 2) == QLatin1String("ebook")) {
+                // Restrict to <pgterms:ebook>/<dcterms:title> to avoid picking up
+                // title-like elements in nested file descriptions.  Use simplified()
+                // to collapse embedded newlines/whitespace that appear in some RDF entries.
+                //
+                // NOTE: the parent local-name is hardcoded to "ebook" to match
+                // the current Gutenberg RDF schema (pgterms:ebook).  If the
+                // upstream schema introduces a different container element for
+                // book metadata (or this adapter is reused for a different
+                // source), update this branch — accidentally falling through
+                // to the catch-all below would silently lose book titles.
+                book.title = xml.readElementText().simplified();
+                // Strip MARC 21 subfield markers that Gutenberg embeds verbatim in some
+                // title strings.  The RDF often includes MARC punctuation immediately
+                // before the marker (e.g. "Main title : $b Subtitle"), so the regex also
+                // consumes any trailing MARC punctuation chars (:;/,) to avoid producing
+                // double colons like "Main title :: Subtitle".
+                //
+                // The subfield character class is deliberately limited to [a-z].
+                // MARC 21 also defines numeric subfield codes ($0, $1, … for
+                // linking/relator codes) but those are vanishingly rare in
+                // Gutenberg titles, and widening to [a-z0-9] risks eating
+                // dollar amounts in unusual titles (e.g. "$2 a day").
+                static const QRegularExpression reMarc(QStringLiteral("[\\s:;/,]*\\$[a-z]\\s*"));
+                book.title.replace(reMarc, QStringLiteral(": "));
+                book.title = book.title.simplified();
+                // A title that begins with a $b marker (no main text before it) will
+                // produce a leading ": " after the substitution.  Strip it so the stored
+                // title starts with real content rather than punctuation.
+                if (book.title.startsWith(QStringLiteral(": ")))
+                    book.title = book.title.mid(2);
                 if (!path.isEmpty()) path.removeLast(); // text read moves past EndElement
             } else if (name == "identifier") {
                 rawIdentifiers.append(xml.readElementText().trimmed());
@@ -264,8 +300,10 @@ void GutenbergAdapter::parseSingleRdf(const QByteArray& data, const QString& ent
 
     for (const QString& raw : rawIdentifiers) {
         QString lower = raw.toLower();
-        if (lower.startsWith("lccn:") || lower.startsWith("http://id.loc.gov/authorities/names/")) {
-            // Extract the raw LCCN value and normalize it; store only the digits+alpha, no prefix
+        if (lower.startsWith("lccn:")) {
+            // Extract the raw LCCN value and normalize it; store only the digits+alpha, no prefix.
+            // Note: /authorities/names/ URIs identify persons, not works — they are skipped here
+            // and in resolveBookId() so they never become book primary keys.
             QString lccnNormalized = normalizeLccn(raw);
             // lccnNormalized is "lccn:XYZ" — store just the part after the colon as value
             qsizetype colon = lccnNormalized.indexOf(':');
@@ -378,7 +416,9 @@ QString GutenbergAdapter::resolveBookId(const QStringList& rawIdentifiers, const
         QString lower = raw.toLower();
 
         if (lccnResult.isEmpty()) {
-            if (lower.startsWith("lccn:") || lower.startsWith("http://id.loc.gov/authorities/names/")) {
+            // /authorities/names/ URIs identify persons/corporate bodies, not works.
+            // Accept only explicit "lccn:" prefixed identifiers as work-level LCCNs.
+            if (lower.startsWith("lccn:")) {
                 lccnResult = normalizeLccn(raw);
                 continue;
             }
