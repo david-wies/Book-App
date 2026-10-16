@@ -196,7 +196,7 @@ void BookDetailsPanelTest::loadBook_singleEdition_showsSingleLabel()
 
     QVERIFY(panel.m_langCombo->isHidden());
     QVERIFY(!panel.m_singleLangLabel->isHidden());
-    QCOMPARE(panel.m_singleLangLabel->text(), QStringLiteral("de"));
+    QCOMPARE(panel.m_singleLangLabel->text(), QStringLiteral("German"));
 }
 
 void BookDetailsPanelTest::loadBook_longSummary_showsShowMoreButton()
@@ -319,8 +319,8 @@ void BookDetailsPanelTest::languageChange_requestsFormatsForNewEdition()
     BookDetailsPanel panel(m_libraryService, m_worker);
     panel.loadBook(QStringLiteral("test:13"));
 
-    // Switch to French (index 1 — sorted alphabetically: en=0, fr=1)
-    const int frIndex = panel.m_langCombo->findText(QStringLiteral("fr"));
+    // Switch to French (index 1 — sorted alphabetically: English=0, French=1)
+    const int frIndex = panel.m_langCombo->findText(QStringLiteral("French"));
     QVERIFY(frIndex >= 0);
     panel.m_langCombo->setCurrentIndex(frIndex);
 

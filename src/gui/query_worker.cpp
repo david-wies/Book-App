@@ -1,5 +1,6 @@
 #include "query_worker.h"
 
+#include "shared/database.h"
 #include "services/book_details_service.h"
 #include "services/explore_service.h"
 #include "services/library_service.h"
@@ -20,18 +21,11 @@ QueryWorker::QueryWorker(QObject *parent)
 
 void QueryWorker::onThreadStarted()
 {
-    // Open a dedicated SQL connection on the query thread.
-    // The path is taken from the GUI thread's default connection so both
-    // threads point at the same database file.
-    const QString dbPath =
-        QSqlDatabase::database(QSqlDatabase::defaultConnection).databaseName();
-
-    QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"),
-                                                 conn());
-    db.setDatabaseName(dbPath);
-    if (!db.open()) {
-        qWarning() << "QueryWorker: failed to open gui_query_connection:"
-                   << db.lastError().text();
+    // Compute the path directly — reading it from the default connection would
+    // cross thread ownership and cause Qt to return an invalid database object,
+    // making databaseName() return "" and silently opening an in-memory SQLite.
+    if (!bookhub::db::initializeDatabase(bookhub::db::databaseFilePath(), conn())) {
+        qWarning() << "QueryWorker: failed to open gui_query_connection";
     }
 }
 

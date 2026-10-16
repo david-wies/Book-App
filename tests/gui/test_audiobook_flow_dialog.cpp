@@ -874,14 +874,17 @@ void AudiobookFlowDialogTest::startForBook_populatesLanguagesThroughWorkerChain(
     QVERIFY(testDb.insertSampleData());
 
     AudiobookFlowDialog dialog(m_libraryService, m_worker);
-    dialog.startForBook(QStringLiteral("lccn:n78095332")); // 2 editions in sample data
+    // Pride and Prejudice now has one English edition (French removed: Gutenberg
+    // has no French content for this work, so the stub edition was a false positive).
+    dialog.startForBook(QStringLiteral("gutenberg:1342"));
 
     // If BookDetailsService is not wired to the worker, the chain produces
     // nothing and m_editions stays empty. With wiring, the synchronous
-    // TestQueryWorker dispatch fully populates the language list.
-    QCOMPARE(dialog.m_editions.size(), 2);
-    QCOMPARE(dialog.m_languageList->count(), 2);
-    QVERIFY(dialog.m_hasLanguageStep);
+    // TestQueryWorker dispatch fully populates m_editions.
+    QCOMPARE(dialog.m_editions.size(), 1);
+    // Single edition: language step is skipped, so m_languageList is not populated.
+    QVERIFY(!dialog.m_hasLanguageStep);
+    QCOMPARE(dialog.m_languageList->count(), 0);
 }
 
 } // namespace bookhub::gui

@@ -291,6 +291,11 @@ if(BUILD_TESTING)
     )
     label_bookhub_test(test_database_schema sanity unit database)
 
+    add_bookhub_test(test_database_helpers
+        tests/unit/test_database_helpers.cpp
+    )
+    label_bookhub_test(test_database_helpers sanity unit database)
+
     add_bookhub_test(test_gutenberg_id_resolution
         tests/unit/test_gutenberg_id_resolution.cpp
     )
